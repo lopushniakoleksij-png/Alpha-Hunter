@@ -1,0 +1,32 @@
+{
+  "product_type": "usdt-futures",
+  "symbols": [
+    "VIRTUALUSDT",
+    "SUIUSDT",
+    "FETUSDT",
+    "NEARUSDT",
+    "AKTUSDT"
+  ],
+  "timeframes": [
+    "15m",
+    "1H",
+    "4H"
+  ],
+  "candle_limit": 120,
+  "request_timeout_seconds": 12,
+  "max_retries": 3,
+  "snapshot_directory": "data/snapshots",
+  "funding_history_limit": 30,
+  "minimum_reward_risk": 5.0,
+  "state_history_file": "data/state-history.jsonl",
+  "supabase": {
+    "enabled": true,
+    "url_env": "SUPABASE_URL",
+    "key_env": "SUPABASE_SERVICE_ROLE_KEY",
+    "snapshot_table": "alpha_hunter_snapshots",
+    "symbol_table": "alpha_hunter_symbol_snapshots",
+    "timeout_seconds": 15
+  },
+  "minimum_data_integrity": 88,
+  "intelligence_version": "1.0"
+}
