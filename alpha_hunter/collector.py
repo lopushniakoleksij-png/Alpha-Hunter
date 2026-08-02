@@ -22,6 +22,7 @@ from .analysis import (
 )
 from .bitget import BitgetAPIError, BitgetClient
 from .env import load_env_file
+from .private_account import collect_private_account_snapshot
 from .storage import SupabaseStorage, SupabaseStorageError, SupabaseConfig, build_run_id
 
 
@@ -192,7 +193,7 @@ def main() -> int:
     load_env_file(config_path.parent / ".env")
     config = load_config(config_path)
 
-    client = BitgetClient(
+    client = BitgetClient.from_environment(
         timeout=config.get("request_timeout_seconds", 12),
         max_retries=config.get("max_retries", 3),
     )
@@ -211,11 +212,18 @@ def main() -> int:
 
     apply_snapshot_comparisons(results, previous_snapshot, config.get("minimum_reward_risk", 5.0))
 
+    private_account = collect_private_account_snapshot(
+        client,
+        config["product_type"],
+        config.get("margin_coin", "USDT"),
+    )
+
     snapshot = {
-        "version": "0.4.0",
+        "version": "0.5.0",
         "collected_at_utc": datetime.now(timezone.utc).isoformat(),
         "product_type": config["product_type"],
         "symbols": results,
+        "private_account": private_account,
     }
     snapshot["run_id"] = build_run_id(snapshot)
     path = save_snapshot(snapshot, config_path, config)
@@ -238,6 +246,10 @@ def main() -> int:
     print(f"Snapshot saved: {path}")
     print(f"State history: {history_path}")
     print(f"Supabase: {cloud_status}")
+    private_status = snapshot.get("private_account", {}).get("status", "UNKNOWN")
+    position_count = snapshot.get("private_account", {}).get("open_position_count", 0)
+    print(f"Bitget private API: {private_status}")
+    print(f"Open positions detected: {position_count}")
     return 0
 
 
