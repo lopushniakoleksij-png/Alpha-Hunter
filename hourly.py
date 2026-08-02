@@ -41,7 +41,33 @@ def run_once(project_root: Path, config: str) -> int:
     try:
         command = [sys.executable, str(project_root / "run.py"), "--config", config]
         completed = subprocess.run(command, cwd=project_root, check=False)
-        return completed.returncode
+        if completed.returncode != 0:
+            return completed.returncode
+
+        performance = subprocess.run(
+            [sys.executable, str(project_root / "performance_job.py")],
+            cwd=project_root,
+            check=False,
+        )
+        if performance.returncode != 0:
+            print(
+                f"Performance signal save failed with exit code {performance.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        outcomes = subprocess.run(
+            [sys.executable, str(project_root / "outcome_job.py")],
+            cwd=project_root,
+            check=False,
+        )
+        if outcomes.returncode not in {0, 2}:
+            print(
+                f"Outcome evaluation failed with exit code {outcomes.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return 0
     finally:
         release_lock(lock_path)
 
