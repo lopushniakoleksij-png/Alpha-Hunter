@@ -56,6 +56,18 @@ def run_once(project_root: Path, config: str) -> int:
                 flush=True,
             )
 
+        features = subprocess.run(
+            [sys.executable, str(project_root / "feature_job.py")],
+            cwd=project_root,
+            check=False,
+        )
+        if features.returncode != 0:
+            print(
+                f"Feature capture failed with exit code {features.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+
         outcomes = subprocess.run(
             [sys.executable, str(project_root / "outcome_job.py")],
             cwd=project_root,
