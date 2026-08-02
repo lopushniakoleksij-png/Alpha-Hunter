@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from statistics import mean
+from math import sqrt
+from statistics import mean, median
 from typing import Any
 
 import requests
@@ -9,6 +10,7 @@ import requests
 NOISE_THRESHOLD_PCT = 0.10
 BIG_MOVE_THRESHOLD_PCT = 3.0
 MIN_RECOMMENDATION_SAMPLES = 30
+PROMOTION_SAMPLES = 100
 
 
 def _f(value: Any) -> float:
@@ -16,6 +18,18 @@ def _f(value: Any) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _wilson_interval(successes: int, total: int, z: float = 1.96) -> tuple[float, float]:
+    if total <= 0:
+        return 0.0, 0.0
+    p = successes / total
+    denominator = 1 + (z * z / total)
+    centre = p + (z * z / (2 * total))
+    margin = z * sqrt((p * (1 - p) + z * z / (4 * total)) / total)
+    low = (centre - margin) / denominator
+    high = (centre + margin) / denominator
+    return max(0.0, low), min(1.0, high)
 
 
 class StatisticsService:
@@ -86,26 +100,44 @@ class StatisticsService:
             for sample in samples
         ]
         total = len(returns)
-        correct = sum(value > NOISE_THRESHOLD_PCT for value in returns)
-        wrong = sum(value < -NOISE_THRESHOLD_PCT for value in returns)
-        flat = total - correct - wrong
-        decisive = correct + wrong
-        big_wins = sum(value >= BIG_MOVE_THRESHOLD_PCT for value in returns)
-        big_losses = sum(value <= -BIG_MOVE_THRESHOLD_PCT for value in returns)
+        positive = [r for r in returns if r > NOISE_THRESHOLD_PCT]
+        negative = [r for r in returns if r < -NOISE_THRESHOLD_PCT]
+        flat = total - len(positive) - len(negative)
+        decisive = len(positive) + len(negative)
+
+        gross_profit = sum(positive)
+        gross_loss = abs(sum(negative))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else (999.0 if gross_profit > 0 else 0.0)
+        expectancy = mean(returns) if returns else 0.0
+        avg_win = mean(positive) if positive else 0.0
+        avg_loss = abs(mean(negative)) if negative else 0.0
+        payoff_ratio = avg_win / avg_loss if avg_loss > 0 else (999.0 if avg_win > 0 else 0.0)
+
+        low, high = _wilson_interval(len(positive), decisive)
+        directional_accuracy = len(positive) / decisive * 100 if decisive else 0.0
+        coverage = decisive / total * 100 if total else 0.0
 
         return {
             "samples": total,
-            "correct": correct,
-            "wrong": wrong,
+            "correct": len(positive),
+            "wrong": len(negative),
             "flat": flat,
-            "directional_accuracy": round(correct / decisive * 100, 2) if decisive else 0.0,
-            "coverage_pct": round(decisive / total * 100, 2) if total else 0.0,
-            "positive_rate": round(correct / total * 100, 2) if total else 0.0,
-            "big_move_rate": round(big_wins / total * 100, 2) if total else 0.0,
-            "big_loss_rate": round(big_losses / total * 100, 2) if total else 0.0,
-            "average_return_pct": round(mean(returns), 4) if returns else 0.0,
+            "directional_accuracy": round(directional_accuracy, 2),
+            "accuracy_ci_low": round(low * 100, 2),
+            "accuracy_ci_high": round(high * 100, 2),
+            "coverage_pct": round(coverage, 2),
+            "expected_value_pct": round(expectancy, 4),
+            "average_return_pct": round(expectancy, 4),
+            "median_return_pct": round(median(returns), 4) if returns else 0.0,
+            "profit_factor": round(profit_factor, 3),
+            "payoff_ratio": round(payoff_ratio, 3),
+            "average_win_pct": round(avg_win, 4),
+            "average_loss_pct": round(avg_loss, 4),
+            "big_move_rate": round(sum(r >= BIG_MOVE_THRESHOLD_PCT for r in returns) / total * 100, 2) if total else 0.0,
+            "big_loss_rate": round(sum(r <= -BIG_MOVE_THRESHOLD_PCT for r in returns) / total * 100, 2) if total else 0.0,
             "best_return_pct": round(max(returns), 4) if returns else 0.0,
             "worst_return_pct": round(min(returns), 4) if returns else 0.0,
+            "sample_sufficiency_pct": round(min(total / PROMOTION_SAMPLES, 1.0) * 100, 1),
         }
 
     @classmethod
@@ -117,8 +149,9 @@ class StatisticsService:
         rows = [{"name": name, **cls._summary(group)} for name, group in grouped.items()]
         rows.sort(
             key=lambda row: (
+                row["expected_value_pct"],
                 row["directional_accuracy"],
-                row["average_return_pct"],
+                row["profit_factor"],
                 row["samples"],
             ),
             reverse=True,
@@ -148,29 +181,37 @@ class StatisticsService:
     def recommendations(strategy_rows: list[dict[str, Any]]) -> list[dict[str, str]]:
         recommendations = []
         for row in strategy_rows:
-            if row["samples"] < MIN_RECOMMENDATION_SAMPLES:
+            samples = row["samples"]
+            ev = row["expected_value_pct"]
+            accuracy = row["directional_accuracy"]
+            ci_low = row["accuracy_ci_low"]
+            profit_factor = row["profit_factor"]
+            coverage = row["coverage_pct"]
+
+            if samples < MIN_RECOMMENDATION_SAMPLES:
                 action = "COLLECT MORE DATA"
-                reason = f"{row['samples']}/{MIN_RECOMMENDATION_SAMPLES} minimum samples"
-            elif row["coverage_pct"] < 40:
+                reason = f"{samples}/{MIN_RECOMMENDATION_SAMPLES} minimum samples"
+            elif coverage < 35:
                 action = "NO CHANGE"
-                reason = f"Only {row['coverage_pct']}% decisive outcomes"
-            elif row["directional_accuracy"] >= 60 and row["average_return_pct"] > 0:
-                action = "INCREASE WEIGHT"
+                reason = f"Only {coverage}% decisive outcomes"
+            elif samples < PROMOTION_SAMPLES:
+                action = "KEEP TESTING"
+                reason = f"{samples}/{PROMOTION_SAMPLES} promotion samples; EV {ev}%"
+            elif ev > 0 and ci_low >= 52 and profit_factor >= 1.20:
+                action = "PROMOTE"
                 reason = (
-                    f"{row['directional_accuracy']}% directional accuracy, "
-                    f"{row['average_return_pct']}% average return"
+                    f"EV {ev}%, CI floor {ci_low}%, PF {profit_factor}"
                 )
-            elif row["directional_accuracy"] < 45 or row["average_return_pct"] < 0:
+            elif ev < 0 and accuracy < 45 and profit_factor < 0.90:
                 action = "REDUCE WEIGHT"
                 reason = (
-                    f"{row['directional_accuracy']}% directional accuracy, "
-                    f"{row['average_return_pct']}% average return"
+                    f"EV {ev}%, accuracy {accuracy}%, PF {profit_factor}"
                 )
             else:
                 action = "KEEP"
                 reason = (
-                    f"{row['directional_accuracy']}% directional accuracy across "
-                    f"{row['samples']} samples"
+                    f"EV {ev}%, accuracy {accuracy}% "
+                    f"[{row['accuracy_ci_low']}–{row['accuracy_ci_high']}]"
                 )
 
             recommendations.append({
@@ -200,5 +241,6 @@ class StatisticsService:
                 "noise_threshold_pct": NOISE_THRESHOLD_PCT,
                 "big_move_threshold_pct": BIG_MOVE_THRESHOLD_PCT,
                 "minimum_recommendation_samples": MIN_RECOMMENDATION_SAMPLES,
+                "promotion_samples": PROMOTION_SAMPLES,
             },
         }
