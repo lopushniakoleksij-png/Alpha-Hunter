@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 import requests
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
+
+from alpha_hunter.services.statistics import StatisticsService
+from performance_page import PERFORMANCE_PAGE
 
 app = Flask(__name__)
 
@@ -114,7 +117,7 @@ td{padding:11px 8px;border-bottom:1px solid #142431;white-space:nowrap}.score{fo
 <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V2</h1><div class="sub">Full-market surveillance and Huge RR ranking</div></div>
-    <div class="status">Updated {{ data.updated or "Unavailable" }}</div>
+    <div style="display:flex;gap:10px;align-items:center"><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance Analytics</a><div class="status">Updated {{ data.updated or "Unavailable" }}</div></div>
   </div>
 
   <div class="grid">
@@ -189,6 +192,31 @@ def api_latest():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 503
 
+
+
+@app.get("/performance")
+def performance_dashboard():
+    try:
+        horizon = int(request.args.get("horizon", "1"))
+        if horizon not in {1, 4, 12, 24}:
+            horizon = 1
+        report = StatisticsService(SUPABASE_URL, SUPABASE_KEY).report(horizon)
+        return render_template_string(PERFORMANCE_PAGE, data=report)
+    except Exception as exc:
+        return render_template_string(
+            "<h1>Performance Analytics</h1><p>{{ error }}</p><p><a href='/'>Back</a></p>",
+            error=str(exc),
+        ), 503
+
+@app.get("/api/performance")
+def api_performance():
+    try:
+        horizon = int(request.args.get("horizon", "1"))
+        if horizon not in {1, 4, 12, 24}:
+            horizon = 1
+        return jsonify(StatisticsService(SUPABASE_URL, SUPABASE_KEY).report(horizon))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 503
 
 @app.get("/health")
 def health():
