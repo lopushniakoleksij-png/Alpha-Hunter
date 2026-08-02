@@ -110,14 +110,21 @@ h1{margin:0;font-size:30px}.sub{color:var(--muted);margin-top:6px}.status{paddin
 table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--muted);font-weight:600;padding:10px 8px;border-bottom:1px solid var(--line)}
 td{padding:11px 8px;border-bottom:1px solid #142431;white-space:nowrap}.score{font-weight:800}.long{color:var(--green)}.short{color:var(--red)}
 .badge{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px}.yes{color:var(--green);border-color:#1f6a50}.no{color:var(--muted)}
-.empty{color:var(--muted);padding:18px 0}.small{font-size:12px;color:var(--muted)}@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.wrap{padding:14px}.top{align-items:flex-start;flex-direction:column}}
+.empty{color:var(--muted);padding:18px 0}.small{font-size:12px;color:var(--muted)}.run-button{border:1px solid #1f6a50;background:#123b2d;color:#24d18f;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer}.run-button:disabled{opacity:.55;cursor:not-allowed}.scan-message{font-size:12px;color:var(--muted);margin-top:6px;text-align:right}@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.wrap{padding:14px}.top{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V2</h1><div class="sub">Full-market surveillance and Huge RR ranking</div></div>
-    <div style="display:flex;gap:10px;align-items:center"><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance Analytics</a><div class="status">Updated {{ data.updated or "Unavailable" }}</div></div>
+    <div>
+<div style="display:flex;gap:10px;align-items:center">
+<a href="/performance" style="color:#4db6ff;text-decoration:none">Performance Analytics</a>
+<button id="runScanButton" class="run-button" onclick="runScan()">Run Scan</button>
+<div class="status">Updated {{ data.updated or "Unavailable" }}</div>
+</div>
+<div id="scanMessage" class="scan-message">Manual scanner ready</div>
+</div>
   </div>
 
   <div class="grid">
