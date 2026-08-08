@@ -286,10 +286,142 @@ def load_v74_history(
     )
 
 
+def _rank_bucket(
+    rank: Any,
+) -> str:
+    try:
+        rank_int = int(rank)
+    except (TypeError, ValueError):
+        return "UNRANKED"
+
+    if rank_int <= 3:
+        return "TOP_1_3"
+
+    if rank_int <= 5:
+        return "TOP_4_5"
+
+    return "RESERVE_6_10"
+
+
+def _movement_metrics(
+    values: list[float],
+) -> dict[str, Any]:
+    n = len(values)
+
+    if not n:
+        return {
+            "n": 0,
+            "avg_raw_return": 0.0,
+            "avg_abs_move": 0.0,
+            "positive_rate": 0.0,
+            "up_3_rate": 0.0,
+            "up_5_rate": 0.0,
+            "up_10_rate": 0.0,
+            "down_3_rate": 0.0,
+            "down_5_rate": 0.0,
+            "down_10_rate": 0.0,
+            "expansion_3_rate": 0.0,
+            "expansion_5_rate": 0.0,
+            "expansion_10_rate": 0.0,
+        }
+
+    def rate(
+        predicate,
+    ) -> float:
+        return (
+            sum(
+                1
+                for value in values
+                if predicate(value)
+            )
+            / n
+            * 100
+        )
+
+    return {
+        "n":
+            n,
+
+        "avg_raw_return":
+            sum(values)
+            / n,
+
+        "avg_abs_move":
+            sum(
+                abs(value)
+                for value in values
+            )
+            / n,
+
+        "positive_rate":
+            rate(
+                lambda value:
+                    value > 0
+            ),
+
+        "up_3_rate":
+            rate(
+                lambda value:
+                    value >= 3
+            ),
+
+        "up_5_rate":
+            rate(
+                lambda value:
+                    value >= 5
+            ),
+
+        "up_10_rate":
+            rate(
+                lambda value:
+                    value >= 10
+            ),
+
+        "down_3_rate":
+            rate(
+                lambda value:
+                    value <= -3
+            ),
+
+        "down_5_rate":
+            rate(
+                lambda value:
+                    value <= -5
+            ),
+
+        "down_10_rate":
+            rate(
+                lambda value:
+                    value <= -10
+            ),
+
+        # Expansion is direction-neutral.
+        # This is the correct core metric for
+        # PRE-MOVE surveillance.
+        "expansion_3_rate":
+            rate(
+                lambda value:
+                    abs(value) >= 3
+            ),
+
+        "expansion_5_rate":
+            rate(
+                lambda value:
+                    abs(value) >= 5
+            ),
+
+        "expansion_10_rate":
+            rate(
+                lambda value:
+                    abs(value) >= 10
+            ),
+    }
+
+
 def build_performance_report(
     signals: list[dict[str, Any]],
     outcomes: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
+) -> dict[str, list[dict[str, Any]]]:
     signal_map: dict[
         str,
         dict[str, Any],
@@ -311,7 +443,7 @@ def build_performance_report(
             "pre_move_tier"
         )
 
-        path = payload.get(
+        path_name = payload.get(
             "pre_move_path"
         )
 
@@ -321,7 +453,7 @@ def build_performance_report(
         }:
             continue
 
-        if path not in {
+        if path_name not in {
             "CONTINUATION",
             "REVERSAL",
         }:
@@ -337,6 +469,10 @@ def build_performance_report(
         if not signal_id:
             continue
 
+        rank = payload.get(
+            "pre_move_rank"
+        )
+
         signal_map[
             signal_id
         ] = {
@@ -344,7 +480,15 @@ def build_performance_report(
                 tier,
 
             "path":
-                path,
+                path_name,
+
+            "rank":
+                rank,
+
+            "rank_bucket":
+                _rank_bucket(
+                    rank
+                ),
 
             "score":
                 f(
@@ -354,8 +498,13 @@ def build_performance_report(
                 ),
         }
 
-    groups: dict[
+    tier_path_groups: dict[
         tuple[str, str, int],
+        list[float],
+    ] = defaultdict(list)
+
+    rank_groups: dict[
+        tuple[str, int],
         list[float],
     ] = defaultdict(list)
 
@@ -374,13 +523,11 @@ def build_performance_report(
         if not signal:
             continue
 
-        horizon = outcome.get(
-            "horizon_hours"
-        )
-
         try:
             horizon = int(
-                horizon
+                outcome.get(
+                    "horizon_hours"
+                )
             )
         except (
             TypeError,
@@ -388,6 +535,12 @@ def build_performance_report(
         ):
             continue
 
+        # IMPORTANT:
+        # V7.4 surveillance is evaluated
+        # from RAW market return.
+        #
+        # We deliberately DO NOT use
+        # direction_adjusted_return_pct here.
         raw_return = f(
             outcome.get(
                 "return_pct"
@@ -397,7 +550,7 @@ def build_performance_report(
         if raw_return is None:
             continue
 
-        key = (
+        tier_path_key = (
             str(
                 signal["tier"]
             ),
@@ -407,83 +560,51 @@ def build_performance_report(
             horizon,
         )
 
-        groups[
-            key
+        tier_path_groups[
+            tier_path_key
         ].append(
             raw_return
         )
 
-    report = []
+        rank_key = (
+            str(
+                signal[
+                    "rank_bucket"
+                ]
+            ),
+            horizon,
+        )
+
+        rank_groups[
+            rank_key
+        ].append(
+            raw_return
+        )
+
+    tier_path_report = []
 
     for (
         tier,
-        path,
+        path_name,
         horizon,
-    ), values in groups.items():
+    ), values in tier_path_groups.items():
 
-        n = len(
-            values
-        )
-
-        positive = sum(
-            value > 0
-            for value in values
-        )
-
-        big_move = sum(
-            value >= 5
-            for value in values
-        )
-
-        avg_return = (
-            sum(values)
-            / n
-            if n
-            else 0.0
-        )
-
-        report.append({
+        tier_path_report.append({
             "tier":
                 tier,
 
             "path":
-                path,
+                path_name,
 
             "horizon":
                 horizon,
 
-            "n":
-                n,
-
-            "positive":
-                positive,
-
-            "win_rate":
-                (
-                    positive
-                    / n
-                    * 100
-                    if n
-                    else 0.0
-                ),
-
-            "big_moves":
-                big_move,
-
-            "big_move_rate":
-                (
-                    big_move
-                    / n
-                    * 100
-                    if n
-                    else 0.0
-                ),
-
-            "avg_return":
-                avg_return,
+            **_movement_metrics(
+                values
+            ),
         })
 
-    report.sort(
+    tier_path_report.sort(
         key=lambda row: (
             row["horizon"],
             0
@@ -494,7 +615,49 @@ def build_performance_report(
         )
     )
 
-    return report
+    rank_report = []
+
+    bucket_order = {
+        "TOP_1_3": 0,
+        "TOP_4_5": 1,
+        "RESERVE_6_10": 2,
+        "UNRANKED": 3,
+    }
+
+    for (
+        bucket,
+        horizon,
+    ), values in rank_groups.items():
+
+        rank_report.append({
+            "bucket":
+                bucket,
+
+            "horizon":
+                horizon,
+
+            **_movement_metrics(
+                values
+            ),
+        })
+
+    rank_report.sort(
+        key=lambda row: (
+            row["horizon"],
+            bucket_order.get(
+                row["bucket"],
+                99,
+            ),
+        )
+    )
+
+    return {
+        "tier_path":
+            tier_path_report,
+
+        "rank":
+            rank_report,
+    }
 
 
 def print_current_candidates(
@@ -545,54 +708,145 @@ def print_current_candidates(
 
 
 def print_performance(
-    report: list[dict[str, Any]],
+    report: dict[
+        str,
+        list[dict[str, Any]],
+    ],
 ) -> None:
+    tier_path = report.get(
+        "tier_path",
+        [],
+    )
+
+    rank_report = report.get(
+        "rank",
+        [],
+    )
+
     print()
     print(
-        "=" * 100
+        "=" * 128
     )
 
     print(
-        "V7.4 PERFORMANCE — PRIMARY vs RESERVE / CONTINUATION vs REVERSAL"
+        "V7.4 FORWARD PERFORMANCE — RAW PRICE EXPANSION"
     )
 
     print(
-        "=" * 100
+        "=" * 128
     )
 
-    if not report:
+    if not tier_path:
         print(
             "No matured V7.4 outcomes yet."
         )
 
         return
 
+    print()
+    print(
+        "PRIMARY / RESERVE + PATH"
+    )
+
     print(
         f"{'H':>3} "
         f"{'TIER':<9} "
         f"{'PATH':<13} "
         f"{'N':>5} "
-        f"{'WIN%':>8} "
-        f"{'+5%':>6} "
-        f"{'+5% RATE':>10} "
-        f"{'AVG RET':>10}"
+        f"{'POS%':>7} "
+        f"{'AVG RAW':>9} "
+        f"{'AVG ABS':>9} "
+        f"{'EXP3%':>8} "
+        f"{'EXP5%':>8} "
+        f"{'EXP10%':>8} "
+        f"{'UP5%':>7} "
+        f"{'DN5%':>7}"
     )
 
     print(
-        "-" * 100
+        "-" * 128
     )
 
-    for row in report:
+    for row in tier_path:
         print(
             f"{row['horizon']:>3} "
             f"{row['tier']:<9} "
             f"{row['path']:<13} "
             f"{row['n']:>5} "
-            f"{row['win_rate']:>7.1f}% "
-            f"{row['big_moves']:>6} "
-            f"{row['big_move_rate']:>9.1f}% "
-            f"{row['avg_return']:>9.3f}%"
+            f"{row['positive_rate']:>6.1f}% "
+            f"{row['avg_raw_return']:>8.3f}% "
+            f"{row['avg_abs_move']:>8.3f}% "
+            f"{row['expansion_3_rate']:>7.1f}% "
+            f"{row['expansion_5_rate']:>7.1f}% "
+            f"{row['expansion_10_rate']:>7.1f}% "
+            f"{row['up_5_rate']:>6.1f}% "
+            f"{row['down_5_rate']:>6.1f}%"
         )
+
+    print()
+    print(
+        "RANK QUALITY"
+    )
+
+    print(
+        f"{'H':>3} "
+        f"{'RANK BUCKET':<15} "
+        f"{'N':>5} "
+        f"{'POS%':>7} "
+        f"{'AVG RAW':>9} "
+        f"{'AVG ABS':>9} "
+        f"{'EXP3%':>8} "
+        f"{'EXP5%':>8} "
+        f"{'EXP10%':>8} "
+        f"{'UP5%':>7} "
+        f"{'DN5%':>7}"
+    )
+
+    print(
+        "-" * 112
+    )
+
+    for row in rank_report:
+        print(
+            f"{row['horizon']:>3} "
+            f"{row['bucket']:<15} "
+            f"{row['n']:>5} "
+            f"{row['positive_rate']:>6.1f}% "
+            f"{row['avg_raw_return']:>8.3f}% "
+            f"{row['avg_abs_move']:>8.3f}% "
+            f"{row['expansion_3_rate']:>7.1f}% "
+            f"{row['expansion_5_rate']:>7.1f}% "
+            f"{row['expansion_10_rate']:>7.1f}% "
+            f"{row['up_5_rate']:>6.1f}% "
+            f"{row['down_5_rate']:>6.1f}%"
+        )
+
+    print()
+    print(
+        "Metric definitions:"
+    )
+
+    print(
+        "AVG RAW = average raw market return from detection price."
+    )
+
+    print(
+        "AVG ABS = average absolute price movement regardless of direction."
+    )
+
+    print(
+        "EXP3/5/10 = percentage of candidates moving at least "
+        "3% / 5% / 10% in either direction."
+    )
+
+    print(
+        "UP5 = raw upside move >= +5%; "
+        "DN5 = raw downside move <= -5%."
+    )
+
+    print(
+        "No V7.4 trade-direction assumption is used in these metrics."
+    )
 
 
 def main() -> int:
