@@ -2899,6 +2899,72 @@ def print_report(
     print()
 
 
+    pre_summary = snapshot.get(
+        "pre_move_summary",
+        {},
+    )
+
+    print("V7.4 PRE-MOVE SURVEILLANCE")
+
+    print(
+        "Eligible: "
+        f"{pre_summary.get('eligible_count', 0)} | "
+        "Primary: "
+        f"{pre_summary.get('primary_count', 0)} | "
+        "Reserve: "
+        f"{pre_summary.get('reserve_count', 0)}"
+    )
+
+    primary = sorted(
+        [
+            item
+            for item in snapshot.get("symbols", [])
+            if item.get("pre_move_tier") == "PRIMARY"
+        ],
+        key=lambda item: item.get("pre_move_rank") or 999,
+    )
+
+    reserve = sorted(
+        [
+            item
+            for item in snapshot.get("symbols", [])
+            if item.get("pre_move_tier") == "RESERVE"
+        ],
+        key=lambda item: item.get("pre_move_rank") or 999,
+    )
+
+    if primary:
+        print()
+        print("PRIMARY")
+
+        for item in primary:
+            print(
+                f"{item.get('pre_move_rank', '—'):>2} "
+                f"{item.get('symbol', '—'):<14} "
+                f"{item.get('pre_move_path', '—'):<13} "
+                f"{safe_float(item.get('pre_move_score')):>6.2f} "
+                f"state={item.get('state', '—')}"
+            )
+
+    if reserve:
+        print()
+        print("RESERVE")
+
+        for item in reserve:
+            print(
+                f"{item.get('pre_move_rank', '—'):>2} "
+                f"{item.get('symbol', '—'):<14} "
+                f"{item.get('pre_move_path', '—'):<13} "
+                f"{safe_float(item.get('pre_move_score')):>6.2f} "
+                f"state={item.get('state', '—')}"
+            )
+
+    if not primary and not reserve:
+        print("No V7.4 pre-move candidates.")
+
+    print()
+
+
 # =========================================================
 # MAIN
 # =========================================================
