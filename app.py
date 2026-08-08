@@ -33,6 +33,14 @@ SNAPSHOT_TABLE = os.getenv(
 )
 
 
+REFERENCE_SYMBOLS = {
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+}
+
+
 scan_lock = threading.Lock()
 
 scan_state: dict[str, Any] = {
@@ -48,10 +56,8 @@ scan_state: dict[str, Any] = {
 def supabase_headers() -> dict[str, str]:
     return {
         "apikey": SUPABASE_KEY,
-        "Authorization":
-            f"Bearer {SUPABASE_KEY}",
-        "Content-Type":
-            "application/json",
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
     }
 
 
@@ -62,8 +68,8 @@ def latest_snapshot() -> dict[str, Any]:
         or not SUPABASE_KEY
     ):
         raise RuntimeError(
-            "Supabase environment "
-            "variables are not configured"
+            "Supabase environment variables "
+            "are not configured"
         )
 
     response = requests.get(
@@ -86,8 +92,7 @@ def latest_snapshot() -> dict[str, Any]:
             "limit":
                 "1",
         },
-        headers=
-            supabase_headers(),
+        headers=supabase_headers(),
         timeout=15,
     )
 
@@ -97,16 +102,12 @@ def latest_snapshot() -> dict[str, Any]:
 
     if not rows:
         raise RuntimeError(
-            "No Alpha Hunter "
-            "snapshots found"
+            "No Alpha Hunter snapshots found"
         )
 
-    return (
-        rows[0].get(
-            "payload"
-        )
-        or {}
-    )
+    return rows[0].get(
+        "payload"
+    ) or {}
 
 
 def safe_float(
@@ -124,19 +125,16 @@ def safe_float(
 
 
 def dashboard_payload(
-    snapshot:
-        dict[str, Any],
+    snapshot: dict[str, Any],
 ) -> dict[str, Any]:
 
     symbols = [
         row
-        for row
-        in snapshot.get(
+        for row in snapshot.get(
             "symbols",
             [],
         )
-        if "error"
-        not in row
+        if "error" not in row
     ]
 
     for row in symbols:
@@ -151,49 +149,106 @@ def dashboard_payload(
             {},
         )
 
-        row["_score"] = (
-            safe_float(
-                intel.get(
-                    "huge_rr_score"
-                )
+        row["_score"] = safe_float(
+            intel.get(
+                "huge_rr_score"
             )
         )
 
-        row["_confidence"] = (
-            safe_float(
-                intel.get(
-                    "confidence_estimate_pct"
-                )
+        row["_confidence"] = safe_float(
+            intel.get(
+                "confidence_estimate_pct"
             )
         )
 
-        row["_rr"] = (
-            setup.get("rr")
+        row["_behaviour"] = safe_float(
+            row.get(
+                "behaviour_score"
+            )
         )
 
-        row["_direction"] = (
-            setup.get(
-                "direction"
-            )
+        row["_rr"] = setup.get(
+            "rr"
+        )
+
+        row["_direction"] = setup.get(
+            "direction"
         )
 
         row["_trade"] = bool(
             row.get(
-                "trade_permission"
+                "v7_trade_ready"
             )
         )
 
+        row["_discovery"] = bool(
+            row.get(
+                "discovery_permission"
+            )
+        )
+
+        row["_phase"] = row.get(
+            "market_phase",
+            "—",
+        )
+
+        row["_timing"] = row.get(
+            "opportunity_timing",
+            "—",
+        )
+
+        rejection_reasons = row.get(
+            "rejection_reasons",
+            [],
+        )
+
+        row["_rejection"] = (
+            ", ".join(
+                rejection_reasons
+            )
+            if rejection_reasons
+            else ""
+        )
+
+        row["_reference"] = (
+            row.get(
+                "symbol"
+            )
+            in REFERENCE_SYMBOLS
+        )
+
+    discovery_symbols = [
+        row
+        for row in symbols
+        if not row["_reference"]
+    ]
+
     ranked = sorted(
-        symbols,
-        key=lambda row:
+        discovery_symbols,
+        key=lambda row: (
+            row["_discovery"],
+            row["_behaviour"],
             row["_score"],
+        ),
         reverse=True,
+    )
+
+    references = sorted(
+        [
+            row
+            for row in symbols
+            if row["_reference"]
+        ],
+        key=lambda row:
+            row.get(
+                "symbol",
+                "",
+            ),
     )
 
     longs = [
         row
-        for row
-        in ranked
+        for row in ranked
         if (
             "LONG"
             in str(
@@ -211,8 +266,7 @@ def dashboard_payload(
 
     shorts = [
         row
-        for row
-        in ranked
+        for row in ranked
         if (
             "SHORT"
             in str(
@@ -230,23 +284,36 @@ def dashboard_payload(
 
     trade_ready = [
         row
-        for row
-        in ranked
+        for row in ranked
         if row["_trade"]
     ]
 
-    universe = (
-        snapshot.get(
-            "universe",
-            {},
-        )
+    discovery_pass = [
+        row
+        for row in ranked
+        if row["_discovery"]
+    ]
+
+    early_pass = [
+        row
+        for row in discovery_pass
+        if row["_timing"]
+        == "EARLY"
+    ]
+
+    universe = snapshot.get(
+        "universe",
+        {},
     )
 
-    account = (
-        snapshot.get(
-            "private_account",
-            {},
-        )
+    account = snapshot.get(
+        "private_account",
+        {},
+    )
+
+    discovery_summary = snapshot.get(
+        "discovery_summary",
+        {},
     )
 
     return {
@@ -254,7 +321,10 @@ def dashboard_payload(
             snapshot,
 
         "ranked":
-            ranked[:20],
+            ranked[:25],
+
+        "references":
+            references,
 
         "longs":
             longs[:10],
@@ -264,6 +334,12 @@ def dashboard_payload(
 
         "trade_ready":
             trade_ready,
+
+        "discovery_pass":
+            discovery_pass,
+
+        "early_pass":
+            early_pass,
 
         "positions":
             account.get(
@@ -284,6 +360,16 @@ def dashboard_payload(
             snapshot.get(
                 "collected_at_utc"
             ),
+
+        "btc_change_24h":
+            safe_float(
+                snapshot.get(
+                    "btc_change_24h_pct"
+                )
+            ),
+
+        "discovery_summary":
+            discovery_summary,
     }
 
 
@@ -325,25 +411,17 @@ def run_scan_worker() -> None:
 
     try:
 
-        completed = (
-            subprocess.run(
-                [
-                    sys.executable,
-                    "run.py",
-                ],
-                cwd=
-                    project_root,
-                env=
-                    os.environ.copy(),
-                capture_output=
-                    True,
-                text=
-                    True,
-                timeout=
-                    900,
-                check=
-                    False,
-            )
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "run.py",
+            ],
+            cwd=project_root,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=900,
+            check=False,
         )
 
         with scan_lock:
@@ -352,18 +430,12 @@ def run_scan_worker() -> None:
                 "return_code"
             ] = completed.returncode
 
-        if (
-            completed.returncode
-            != 0
-        ):
+        if completed.returncode != 0:
 
             error_text = (
                 completed.stderr
                 or completed.stdout
-                or (
-                    "Unknown scanner "
-                    "error"
-                )
+                or "Unknown scanner error"
             ).strip()
 
             with scan_lock:
@@ -374,11 +446,7 @@ def run_scan_worker() -> None:
 
                 scan_state[
                     "error"
-                ] = (
-                    error_text[
-                        -5000:
-                    ]
-                )
+                ] = error_text[-5000:]
 
         else:
 
@@ -392,9 +460,7 @@ def run_scan_worker() -> None:
                     "error"
                 ] = None
 
-    except (
-        subprocess.TimeoutExpired
-    ):
+    except subprocess.TimeoutExpired:
 
         with scan_lock:
 
@@ -420,8 +486,8 @@ def run_scan_worker() -> None:
             scan_state[
                 "error"
             ] = (
-                "Unable to run "
-                f"scanner: {exc}"
+                "Unable to run scanner: "
+                f"{exc}"
             )
 
     finally:
@@ -441,7 +507,6 @@ def run_scan_worker() -> None:
 
 PAGE = r"""
 <!doctype html>
-
 <html lang="en">
 
 <head>
@@ -450,10 +515,7 @@ PAGE = r"""
 
 <meta
     name="viewport"
-    content="
-        width=device-width,
-        initial-scale=1
-    "
+    content="width=device-width, initial-scale=1"
 >
 
 <meta
@@ -462,37 +524,36 @@ PAGE = r"""
 >
 
 <title>
-Alpha Hunter V7
+Alpha Hunter V7.1
 </title>
 
 <style>
 
 :root {
-    --bg:#071018;
-    --panel:#0d1822;
-    --line:#1c2c39;
-    --text:#e8f0f6;
-    --muted:#8ea1b2;
-    --green:#24d18f;
-    --red:#ff6474;
-    --amber:#ffbf47;
-    --blue:#4db6ff;
+    --bg: #071018;
+    --panel: #0d1822;
+    --line: #1c2c39;
+    --text: #e8f0f6;
+    --muted: #8ea1b2;
+    --green: #24d18f;
+    --red: #ff6474;
+    --amber: #ffbf47;
+    --blue: #4db6ff;
 }
 
 * {
-    box-sizing:border-box;
+    box-sizing: border-box;
 }
 
 body {
-    margin:0;
+    margin: 0;
     background:
         linear-gradient(
             180deg,
             #050b11,
             #09131c
         );
-    color:
-        var(--text);
+    color: var(--text);
     font-family:
         Inter,
         system-ui,
@@ -501,51 +562,42 @@ body {
 }
 
 .wrap {
-    max-width:1500px;
-    margin:auto;
-    padding:24px;
+    max-width: 1600px;
+    margin: auto;
+    padding: 24px;
 }
 
 .top {
-    display:flex;
-    justify-content:
-        space-between;
-    gap:20px;
-    align-items:
-        flex-end;
-    margin-bottom:20px;
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: flex-end;
+    margin-bottom: 20px;
 }
 
 h1 {
-    margin:0;
-    font-size:30px;
+    margin: 0;
+    font-size: 30px;
 }
 
 .sub {
-    color:
-        var(--muted);
-    margin-top:6px;
+    color: var(--muted);
+    margin-top: 6px;
 }
 
 .status {
-    padding:9px 13px;
-    border:
-        1px solid
-        var(--line);
-    border-radius:999px;
-    background:
-        var(--panel);
+    padding: 9px 13px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
 }
 
 .grid {
-    display:grid;
+    display: grid;
     grid-template-columns:
-        repeat(
-            4,
-            1fr
-        );
-    gap:14px;
-    margin-bottom:18px;
+        repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
 }
 
 .card,
@@ -560,119 +612,127 @@ h1 {
     border:
         1px solid
         var(--line);
-    border-radius:16px;
+    border-radius: 16px;
 }
 
 .card {
-    padding:18px;
+    padding: 18px;
 }
 
 .label {
-    font-size:12px;
-    text-transform:
-        uppercase;
-    letter-spacing:.08em;
-    color:
-        var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
 }
 
 .value {
-    font-size:26px;
-    font-weight:750;
-    margin-top:6px;
+    font-size: 26px;
+    font-weight: 750;
+    margin-top: 6px;
 }
 
 .layout {
-    display:grid;
+    display: grid;
     grid-template-columns:
-        2fr 1fr;
-    gap:18px;
+        3fr 1fr;
+    gap: 18px;
 }
 
 .panel {
-    padding:18px;
-    margin-bottom:18px;
+    padding: 18px;
+    margin-bottom: 18px;
 }
 
 .panel h2 {
-    font-size:17px;
-    margin:
-        0 0 14px;
+    font-size: 17px;
+    margin: 0 0 14px;
 }
 
 table {
-    width:100%;
-    border-collapse:
-        collapse;
-    font-size:13px;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
 }
 
 th {
-    text-align:left;
-    color:
-        var(--muted);
-    font-weight:600;
-    padding:10px 8px;
+    text-align: left;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 10px 7px;
     border-bottom:
         1px solid
         var(--line);
 }
 
 td {
-    padding:11px 8px;
+    padding: 11px 7px;
     border-bottom:
         1px solid
         #142431;
-    white-space:
-        nowrap;
+    white-space: nowrap;
 }
 
 .score {
-    font-weight:800;
+    font-weight: 800;
 }
 
 .long {
-    color:
-        var(--green);
+    color: var(--green);
 }
 
 .short {
-    color:
-        var(--red);
+    color: var(--red);
+}
+
+.pass {
+    color: var(--green);
+}
+
+.reject {
+    color: var(--red);
+}
+
+.early {
+    color: var(--green);
+    font-weight: 700;
+}
+
+.fair {
+    color: var(--amber);
+}
+
+.late {
+    color: var(--red);
 }
 
 .badge {
-    display:inline-block;
-    padding:4px 8px;
-    border-radius:999px;
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 999px;
     border:
         1px solid
         var(--line);
-    font-size:11px;
+    font-size: 11px;
 }
 
 .yes {
-    color:
-        var(--green);
-    border-color:
-        #1f6a50;
+    color: var(--green);
+    border-color: #1f6a50;
 }
 
 .no {
-    color:
-        var(--muted);
+    color: var(--muted);
 }
 
 .empty {
-    color:
-        var(--muted);
-    padding:18px 0;
+    color: var(--muted);
+    padding: 18px 0;
 }
 
 .small {
-    font-size:12px;
-    color:
-        var(--muted);
+    font-size: 12px;
+    color: var(--muted);
 }
 
 .run-button {
@@ -685,51 +745,72 @@ td {
         #24d18f;
     padding:
         10px 14px;
-    border-radius:10px;
-    font-weight:700;
-    cursor:pointer;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
 }
 
 .run-button:disabled {
-    opacity:.55;
-    cursor:
-        not-allowed;
+    opacity: .55;
+    cursor: not-allowed;
 }
 
 .scan-message {
-    font-size:12px;
-    color:
-        var(--muted);
-    margin-top:6px;
-    text-align:right;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+    text-align: right;
+    max-width: 600px;
 }
 
-@media(
-    max-width:900px
-) {
+.reason {
+    white-space: normal;
+    max-width: 220px;
+    color: var(--muted);
+}
+
+.reference-row {
+    display: grid;
+    grid-template-columns:
+        1.1fr .8fr .8fr .8fr 1fr;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom:
+        1px solid
+        #142431;
+    font-size: 12px;
+}
+
+@media(max-width: 1100px) {
 
     .grid {
         grid-template-columns:
-            repeat(
-                2,
-                1fr
-            );
+            repeat(2, 1fr);
     }
 
     .layout {
-        grid-template-columns:
-            1fr;
+        grid-template-columns: 1fr;
     }
+}
+
+@media(max-width: 700px) {
 
     .wrap {
-        padding:14px;
+        padding: 14px;
     }
 
     .top {
-        align-items:
-            flex-start;
-        flex-direction:
-            column;
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    table {
+        display: block;
+        overflow-x: auto;
     }
 }
 
@@ -746,12 +827,13 @@ td {
         <div>
 
             <h1>
-                Alpha Hunter V7
+                Alpha Hunter V7.1
             </h1>
 
             <div class="sub">
-                Behaviour Intelligence
-                & Full-Market Discovery
+                Behaviour Intelligence,
+                Candidate Quality &
+                Full-Market Discovery
             </div>
 
         </div>
@@ -841,6 +923,46 @@ td {
         <div class="card">
 
             <div class="label">
+                Discovery PASS
+            </div>
+
+            <div class="value">
+                {{
+                    data.discovery_pass
+                    | length
+                }}
+            </div>
+
+            <div class="small">
+                qualified candidates
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="label">
+                EARLY
+            </div>
+
+            <div class="value">
+                {{
+                    data.early_pass
+                    | length
+                }}
+            </div>
+
+            <div class="small">
+                early-stage candidates
+            </div>
+
+        </div>
+
+
+        <div class="card">
+
+            <div class="label">
                 Trade Ready
             </div>
 
@@ -852,7 +974,7 @@ td {
             </div>
 
             <div class="small">
-                execution permission granted
+                strict execution permission
             </div>
 
         </div>
@@ -861,52 +983,29 @@ td {
         <div class="card">
 
             <div class="label">
-                Open Positions
+                BTC 24H
             </div>
 
-            <div class="value">
-                {{
-                    data.positions
-                    | length
-                }}
-            </div>
-
-            <div class="small">
-                Bitget private API:
-                {{
-                    data.account_status
-                }}
-            </div>
-
-        </div>
-
-
-        <div class="card">
-
-            <div class="label">
-                Top Score
-            </div>
-
-            <div class="value">
-                {{
-                    "%.1f"
-                    | format(
-                        data.ranked[0]
-                        ._score
-                    )
-                    if data.ranked
-                    else "—"
-                }}
-            </div>
-
-            <div class="small">
-                {{
-                    data.ranked[0]
-                    .symbol
-                    if data.ranked
+            <div
+                class="value {{
+                    'long'
+                    if data.btc_change_24h > 0
                     else
-                    "No candidate"
-                }}
+                    'short'
+                    if data.btc_change_24h < 0
+                    else ''
+                }}"
+            >
+                {{
+                    "%.2f"
+                    | format(
+                        data.btc_change_24h
+                    )
+                }}%
+            </div>
+
+            <div class="small">
+                regime reference
             </div>
 
         </div>
@@ -921,7 +1020,7 @@ td {
             <div class="panel">
 
                 <h2>
-                    Top Opportunities
+                    V7.1 Discovery Candidates
                 </h2>
 
                 <table>
@@ -933,11 +1032,14 @@ td {
                             <th>#</th>
                             <th>Symbol</th>
                             <th>Price</th>
+                            <th>Phase</th>
+                            <th>Timing</th>
+                            <th>Behaviour</th>
                             <th>State</th>
-                            <th>Score</th>
-                            <th>Conf.</th>
+                            <th>Discovery</th>
                             <th>RR</th>
                             <th>Trade</th>
+                            <th>Reason</th>
 
                         </tr>
 
@@ -969,6 +1071,39 @@ td {
                                 }}
                             </td>
 
+                            <td>
+                                {{
+                                    row._phase
+                                }}
+                            </td>
+
+                            <td
+                                class="{{
+                                    'early'
+                                    if row._timing == 'EARLY'
+                                    else
+                                    'fair'
+                                    if row._timing == 'FAIR'
+                                    else
+                                    'late'
+                                    if row._timing == 'LATE'
+                                    else ''
+                                }}"
+                            >
+                                {{
+                                    row._timing
+                                }}
+                            </td>
+
+                            <td class="score">
+                                {{
+                                    "%.2f"
+                                    | format(
+                                        row._behaviour
+                                    )
+                                }}
+                            </td>
+
                             <td
                                 class="{{
                                     'short'
@@ -992,23 +1127,19 @@ td {
                             </td>
 
                             <td
-                                class="score"
+                                class="{{
+                                    'pass'
+                                    if row._discovery
+                                    else
+                                    'reject'
+                                }}"
                             >
                                 {{
-                                    "%.1f"
-                                    | format(
-                                        row._score
-                                    )
+                                    "PASS"
+                                    if row._discovery
+                                    else
+                                    "REJECT"
                                 }}
-                            </td>
-
-                            <td>
-                                {{
-                                    "%.1f"
-                                    | format(
-                                        row._confidence
-                                    )
-                                }}%
                             </td>
 
                             <td>
@@ -1028,28 +1159,26 @@ td {
                             <td>
 
                                 <span
-                                    class="
-                                        badge
-                                        {{
-                                            'yes'
-                                            if
-                                            row._trade
-                                            else
-                                            'no'
-                                        }}
-                                    "
+                                    class="badge {{
+                                        'yes'
+                                        if row._trade
+                                        else 'no'
+                                    }}"
                                 >
-
                                     {{
                                         "READY"
-                                        if
-                                        row._trade
-                                        else
-                                        "WATCH"
+                                        if row._trade
+                                        else "WATCH"
                                     }}
-
                                 </span>
 
+                            </td>
+
+                            <td class="reason">
+                                {{
+                                    row._rejection
+                                    or "—"
+                                }}
                             </td>
 
                         </tr>
@@ -1059,6 +1188,69 @@ td {
                     </tbody>
 
                 </table>
+
+            </div>
+
+
+            <div class="panel">
+
+                <h2>
+                    Reference / Regime Assets
+                </h2>
+
+                {% if data.references %}
+
+                    <div class="reference-row">
+                        <b>Symbol</b>
+                        <b>Price</b>
+                        <b>Phase</b>
+                        <b>Timing</b>
+                        <b>Behaviour</b>
+                    </div>
+
+                    {% for row in data.references %}
+
+                        <div class="reference-row">
+
+                            <span>
+                                <b>
+                                    {{ row.symbol }}
+                                </b>
+                            </span>
+
+                            <span>
+                                {{ row.last_price }}
+                            </span>
+
+                            <span>
+                                {{ row._phase }}
+                            </span>
+
+                            <span>
+                                {{ row._timing }}
+                            </span>
+
+                            <span>
+                                {{
+                                    "%.2f"
+                                    | format(
+                                        row._behaviour
+                                    )
+                                }}
+                            </span>
+
+                        </div>
+
+                    {% endfor %}
+
+                {% else %}
+
+                    <div class="empty">
+                        No reference assets in
+                        current deep scan.
+                    </div>
+
+                {% endif %}
 
             </div>
 
@@ -1076,6 +1268,7 @@ td {
                         <thead>
 
                             <tr>
+
                                 <th>Symbol</th>
                                 <th>Side</th>
                                 <th>Size</th>
@@ -1083,6 +1276,7 @@ td {
                                 <th>Mark</th>
                                 <th>Leverage</th>
                                 <th>Unrealized P/L</th>
+
                             </tr>
 
                         </thead>
@@ -1174,9 +1368,9 @@ td {
 
                         <span class="long">
                             {{
-                                "%.1f"
+                                "%.2f"
                                 | format(
-                                    row._score
+                                    row._behaviour
                                 )
                             }}
                         </span>
@@ -1221,9 +1415,9 @@ td {
 
                         <span class="short">
                             {{
-                                "%.1f"
+                                "%.2f"
                                 | format(
-                                    row._score
+                                    row._behaviour
                                 )
                             }}
                         </span>
@@ -1240,6 +1434,55 @@ td {
 
             </div>
 
+
+            <div class="panel">
+
+                <h2>
+                    Universe Quality
+                </h2>
+
+                <div class="small">
+                    Eligible:
+                    {{
+                        data.universe.get(
+                            "eligible_count",
+                            0
+                        )
+                    }}
+                </div>
+
+                <div class="small">
+                    Non-crypto rejected:
+                    {{
+                        data.universe.get(
+                            "rejected_non_crypto",
+                            0
+                        )
+                    }}
+                </div>
+
+                <div class="small">
+                    Liquidity rejected:
+                    {{
+                        data.universe.get(
+                            "rejected_liquidity",
+                            0
+                        )
+                    }}
+                </div>
+
+                <div class="small">
+                    Expansion rejected:
+                    {{
+                        data.universe.get(
+                            "rejected_extension",
+                            0
+                        )
+                    }}
+                </div>
+
+            </div>
+
         </aside>
 
     </div>
@@ -1250,6 +1493,7 @@ td {
 <script>
 
 let scanPollTimer = null;
+
 
 async function runScan() {
 
@@ -1266,7 +1510,7 @@ async function runScan() {
     button.disabled = true;
 
     message.textContent =
-        "Starting V7 full-market scan...";
+        "Starting V7.1 scan...";
 
     try {
 
@@ -1274,8 +1518,7 @@ async function runScan() {
             await fetch(
                 "/api/run-scan",
                 {
-                    method:
-                        "POST"
+                    method: "POST"
                 }
             );
 
@@ -1293,7 +1536,8 @@ async function runScan() {
         }
 
         message.textContent =
-            "Scan running in background...";
+            "V7.1 scan running "
+            + "in background...";
 
         startScanPolling();
 
@@ -1350,7 +1594,7 @@ async function checkScanStatus() {
         if (result.running) {
 
             message.textContent =
-                "V7 scan running...";
+                "V7.1 scan running...";
 
             button.disabled =
                 true;
@@ -1368,8 +1612,7 @@ async function checkScanStatus() {
                 scanPollTimer
             );
 
-            scanPollTimer =
-                null;
+            scanPollTimer = null;
 
             message.textContent =
                 "Scan completed. "
@@ -1395,13 +1638,11 @@ async function checkScanStatus() {
                 scanPollTimer
             );
 
-            scanPollTimer =
-                null;
+            scanPollTimer = null;
 
             message.textContent =
                 "Scan failed: "
-                +
-                (
+                + (
                     result.error
                     ||
                     "unknown error"
@@ -1419,7 +1660,8 @@ async function checkScanStatus() {
     } catch (error) {
 
         message.textContent =
-            "Unable to read scan status";
+            "Unable to read "
+            + "scan status";
 
         button.disabled =
             false;
@@ -1439,18 +1681,13 @@ def dashboard():
 
     try:
 
-        snapshot = (
-            latest_snapshot()
-        )
+        snapshot = latest_snapshot()
 
-        return (
-            render_template_string(
-                PAGE,
-                data=
-                    dashboard_payload(
-                        snapshot
-                    ),
-            )
+        return render_template_string(
+            PAGE,
+            data=dashboard_payload(
+                snapshot
+            ),
         )
 
     except Exception as exc:
@@ -1465,8 +1702,7 @@ def dashboard():
                     "{{ error }}"
                     "</p>"
                 ),
-                error=
-                    str(exc),
+                error=str(exc),
             ),
             503,
         )
@@ -1530,8 +1766,7 @@ def api_run_scan():
         ] = None
 
     thread = threading.Thread(
-        target=
-            run_scan_worker,
+        target=run_scan_worker,
         daemon=True,
     )
 
@@ -1544,7 +1779,7 @@ def api_run_scan():
 
             "message":
                 (
-                    "Alpha Hunter V7 "
+                    "Alpha Hunter V7.1 "
                     "scan started"
                 ),
         }),
@@ -1556,7 +1791,6 @@ def api_run_scan():
 def api_scan_status():
 
     with scan_lock:
-
         return jsonify(
             dict(
                 scan_state
@@ -1582,7 +1816,6 @@ def performance_dashboard():
             12,
             24,
         }:
-
             horizon = 1
 
         report = (
@@ -1594,12 +1827,9 @@ def performance_dashboard():
             )
         )
 
-        return (
-            render_template_string(
-                PERFORMANCE_PAGE,
-                data=
-                    report,
-            )
+        return render_template_string(
+            PERFORMANCE_PAGE,
+            data=report,
         )
 
     except Exception as exc:
@@ -1619,8 +1849,7 @@ def performance_dashboard():
                     "</a>"
                     "</p>"
                 ),
-                error=
-                    str(exc),
+                error=str(exc),
             ),
             503,
         )
@@ -1644,7 +1873,6 @@ def api_performance():
             12,
             24,
         }:
-
             horizon = 1
 
         return jsonify(
@@ -1677,6 +1905,9 @@ def health():
         "service":
             "alpha-hunter-dashboard",
 
+        "version":
+            "7.1",
+
         "scan_status":
             scan_state[
                 "status"
@@ -1697,9 +1928,7 @@ def health():
 if __name__ == "__main__":
 
     app.run(
-        host=
-            "0.0.0.0",
-
+        host="0.0.0.0",
         port=int(
             os.getenv(
                 "PORT",
