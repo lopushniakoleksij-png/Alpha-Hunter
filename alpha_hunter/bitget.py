@@ -31,14 +31,22 @@ class BitgetClient:
         **kwargs: Any,
     ) -> "BitgetClient":
         return cls(
-            api_key=os.getenv("BITGET_API_KEY"),
-            secret_key=os.getenv("BITGET_SECRET_KEY"),
-            passphrase=os.getenv("BITGET_API_PASSPHRASE"),
+            api_key=os.getenv(
+                "BITGET_API_KEY"
+            ),
+            secret_key=os.getenv(
+                "BITGET_SECRET_KEY"
+            ),
+            passphrase=os.getenv(
+                "BITGET_API_PASSPHRASE"
+            ),
             **kwargs,
         )
 
     @property
-    def private_api_configured(self) -> bool:
+    def private_api_configured(
+        self,
+    ) -> bool:
         return bool(
             self.api_key
             and self.secret_key
@@ -62,20 +70,27 @@ class BitgetClient:
             self.max_retries + 1,
         ):
             try:
+
                 headers = {
                     "locale": "en-US"
                 }
 
                 if private:
-                    if not self.private_api_configured:
+
+                    if (
+                        not self
+                        .private_api_configured
+                    ):
                         raise BitgetAPIError(
-                            "Bitget private API credentials "
-                            "are not configured"
+                            "Bitget private API "
+                            "credentials are not "
+                            "configured"
                         )
 
                     ts = str(
                         int(
-                            time.time() * 1000
+                            time.time()
+                            * 1000
                         )
                     )
 
@@ -98,47 +113,62 @@ class BitgetClient:
                         f"{target}"
                     )
 
-                    sign = base64.b64encode(
-                        hmac.new(
-                            self.secret_key.encode(),
-                            prehash.encode(),
-                            hashlib.sha256,
-                        ).digest()
-                    ).decode()
+                    sign = (
+                        base64.b64encode(
+                            hmac.new(
+                                self.secret_key
+                                .encode(),
+                                prehash.encode(),
+                                hashlib.sha256,
+                            ).digest()
+                        ).decode()
+                    )
 
                     headers.update({
                         "ACCESS-KEY":
                             self.api_key,
+
                         "ACCESS-SIGN":
                             sign,
+
                         "ACCESS-TIMESTAMP":
                             ts,
+
                         "ACCESS-PASSPHRASE":
                             self.passphrase,
+
                         "Content-Type":
                             "application/json",
                     })
 
-                response = requests.request(
-                    method.upper(),
-                    self.base_url + path,
-                    params=params,
-                    headers=headers,
-                    timeout=self.timeout,
+                response = (
+                    requests.request(
+                        method.upper(),
+                        self.base_url
+                        + path,
+                        params=params,
+                        headers=headers,
+                        timeout=self.timeout,
+                    )
                 )
 
                 response.raise_for_status()
 
                 payload = response.json()
 
-                if payload.get("code") != "00000":
+                if (
+                    payload.get("code")
+                    != "00000"
+                ):
                     raise BitgetAPIError(
                         "Bitget error "
                         f"{payload.get('code')}: "
                         f"{payload.get('msg')}"
                     )
 
-                return payload.get("data")
+                return payload.get(
+                    "data"
+                )
 
             except (
                 requests.RequestException,
@@ -148,20 +178,25 @@ class BitgetClient:
 
                 last_error = exc
 
-                if attempt < self.max_retries:
+                if (
+                    attempt
+                    < self.max_retries
+                ):
                     time.sleep(
                         0.5
                         * (
                             2
                             ** (
-                                attempt - 1
+                                attempt
+                                - 1
                             )
                         )
                     )
 
         raise BitgetAPIError(
             "Request failed after "
-            f"{self.max_retries} attempts: "
+            f"{self.max_retries} "
+            "attempts: "
             f"{last_error}"
         )
 
@@ -172,12 +207,17 @@ class BitgetClient:
         *,
         private: bool = False,
     ) -> Any:
+
         return self._request(
             "GET",
             path,
             params,
             private=private,
         )
+
+    # -------------------------------------------------
+    # MARKET UNIVERSE
+    # -------------------------------------------------
 
     def contracts(
         self,
@@ -189,7 +229,32 @@ class BitgetClient:
                 "productType":
                     product_type
             },
+        ) or []
+
+    def instruments(
+        self,
+        product_type: str,
+    ):
+        """
+        Bitget V3 instrument metadata.
+
+        Used by Alpha Hunter V7.1
+        to distinguish crypto futures
+        from RWA / reality / other
+        non-crypto contracts.
+        """
+
+        category = (
+            product_type.upper()
         )
+
+        return self._get(
+            "/api/v3/market/instruments",
+            {
+                "category":
+                    category
+            },
+        ) or []
 
     def tickers(
         self,
@@ -203,16 +268,22 @@ class BitgetClient:
             },
         ) or []
 
+    # -------------------------------------------------
+    # SYMBOL MARKET DATA
+    # -------------------------------------------------
+
     def ticker(
         self,
         symbol: str,
         product_type: str,
     ):
+
         data = self._get(
             "/api/v2/mix/market/ticker",
             {
                 "symbol":
                     symbol,
+
                 "productType":
                     product_type,
             },
@@ -220,7 +291,8 @@ class BitgetClient:
 
         if not data:
             raise BitgetAPIError(
-                f"No ticker data for {symbol}"
+                "No ticker data for "
+                f"{symbol}"
             )
 
         return data[0]
@@ -230,11 +302,13 @@ class BitgetClient:
         symbol: str,
         product_type: str,
     ):
+
         data = self._get(
             "/api/v2/mix/market/symbol-price",
             {
                 "symbol":
                     symbol,
+
                 "productType":
                     product_type,
             },
@@ -255,30 +329,40 @@ class BitgetClient:
         granularity: str,
         limit: int,
     ):
+
         return self._get(
             "/api/v2/mix/market/candles",
             {
                 "symbol":
                     symbol,
+
                 "productType":
                     product_type,
+
                 "granularity":
                     granularity,
+
                 "limit":
                     str(limit),
             },
         )
+
+    # -------------------------------------------------
+    # DERIVATIVES PARTICIPATION
+    # -------------------------------------------------
 
     def open_interest(
         self,
         symbol: str,
         product_type: str,
     ):
+
         return self._get(
             "/api/v2/mix/market/open-interest",
             {
                 "symbol":
                     symbol,
+
                 "productType":
                     product_type,
             },
@@ -289,11 +373,13 @@ class BitgetClient:
         symbol: str,
         product_type: str,
     ):
+
         data = self._get(
             "/api/v2/mix/market/current-fund-rate",
             {
                 "symbol":
                     symbol,
+
                 "productType":
                     product_type,
             },
@@ -301,7 +387,8 @@ class BitgetClient:
 
         if not data:
             raise BitgetAPIError(
-                f"No funding data for {symbol}"
+                "No funding data for "
+                f"{symbol}"
             )
 
         return data[0]
@@ -312,24 +399,33 @@ class BitgetClient:
         product_type: str,
         page_size: int = 30,
     ):
+
         return self._get(
             "/api/v2/mix/market/history-fund-rate",
             {
                 "symbol":
                     symbol,
+
                 "productType":
                     product_type,
+
                 "pageSize":
                     str(page_size),
+
                 "pageNo":
                     "1",
             },
         )
 
+    # -------------------------------------------------
+    # PRIVATE ACCOUNT
+    # -------------------------------------------------
+
     def futures_accounts(
         self,
         product_type: str,
     ):
+
         return self._get(
             "/api/v2/mix/account/accounts",
             {
@@ -344,11 +440,13 @@ class BitgetClient:
         product_type: str,
         margin_coin: str = "USDT",
     ):
+
         return self._get(
             "/api/v2/mix/position/all-position",
             {
                 "productType":
                     product_type,
+
                 "marginCoin":
                     margin_coin,
             },
