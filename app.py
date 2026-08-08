@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -203,18 +205,38 @@ def api_latest():
 
 @app.get("/performance")
 def performance_dashboard():
-    try:
-        horizon = int(request.args.get("horizon", "1"))
-        if horizon not in {1, 4, 12, 24}:
-            horizon = 1
-        report = StatisticsService(SUPABASE_URL, SUPABASE_KEY).report(horizon)
-        return render_template_string(PERFORMANCE_PAGE, data=report)
-    except Exception as exc:
-        return render_template_string(
-            "<h1>Performance Analytics</h1><p>{{ error }}</p><p><a href='/'>Back</a></p>",
-            error=str(exc),
-        ), 503
+    @app.post("/api/run-scan")
+def api_run_scan():
+    project_root = os.path.dirname(os.path.abspath(__file__))
 
+    try:
+        completed = subprocess.run(
+            [sys.executable, "run.py"],
+            cwd=project_root,
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Scan timed out after 5 minutes"}), 504
+    except Exception as exc:
+        return jsonify({"error": f"Unable to start scanner: {exc}"}), 500
+
+    if completed.returncode != 0:
+        error_text = (
+            completed.stderr
+            or completed.stdout
+            or "Unknown scanner error"
+        ).strip()
+
+        return jsonify({"error": error_text[-3000:]}), 500
+
+    return jsonify({
+        "status": "ok",
+        "message": "Scan completed"
+    })
 @app.get("/api/performance")
 def api_performance():
     try:
