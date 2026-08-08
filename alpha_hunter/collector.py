@@ -24,6 +24,7 @@ from .analysis import (
 from .bitget import BitgetAPIError, BitgetClient
 from .env import load_env_file
 from .decision_trace import build_decision_trace
+from .pre_move import apply_pre_move_engine
 from .private_account import collect_private_account_snapshot
 from .storage import (
     SupabaseConfig,
@@ -3131,6 +3132,11 @@ def main() -> int:
             config,
         )
 
+    pre_move_summary = apply_pre_move_engine(
+        results,
+        config,
+    )
+
     results.sort(
         key=lambda item:
             (
@@ -3204,6 +3210,9 @@ def main() -> int:
 
         "universe":
             universe,
+
+        "pre_move_summary":
+            pre_move_summary,
 
         "discovery_summary": {
             "qualified_count":
