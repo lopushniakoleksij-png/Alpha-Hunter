@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 
-TRACE_VERSION = "7.2"
+TRACE_VERSION = "7.2.1"
 
 
 STAGE_ORDER = {
@@ -18,14 +18,19 @@ STAGE_ORDER = {
 }
 
 
-def _safe_float(value: Any, default: float = 0.0) -> float:
+def _safe_float(
+    value: Any,
+    default: float = 0.0,
+) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
 
 
-def _clean_list(values: Any) -> list[str]:
+def _clean_list(
+    values: Any,
+) -> list[str]:
     if not values:
         return []
 
@@ -46,7 +51,9 @@ def _clean_list(values: Any) -> list[str]:
     return output
 
 
-def _normalize_stage(value: Any) -> str | None:
+def _normalize_stage(
+    value: Any,
+) -> str | None:
     if value is None:
         return None
 
@@ -59,65 +66,144 @@ def _normalize_stage(value: Any) -> str | None:
     )
 
     aliases = {
-        "WATCH_LONG": "UNDER_SURVEILLANCE",
-        "WATCH_SHORT": "UNDER_SURVEILLANCE",
-        "DIRECTION_EMERGING_LONG": "DIRECTION_EMERGING",
-        "DIRECTION_EMERGING_SHORT": "DIRECTION_EMERGING",
-        "EXECUTION_WATCH": "EXECUTION_TEST",
-        "LONG_READY": "TRADE_READY",
-        "SHORT_READY": "TRADE_READY",
+        "WATCH_LONG":
+            "UNDER_SURVEILLANCE",
+
+        "WATCH_SHORT":
+            "UNDER_SURVEILLANCE",
+
+        "DIRECTION_EMERGING_LONG":
+            "DIRECTION_EMERGING",
+
+        "DIRECTION_EMERGING_SHORT":
+            "DIRECTION_EMERGING",
+
+        "EXECUTION_WATCH":
+            "EXECUTION_TEST",
+
+        "LONG_READY":
+            "TRADE_READY",
+
+        "SHORT_READY":
+            "TRADE_READY",
     }
 
-    return aliases.get(stage, stage)
+    return aliases.get(
+        stage,
+        stage,
+    )
+
+
+def _quality_rejections(
+    record: dict[str, Any],
+) -> list[str]:
+    return _clean_list(
+        record.get(
+            "rejection_reasons"
+        )
+    )
+
+
+def _minimum_discovery_score(
+    config: dict[str, Any],
+) -> float:
+    return _safe_float(
+        config.get(
+            "candidate_quality",
+            {},
+        ).get(
+            "minimum_discovery_score",
+            5.0,
+        ),
+        5.0,
+    )
 
 
 def _trace_stage(
     record: dict[str, Any],
     config: dict[str, Any],
 ) -> str:
-    behaviour_config = config.get("behaviour_engine", {})
 
-    score = _safe_float(record.get("behaviour_score"))
-    discovery = bool(record.get("discovery_permission"))
-    trade_ready = bool(record.get("v7_trade_ready"))
+    behaviour_config = config.get(
+        "behaviour_engine",
+        {},
+    )
 
-    rejected = (
-        str(record.get("candidate_quality_status", "")).upper()
-        == "REJECT"
+    score = _safe_float(
+        record.get(
+            "behaviour_score"
+        )
+    )
+
+    discovery = bool(
+        record.get(
+            "discovery_permission"
+        )
+    )
+
+    trade_ready = bool(
+        record.get(
+            "v7_trade_ready"
+        )
+    )
+
+    hard_rejections = _quality_rejections(
+        record
     )
 
     if trade_ready:
         return "TRADE_READY"
 
-    if rejected:
+    # Critical V7.2.1 distinction:
+    # Only explicit structural/quality failures are REJECTED.
+    # A candidate below discovery score is still developing.
+    if hard_rejections:
         return "REJECTED"
 
     execution_threshold = _safe_float(
-        behaviour_config.get("execution_test_threshold", 7.5),
+        behaviour_config.get(
+            "execution_test_threshold",
+            7.5,
+        ),
         7.5,
     )
 
     direction_threshold = _safe_float(
-        behaviour_config.get("direction_emerging_threshold", 6.5),
+        behaviour_config.get(
+            "direction_emerging_threshold",
+            6.5,
+        ),
         6.5,
     )
 
     accelerating_threshold = _safe_float(
-        behaviour_config.get("behaviour_accelerating_threshold", 5.5),
+        behaviour_config.get(
+            "behaviour_accelerating_threshold",
+            5.5,
+        ),
         5.5,
     )
 
     surveillance_threshold = _safe_float(
-        behaviour_config.get("under_surveillance_threshold", 4.5),
+        behaviour_config.get(
+            "under_surveillance_threshold",
+            4.5,
+        ),
         4.5,
     )
 
     anomaly_threshold = _safe_float(
-        behaviour_config.get("early_anomaly_threshold", 3.5),
+        behaviour_config.get(
+            "early_anomaly_threshold",
+            3.5,
+        ),
         3.5,
     )
 
-    if discovery and score >= execution_threshold:
+    if (
+        discovery
+        and score >= execution_threshold
+    ):
         return "EXECUTION_TEST"
 
     if score >= direction_threshold:
@@ -138,50 +224,94 @@ def _trace_stage(
 def _discovery_reasons(
     record: dict[str, Any],
 ) -> list[str]:
+
     reasons: list[str] = []
 
-    phase = str(record.get("market_phase", "")).upper()
-    timing = str(record.get("opportunity_timing", "")).upper()
-    behaviour_score = _safe_float(record.get("behaviour_score"))
+    phase = str(
+        record.get(
+            "market_phase",
+            "",
+        )
+    ).upper()
 
-    behaviour = record.get("behaviour", {})
+    timing = str(
+        record.get(
+            "opportunity_timing",
+            "",
+        )
+    ).upper()
+
+    behaviour_score = _safe_float(
+        record.get(
+            "behaviour_score"
+        )
+    )
+
+    behaviour = record.get(
+        "behaviour",
+        {},
+    )
 
     components = (
-        behaviour.get("components", {})
-        if isinstance(behaviour, dict)
+        behaviour.get(
+            "components",
+            {},
+        )
+        if isinstance(
+            behaviour,
+            dict,
+        )
         else {}
     )
 
     if phase:
-        reasons.append(f"MARKET_PHASE_{phase}")
-
-    if timing:
-        reasons.append(f"TIMING_{timing}")
-
-    if behaviour_score > 0:
         reasons.append(
-            f"BEHAVIOUR_SCORE_{behaviour_score:.2f}"
+            f"MARKET_PHASE_{phase}"
         )
 
-    if isinstance(components, dict):
+    if timing:
+        reasons.append(
+            f"TIMING_{timing}"
+        )
+
+    reasons.append(
+        f"BEHAVIOUR_SCORE_{behaviour_score:.2f}"
+    )
+
+    if isinstance(
+        components,
+        dict,
+    ):
         ranked_components = sorted(
             components.items(),
-            key=lambda item: _safe_float(item[1]),
+            key=lambda item:
+                _safe_float(
+                    item[1]
+                ),
             reverse=True,
         )
 
         for name, value in ranked_components[:3]:
-            component_value = _safe_float(value)
+
+            component_value = _safe_float(
+                value
+            )
 
             if component_value > 0:
                 reasons.append(
-                    "BEHAVIOUR_"
-                    f"{str(name).upper()}_"
-                    f"{component_value:.2f}"
+                    (
+                        "BEHAVIOUR_"
+                        f"{str(name).upper()}_"
+                        f"{component_value:.2f}"
+                    )
                 )
 
-    if record.get("discovery_permission"):
-        reasons.append("DISCOVERY_GATE_PASSED")
+    if record.get(
+        "discovery_permission"
+    ):
+        reasons.append(
+            "DISCOVERY_GATE_PASSED"
+        )
 
     return reasons
 
@@ -192,9 +322,14 @@ def _promotion_reasons(
     previous_stage: str | None,
     previous: dict[str, Any],
 ) -> list[str]:
+
     reasons: list[str] = []
 
-    current_rank = STAGE_ORDER.get(current_stage, 0)
+    current_rank = STAGE_ORDER.get(
+        current_stage,
+        0,
+    )
+
     previous_rank = STAGE_ORDER.get(
         previous_stage or "NORMAL",
         0,
@@ -202,31 +337,46 @@ def _promotion_reasons(
 
     if current_rank > previous_rank:
         reasons.append(
-            f"STAGE_ADVANCED_{previous_stage or 'NORMAL'}"
-            f"_TO_{current_stage}"
+            (
+                f"STAGE_ADVANCED_"
+                f"{previous_stage or 'NORMAL'}"
+                f"_TO_{current_stage}"
+            )
         )
 
     previous_score = _safe_float(
-        previous.get("behaviour_score")
+        previous.get(
+            "behaviour_score"
+        )
     )
 
     current_score = _safe_float(
-        record.get("behaviour_score")
+        record.get(
+            "behaviour_score"
+        )
     )
 
     if current_score > previous_score:
         reasons.append(
-            "BEHAVIOUR_SCORE_INCREASED_"
-            f"{previous_score:.2f}_TO_"
-            f"{current_score:.2f}"
+            (
+                "BEHAVIOUR_SCORE_INCREASED_"
+                f"{previous_score:.2f}_TO_"
+                f"{current_score:.2f}"
+            )
         )
 
     previous_phase = str(
-        previous.get("market_phase", "")
+        previous.get(
+            "market_phase",
+            "",
+        )
     ).upper()
 
     current_phase = str(
-        record.get("market_phase", "")
+        record.get(
+            "market_phase",
+            "",
+        )
     ).upper()
 
     if (
@@ -235,14 +385,26 @@ def _promotion_reasons(
         and previous_phase != current_phase
     ):
         reasons.append(
-            f"PHASE_CHANGED_{previous_phase}_TO_{current_phase}"
+            (
+                "PHASE_CHANGED_"
+                f"{previous_phase}_TO_"
+                f"{current_phase}"
+            )
         )
 
-    if record.get("discovery_permission"):
-        reasons.append("DISCOVERY_PERMISSION_ACTIVE")
+    if record.get(
+        "discovery_permission"
+    ):
+        reasons.append(
+            "DISCOVERY_PERMISSION_ACTIVE"
+        )
 
-    if record.get("v7_trade_ready"):
-        reasons.append("EXECUTION_PERMISSION_ACTIVE")
+    if record.get(
+        "v7_trade_ready"
+    ):
+        reasons.append(
+            "EXECUTION_PERMISSION_ACTIVE"
+        )
 
     return reasons
 
@@ -250,15 +412,32 @@ def _promotion_reasons(
 def _blocking_gate(
     record: dict[str, Any],
     stage: str,
+    config: dict[str, Any],
 ) -> str | None:
-    rejections = _clean_list(
-        record.get("rejection_reasons")
+
+    rejections = _quality_rejections(
+        record
     )
 
     if rejections:
         return rejections[0]
 
-    if not record.get("discovery_permission"):
+    score = _safe_float(
+        record.get(
+            "behaviour_score"
+        )
+    )
+
+    discovery_minimum = _minimum_discovery_score(
+        config
+    )
+
+    if score < discovery_minimum:
+        return "DISCOVERY_SCORE"
+
+    if not record.get(
+        "discovery_permission"
+    ):
         return "DISCOVERY_GATE"
 
     if stage in {
@@ -275,12 +454,6 @@ def _blocking_gate(
     if stage == "EXECUTION_TEST":
         return "TRADE_PERMISSION"
 
-    if (
-        stage == "TRADE_READY"
-        and not record.get("v7_trade_ready")
-    ):
-        return "FINAL_EXECUTION_GATE"
-
     return None
 
 
@@ -289,45 +462,86 @@ def _next_required_condition(
     stage: str,
     config: dict[str, Any],
 ) -> str:
-    quality = config.get("candidate_quality", {})
-    behaviour_config = config.get("behaviour_engine", {})
 
-    rejections = _clean_list(
-        record.get("rejection_reasons")
+    quality = config.get(
+        "candidate_quality",
+        {},
+    )
+
+    behaviour_config = config.get(
+        "behaviour_engine",
+        {},
+    )
+
+    rejections = _quality_rejections(
+        record
     )
 
     if rejections:
-        return "CLEAR_REJECTION: " + rejections[0]
+        return (
+            "CLEAR_REJECTION: "
+            + rejections[0]
+        )
+
+    score = _safe_float(
+        record.get(
+            "behaviour_score"
+        )
+    )
+
+    discovery_minimum = _minimum_discovery_score(
+        config
+    )
+
+    if score < discovery_minimum:
+        return (
+            "BEHAVIOUR_SCORE >= "
+            f"{discovery_minimum}"
+        )
 
     if stage == "NORMAL":
         threshold = behaviour_config.get(
             "early_anomaly_threshold",
             3.5,
         )
-        return f"BEHAVIOUR_SCORE >= {threshold}"
+
+        return (
+            "BEHAVIOUR_SCORE >= "
+            f"{threshold}"
+        )
 
     if stage == "ANOMALY_DETECTED":
         threshold = behaviour_config.get(
             "under_surveillance_threshold",
             4.5,
         )
-        return f"BEHAVIOUR_SCORE >= {threshold}"
+
+        return (
+            "BEHAVIOUR_SCORE >= "
+            f"{threshold}"
+        )
 
     if stage == "UNDER_SURVEILLANCE":
         threshold = behaviour_config.get(
             "behaviour_accelerating_threshold",
             5.5,
         )
-        return f"BEHAVIOUR_SCORE >= {threshold}"
+
+        return (
+            "BEHAVIOUR_SCORE >= "
+            f"{threshold}"
+        )
 
     if stage == "BEHAVIOUR_ACCELERATING":
         threshold = behaviour_config.get(
             "direction_emerging_threshold",
             6.5,
         )
+
         return (
-            f"BEHAVIOUR_SCORE >= {threshold} "
-            "WITH DIRECTIONAL CONFIRMATION"
+            "BEHAVIOUR_SCORE >= "
+            f"{threshold}"
+            " WITH DIRECTIONAL CONFIRMATION"
         )
 
     if stage == "DIRECTION_EMERGING":
@@ -335,12 +549,15 @@ def _next_required_condition(
             "execution_test_threshold",
             7.5,
         )
+
         return (
-            f"BEHAVIOUR_SCORE >= {threshold} "
-            "AND DISCOVERY GATE PASS"
+            "BEHAVIOUR_SCORE >= "
+            f"{threshold}"
+            " AND DISCOVERY GATE PASS"
         )
 
     if stage == "EXECUTION_TEST":
+
         minimum_rr = quality.get(
             "minimum_execution_reward_risk",
             5.0,
@@ -352,9 +569,11 @@ def _next_required_condition(
         )
 
         return (
-            f"EXECUTION_SCORE >= {minimum_execution} "
-            f"AND RR >= 1:{minimum_rr} "
-            "WITH VALID TRIGGER"
+            "EXECUTION_SCORE >= "
+            f"{minimum_execution}"
+            " AND RR >= 1:"
+            f"{minimum_rr}"
+            " WITH VALID TRIGGER"
         )
 
     if stage == "TRADE_READY":
@@ -365,8 +584,7 @@ def _next_required_condition(
 
     if stage == "REJECTED":
         return (
-            "REMOVE CURRENT REJECTION "
-            "BEFORE PROMOTION"
+            "CLEAR STRUCTURAL QUALITY REJECTION"
         )
 
     return "CONTINUE SURVEILLANCE"
@@ -377,9 +595,13 @@ def build_decision_trace(
     previous: dict[str, Any] | None,
     config: dict[str, Any],
 ) -> dict[str, Any]:
+
     previous = previous or {}
 
-    stage = _trace_stage(record, config)
+    stage = _trace_stage(
+        record,
+        config,
+    )
 
     previous_trace = previous.get(
         "decision_trace",
@@ -387,9 +609,15 @@ def build_decision_trace(
     )
 
     previous_stage = _normalize_stage(
-        previous_trace.get("decision_stage")
-        or previous.get("decision_stage")
-        or previous.get("state")
+        previous_trace.get(
+            "decision_stage"
+        )
+        or previous.get(
+            "decision_stage"
+        )
+        or previous.get(
+            "state"
+        )
     )
 
     stage_changed = (
@@ -397,52 +625,98 @@ def build_decision_trace(
         and previous_stage != stage
     )
 
-    rejection_reasons = _clean_list(
-        record.get("rejection_reasons")
+    rejection_reasons = _quality_rejections(
+        record
     )
 
     return {
-        "version": TRACE_VERSION,
-        "decision_stage": stage,
-        "previous_stage": previous_stage,
-        "stage_changed": stage_changed,
-        "discovery_reasons": _discovery_reasons(record),
-        "promotion_reasons": _promotion_reasons(
-            record,
+        "version":
+            TRACE_VERSION,
+
+        "decision_stage":
             stage,
+
+        "previous_stage":
             previous_stage,
-            previous,
-        ),
-        "rejection_reasons": rejection_reasons,
-        "blocking_gate": _blocking_gate(
-            record,
-            stage,
-        ),
-        "next_required_condition": _next_required_condition(
-            record,
-            stage,
-            config,
-        ),
-        "behaviour_score": _safe_float(
-            record.get("behaviour_score")
-        ),
-        "previous_behaviour_score": _safe_float(
-            previous.get("behaviour_score")
-        ),
-        "market_phase": record.get("market_phase"),
-        "previous_market_phase": previous.get(
-            "market_phase"
-        ),
-        "opportunity_timing": record.get(
-            "opportunity_timing"
-        ),
-        "discovery_permission": bool(
-            record.get("discovery_permission")
-        ),
-        "execution_permission": bool(
-            record.get("v7_trade_ready")
-        ),
-        "candidate_quality_status": record.get(
-            "candidate_quality_status"
-        ),
+
+        "stage_changed":
+            stage_changed,
+
+        "discovery_reasons":
+            _discovery_reasons(
+                record
+            ),
+
+        "promotion_reasons":
+            _promotion_reasons(
+                record,
+                stage,
+                previous_stage,
+                previous,
+            ),
+
+        "rejection_reasons":
+            rejection_reasons,
+
+        "blocking_gate":
+            _blocking_gate(
+                record,
+                stage,
+                config,
+            ),
+
+        "next_required_condition":
+            _next_required_condition(
+                record,
+                stage,
+                config,
+            ),
+
+        "behaviour_score":
+            _safe_float(
+                record.get(
+                    "behaviour_score"
+                )
+            ),
+
+        "previous_behaviour_score":
+            _safe_float(
+                previous.get(
+                    "behaviour_score"
+                )
+            ),
+
+        "market_phase":
+            record.get(
+                "market_phase"
+            ),
+
+        "previous_market_phase":
+            previous.get(
+                "market_phase"
+            ),
+
+        "opportunity_timing":
+            record.get(
+                "opportunity_timing"
+            ),
+
+        "discovery_permission":
+            bool(
+                record.get(
+                    "discovery_permission"
+                )
+            ),
+
+        "execution_permission":
+            bool(
+                record.get(
+                    "v7_trade_ready"
+                )
+            ),
+
+        "candidate_quality_status":
+            record.get(
+                "candidate_quality_status"
+            ),
     }
