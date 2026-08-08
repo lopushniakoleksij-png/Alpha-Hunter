@@ -12,12 +12,100 @@
   "universe_scan": {
     "enabled": true,
     "deep_scan_limit": 30,
+
+    "crypto_only": true,
+    "reject_rwa": true,
+    "reject_reality": true,
+
     "minimum_quote_volume": 100000,
+
     "maximum_24h_extension_pct": 25,
-    "quiet_bucket_size": 10,
+    "maximum_3d_extension_pct": 40,
+    "maximum_from_compression_base_pct": 30,
+    "maximum_above_breakout_trigger_pct": 20,
+    "maximum_above_7d_average_pct": 50,
+
+    "quiet_bucket_size": 12,
     "movement_bucket_size": 10,
-    "liquidity_bucket_size": 10,
-    "preserve_previous_candidates": true
+    "liquidity_bucket_size": 8,
+
+    "preserve_previous_candidates": true,
+    "previous_candidate_limit": 10,
+
+    "preferred_24h_move_min_pct": -8,
+    "preferred_24h_move_max_pct": 15,
+
+    "quiet_24h_abs_change_max_pct": 3,
+
+    "early_ignition_min_abs_change_pct": 1,
+    "early_ignition_max_abs_change_pct": 15
+  },
+
+  "candidate_quality": {
+    "enabled": true,
+
+    "allowed_phases": [
+      "ACCUMULATION",
+      "COMPRESSION",
+      "RECOVERY",
+      "IGNITION"
+    ],
+
+    "rejected_phases": [
+      "EXPANSION",
+      "EXPANSION_MANAGEMENT",
+      "RECOVERY_MANAGEMENT",
+      "DISTRIBUTION_RISK",
+      "FOMO",
+      "EXTENDED"
+    ],
+
+    "allowed_timing": [
+      "EARLY",
+      "FAIR"
+    ],
+
+    "notify_timing": [
+      "EARLY"
+    ],
+
+    "minimum_compression_score": 3.0,
+
+    "stoch_rsi_limits": {
+      "1H": 90,
+      "4H": 85
+    },
+
+    "bollinger_upper_band_tolerance_pct": 2.0,
+
+    "maximum_post_expansion_volume_ratio": 4.0,
+
+    "minimum_data_integrity": 88,
+
+    "minimum_discovery_score": 5.0,
+
+    "minimum_execution_score": 7.5,
+
+    "minimum_execution_reward_risk": 5.0
+  },
+
+  "behaviour_engine": {
+    "enabled": true,
+
+    "volume_acceleration_weight": 1.5,
+    "compression_weight": 1.5,
+    "relative_strength_weight": 1.5,
+    "open_interest_weight": 1.25,
+    "funding_change_weight": 0.75,
+    "volatility_transition_weight": 1.25,
+    "trend_acceleration_weight": 1.0,
+    "liquidity_weight": 0.75,
+
+    "early_anomaly_threshold": 3.5,
+    "under_surveillance_threshold": 4.5,
+    "behaviour_accelerating_threshold": 5.5,
+    "direction_emerging_threshold": 6.5,
+    "execution_test_threshold": 7.5
   },
 
   "timeframes": [
@@ -26,12 +114,17 @@
     "4H"
   ],
 
-  "candle_limit": 120,
+  "candle_limit": 170,
+
   "request_timeout_seconds": 12,
   "max_retries": 3,
+
   "snapshot_directory": "data/snapshots",
+
   "funding_history_limit": 30,
+
   "minimum_reward_risk": 5.0,
+
   "state_history_file": "data/state-history.jsonl",
 
   "supabase": {
@@ -44,5 +137,6 @@
   },
 
   "minimum_data_integrity": 88,
-  "intelligence_version": "1.0"
+
+  "intelligence_version": "1.1"
 }
