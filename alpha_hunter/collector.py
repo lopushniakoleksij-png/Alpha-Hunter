@@ -23,6 +23,7 @@ from .analysis import (
 )
 from .bitget import BitgetAPIError, BitgetClient
 from .env import load_env_file
+from .decision_trace import build_decision_trace
 from .private_account import collect_private_account_snapshot
 from .storage import (
     SupabaseConfig,
@@ -2589,6 +2590,14 @@ def apply_candidate_quality(
         and timing
         == "EARLY"
     )
+
+
+    record["decision_trace"] = build_decision_trace(
+        record,
+        previous,
+        config,
+    )
+
 
 
 # =========================================================
