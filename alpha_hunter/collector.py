@@ -36,13 +36,8 @@ from .storage import (
 # BASIC HELPERS
 # =========================================================
 
-def load_config(
-    path: Path,
-) -> dict[str, Any]:
-    with path.open(
-        "r",
-        encoding="utf-8",
-    ) as handle:
+def load_config(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -52,16 +47,11 @@ def safe_float(
 ) -> float:
     try:
         return float(value)
-    except (
-        TypeError,
-        ValueError,
-    ):
+    except (TypeError, ValueError):
         return default
 
 
-def safe_bool(
-    value: Any,
-) -> bool:
+def safe_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
 
@@ -83,10 +73,7 @@ def clamp(
 ) -> float:
     return max(
         minimum,
-        min(
-            maximum,
-            value,
-        ),
+        min(maximum, value),
     )
 
 
@@ -104,10 +91,7 @@ def safe_intelligence_score(
             )
             or 0
         )
-    except (
-        TypeError,
-        ValueError,
-    ):
+    except (TypeError, ValueError):
         return 0.0
 
 
@@ -119,40 +103,26 @@ def percent_change(
     current: float | None,
     previous: float | None,
 ) -> float | None:
-    if (
-        current is None
-        or previous in {
-            None,
-            0,
-        }
-    ):
+    if current is None or previous in (None, 0):
         return None
 
     return (
-        (
-            current
-            - previous
-        )
+        (current - previous)
         / previous
         * 100
     )
 
 
 def average_close(
-    candles: list[
-        dict[str, float | int]
-    ],
+    candles: list[dict[str, float | int]],
     lookback: int,
 ) -> float | None:
     if len(candles) < lookback:
         return None
 
     closes = [
-        float(
-            candle["close"]
-        )
-        for candle
-        in candles[-lookback:]
+        float(candle["close"])
+        for candle in candles[-lookback:]
     ]
 
     if not closes:
@@ -162,9 +132,7 @@ def average_close(
 
 
 def change_over_candles(
-    candles: list[
-        dict[str, float | int]
-    ],
+    candles: list[dict[str, float | int]],
     lookback: int,
 ) -> float | None:
     if len(candles) <= lookback:
@@ -175,9 +143,7 @@ def change_over_candles(
     )
 
     previous = float(
-        candles[
-            -(lookback + 1)
-        ]["close"]
+        candles[-(lookback + 1)]["close"]
     )
 
     return percent_change(
@@ -187,36 +153,25 @@ def change_over_candles(
 
 
 def compression_base(
-    candles: list[
-        dict[str, float | int]
-    ],
+    candles: list[dict[str, float | int]],
     lookback: int = 40,
 ) -> float | None:
     if not candles:
         return None
 
-    sample = candles[
-        -lookback:
-    ]
+    sample = candles[-lookback:]
 
     return min(
-        float(
-            candle["low"]
-        )
-        for candle
-        in sample
+        float(candle["low"])
+        for candle in sample
     )
 
 
 def breakout_trigger(
-    candles: list[
-        dict[str, float | int]
-    ],
+    candles: list[dict[str, float | int]],
     lookback: int = 20,
 ) -> float | None:
-    if len(candles) < (
-        lookback + 1
-    ):
+    if len(candles) < lookback + 1:
         return None
 
     sample = candles[
@@ -224,11 +179,8 @@ def breakout_trigger(
     ]
 
     return max(
-        float(
-            candle["high"]
-        )
-        for candle
-        in sample
+        float(candle["high"])
+        for candle in sample
     )
 
 
@@ -242,29 +194,20 @@ def rsi_series(
     deltas = [
         values[index]
         - values[index - 1]
-        for index
-        in range(
+        for index in range(
             1,
             len(values),
         )
     ]
 
     gains = [
-        max(
-            delta,
-            0.0,
-        )
-        for delta
-        in deltas
+        max(delta, 0.0)
+        for delta in deltas
     ]
 
     losses = [
-        max(
-            -delta,
-            0.0,
-        )
-        for delta
-        in deltas
+        max(-delta, 0.0)
+        for delta in deltas
     ]
 
     avg_gain = mean(
@@ -278,23 +221,15 @@ def rsi_series(
     output: list[float] = []
 
     if avg_loss == 0:
-        output.append(
-            100.0
-        )
+        output.append(100.0)
     else:
-        rs = (
-            avg_gain
-            / avg_loss
-        )
+        rs = avg_gain / avg_loss
 
         output.append(
             100
             - (
                 100
-                / (
-                    1
-                    + rs
-                )
+                / (1 + rs)
             )
         )
 
@@ -305,10 +240,7 @@ def rsi_series(
         avg_gain = (
             (
                 avg_gain
-                * (
-                    period
-                    - 1
-                )
+                * (period - 1)
             )
             + gain
         ) / period
@@ -316,32 +248,21 @@ def rsi_series(
         avg_loss = (
             (
                 avg_loss
-                * (
-                    period
-                    - 1
-                )
+                * (period - 1)
             )
             + loss
         ) / period
 
         if avg_loss == 0:
-            current_rsi = (
-                100.0
-            )
+            current_rsi = 100.0
         else:
-            rs = (
-                avg_gain
-                / avg_loss
-            )
+            rs = avg_gain / avg_loss
 
             current_rsi = (
                 100
                 - (
                     100
-                    / (
-                        1
-                        + rs
-                    )
+                    / (1 + rs)
                 )
             )
 
@@ -353,18 +274,13 @@ def rsi_series(
 
 
 def stochastic_rsi(
-    candles: list[
-        dict[str, float | int]
-    ],
+    candles: list[dict[str, float | int]],
     rsi_period: int = 14,
     stoch_period: int = 14,
 ) -> float | None:
     closes = [
-        float(
-            candle["close"]
-        )
-        for candle
-        in candles
+        float(candle["close"])
+        for candle in candles
     ]
 
     values = rsi_series(
@@ -372,38 +288,23 @@ def stochastic_rsi(
         rsi_period,
     )
 
-    if (
-        len(values)
-        < stoch_period
-    ):
+    if len(values) < stoch_period:
         return None
 
     sample = values[
         -stoch_period:
     ]
 
-    minimum = min(
-        sample
-    )
-
-    maximum = max(
-        sample
-    )
-
+    minimum = min(sample)
+    maximum = max(sample)
     current = sample[-1]
 
     if maximum == minimum:
         return 50.0
 
     return (
-        (
-            current
-            - minimum
-        )
-        / (
-            maximum
-            - minimum
-        )
+        (current - minimum)
+        / (maximum - minimum)
         * 100
     )
 
@@ -418,93 +319,66 @@ def collect_symbol(
     config: dict[str, Any],
 ) -> dict[str, Any]:
 
-    product_type = (
-        config[
-            "product_type"
-        ]
-    )
+    product_type = config[
+        "product_type"
+    ]
 
     ticker = client.ticker(
         symbol,
         product_type,
     )
 
-    prices = (
-        client.symbol_price(
-            symbol,
-            product_type,
-        )
+    prices = client.symbol_price(
+        symbol,
+        product_type,
     )
 
-    oi_payload = (
-        client.open_interest(
-            symbol,
-            product_type,
-        )
+    oi_payload = client.open_interest(
+        symbol,
+        product_type,
     )
 
-    funding = (
-        client.current_funding(
-            symbol,
-            product_type,
-        )
+    funding = client.current_funding(
+        symbol,
+        product_type,
     )
 
-    funding_rows = (
-        client.funding_history(
-            symbol,
-            product_type,
-            config.get(
-                "funding_history_limit",
-                30,
-            ),
-        )
+    funding_rows = client.funding_history(
+        symbol,
+        product_type,
+        config.get(
+            "funding_history_limit",
+            30,
+        ),
     )
 
-    timeframes:
-        dict[
-            str,
-            Any,
-        ] = {}
+    timeframes: dict[str, Any] = {}
 
-    combined_levels:
-        dict[
-            str,
-            float | None,
-        ] = {
-            "support":
-                None,
-            "resistance":
-                None,
-        }
+    combined_levels: dict[
+        str,
+        float | None,
+    ] = {
+        "support": None,
+        "resistance": None,
+    }
 
-    raw_candles:
-        dict[
-            str,
-            list[
-                dict[
-                    str,
-                    float | int,
-                ]
-            ],
-        ] = {}
+    raw_candles: dict[
+        str,
+        list[dict[str, float | int]],
+    ] = {}
 
-    for timeframe in (
-        config[
-            "timeframes"
-        ]
-    ):
+    for timeframe in config[
+        "timeframes"
+    ]:
 
-        candles = (
-            parse_candles(
-                client.candles(
-                    symbol,
-                    product_type,
-                    timeframe,
-                    config[
-                        "candle_limit"
-                    ],
-                )
+        candles = parse_candles(
+            client.candles(
+                symbol,
+                product_type,
+                timeframe,
+                config[
+                    "candle_limit"
+                ],
             )
         )
 
@@ -512,16 +386,12 @@ def collect_symbol(
             timeframe
         ] = candles
 
-        levels = (
-            support_resistance(
-                candles
-            )
+        levels = support_resistance(
+            candles
         )
 
-        indicators = (
-            calculate_indicators(
-                candles
-            )
+        indicators = calculate_indicators(
+            candles
         )
 
         indicators[
@@ -534,14 +404,10 @@ def collect_symbol(
             timeframe
         ] = {
             "trend":
-                trend_state(
-                    candles
-                ),
+                trend_state(candles),
 
             "candle_count":
-                len(
-                    candles
-                ),
+                len(candles),
 
             "latest_candle":
                 (
@@ -561,13 +427,8 @@ def collect_symbol(
             **levels,
         }
 
-        if (
-            timeframe
-            == "1H"
-        ):
-            combined_levels = (
-                levels
-            )
+        if timeframe == "1H":
+            combined_levels = levels
 
     oi_list = (
         oi_payload.get(
@@ -591,22 +452,18 @@ def collect_symbol(
         else None
     )
 
-    last_price = (
-        to_float(
-            prices.get(
-                "price"
-            )
-            or ticker.get(
-                "lastPr"
-            )
+    last_price = to_float(
+        prices.get(
+            "price"
+        )
+        or ticker.get(
+            "lastPr"
         )
     )
 
     trends = {
         timeframe:
-            values[
-                "trend"
-            ]
+            values["trend"]
         for timeframe, values
         in timeframes.items()
     }
@@ -621,11 +478,9 @@ def collect_symbol(
         combined_levels,
     )
 
-    current_funding = (
-        to_float(
-            funding.get(
-                "fundingRate"
-            )
+    current_funding = to_float(
+        funding.get(
+            "fundingRate"
         )
     )
 
@@ -636,18 +491,14 @@ def collect_symbol(
         )
     )
 
-    change_3d = (
-        change_over_candles(
-            one_hour_candles,
-            72,
-        )
+    change_3d = change_over_candles(
+        one_hour_candles,
+        72,
     )
 
-    average_7d = (
-        average_close(
-            one_hour_candles,
-            168,
-        )
+    average_7d = average_close(
+        one_hour_candles,
+        168,
     )
 
     base = compression_base(
@@ -842,14 +693,12 @@ def collect_symbol(
         record
     )
 
-    setup = (
-        validate_trade_setup(
-            record,
-            config.get(
-                "minimum_reward_risk",
-                5.0,
-            ),
-        )
+    setup = validate_trade_setup(
+        record,
+        config.get(
+            "minimum_reward_risk",
+            5.0,
+        ),
     )
 
     record[
@@ -870,14 +719,12 @@ def collect_symbol(
 
     record[
         "intelligence"
-    ] = (
-        build_intelligence_score(
-            record,
-            config.get(
-                "minimum_reward_risk",
-                5.0,
-            ),
-        )
+    ] = build_intelligence_score(
+        record,
+        config.get(
+            "minimum_reward_risk",
+            5.0,
+        ),
     )
 
     return record
@@ -922,36 +769,21 @@ def load_previous_snapshot(
 # =========================================================
 
 def build_instrument_map(
-    contracts:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ],
-    instruments:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ],
+    contracts: list[
+        dict[str, Any]
+    ],
+    instruments: list[
+        dict[str, Any]
+    ],
 ) -> dict[
     str,
-    dict[
-        str,
-        Any,
-    ],
+    dict[str, Any],
 ]:
 
-    output:
-        dict[
-            str,
-            dict[
-                str,
-                Any,
-            ],
-        ] = {}
+    output: dict[
+        str,
+        dict[str, Any],
+    ] = {}
 
     for row in contracts:
         symbol = str(
@@ -964,9 +796,7 @@ def build_instrument_map(
         if symbol:
             output[
                 symbol
-            ] = dict(
-                row
-            )
+            ] = dict(row)
 
     for row in instruments:
         symbol = str(
@@ -979,34 +809,27 @@ def build_instrument_map(
         if not symbol:
             continue
 
-        if (
-            symbol
-            not in output
-        ):
+        if symbol not in output:
             output[
                 symbol
             ] = {}
 
         output[
             symbol
-        ].update(
-            row
-        )
+        ].update(row)
 
     return output
 
 
 def instrument_is_allowed(
-    metadata:
-        dict[
-            str,
-            Any,
-        ],
-    config:
-        dict[
-            str,
-            Any,
-        ],
+    metadata: dict[
+        str,
+        Any,
+    ],
+    config: dict[
+        str,
+        Any,
+    ],
 ) -> bool:
 
     settings = config.get(
@@ -1071,48 +894,26 @@ def instrument_is_allowed(
 
 
 def select_market_universe(
-    contracts:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ],
-    instruments:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ],
-    tickers:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ],
+    contracts: list[
+        dict[str, Any]
+    ],
+    instruments: list[
+        dict[str, Any]
+    ],
+    tickers: list[
+        dict[str, Any]
+    ],
     previous_snapshot:
-        dict[
-            str,
-            Any,
-        ]
-        | None,
-    config:
-        dict[
-            str,
-            Any,
-        ],
+        dict[str, Any] | None,
+    config: dict[str, Any],
 ) -> tuple[
     list[str],
     dict[str, Any],
 ]:
 
-    settings = (
-        config.get(
-            "universe_scan",
-            {},
-        )
+    settings = config.get(
+        "universe_scan",
+        {},
     )
 
     metadata_map = (
@@ -1161,13 +962,9 @@ def select_market_universe(
         )
     )
 
-    candidates:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ] = []
+    candidates: list[
+        dict[str, Any]
+    ] = []
 
     rejected_non_crypto = 0
     rejected_liquidity = 0
@@ -1185,17 +982,12 @@ def select_market_universe(
         if not symbol:
             continue
 
-        if (
-            symbol
-            not in contract_symbols
-        ):
+        if symbol not in contract_symbols:
             continue
 
-        metadata = (
-            metadata_map.get(
-                symbol,
-                {},
-            )
+        metadata = metadata_map.get(
+            symbol,
+            {},
         )
 
         if not instrument_is_allowed(
@@ -1205,11 +997,9 @@ def select_market_universe(
             rejected_non_crypto += 1
             continue
 
-        last_price = (
-            to_float(
-                ticker.get(
-                    "lastPr"
-                )
+        last_price = to_float(
+            ticker.get(
+                "lastPr"
             )
         )
 
@@ -1282,8 +1072,7 @@ def select_market_universe(
                 ),
         })
 
-    selected:
-        list[str] = []
+    selected: list[str] = []
 
     def add_symbol(
         symbol: str,
@@ -1299,10 +1088,6 @@ def select_market_universe(
             selected.append(
                 symbol
             )
-
-    # ---------------------------------------------
-    # Preserve earlier interesting candidates
-    # ---------------------------------------------
 
     if (
         settings.get(
@@ -1348,11 +1133,9 @@ def select_market_universe(
                 )
             ).upper()
 
-            metadata = (
-                metadata_map.get(
-                    symbol,
-                    {},
-                )
+            metadata = metadata_map.get(
+                symbol,
+                {},
             )
 
             if instrument_is_allowed(
@@ -1362,10 +1145,6 @@ def select_market_universe(
                 add_symbol(
                     symbol
                 )
-
-    # ---------------------------------------------
-    # Quiet / boring bucket
-    # ---------------------------------------------
 
     quiet_limit = int(
         settings.get(
@@ -1409,10 +1188,6 @@ def select_market_universe(
                 "symbol"
             ]
         )
-
-    # ---------------------------------------------
-    # Early movement bucket
-    # ---------------------------------------------
 
     movement_limit = int(
         settings.get(
@@ -1469,10 +1244,6 @@ def select_market_universe(
             ]
         )
 
-    # ---------------------------------------------
-    # Liquidity bucket
-    # ---------------------------------------------
-
     liquidity_limit = int(
         settings.get(
             "liquidity_bucket_size",
@@ -1498,11 +1269,9 @@ def select_market_universe(
             ]
         )
 
-    selected = (
-        selected[
-            :deep_scan_limit
-        ]
-    )
+    selected = selected[
+        :deep_scan_limit
+    ]
 
     universe = {
         "total_contracts":
@@ -1511,19 +1280,13 @@ def select_market_universe(
             ),
 
         "ticker_count":
-            len(
-                tickers
-            ),
+            len(tickers),
 
         "eligible_count":
-            len(
-                candidates
-            ),
+            len(candidates),
 
         "selected_count":
-            len(
-                selected
-            ),
+            len(selected),
 
         "selection_method":
             (
@@ -1561,29 +1324,26 @@ def select_market_universe(
 # =========================================================
 
 def apply_snapshot_comparisons(
-    results:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ],
+    results: list[
+        dict[str, Any]
+    ],
     previous:
-        dict[
-            str,
-            Any,
-        ]
-        | None,
-    minimum_rr:
-        float = 5.0,
+        dict[str, Any] | None,
+    minimum_rr: float = 5.0,
 ) -> None:
 
-    previous_by_symbol = {}
+    previous_by_symbol: dict[
+        str,
+        dict[str, Any],
+    ] = {}
 
     if previous:
         previous_by_symbol = {
-            item.get(
-                "symbol"
+            str(
+                item.get(
+                    "symbol",
+                    ""
+                )
             ):
                 item
             for item
@@ -1598,13 +1358,9 @@ def apply_snapshot_comparisons(
         if "error" in item:
             continue
 
-        old = (
-            previous_by_symbol.get(
-                item[
-                    "symbol"
-                ],
-                {},
-            )
+        old = previous_by_symbol.get(
+            item["symbol"],
+            {},
         )
 
         item[
@@ -1629,10 +1385,8 @@ def apply_snapshot_comparisons(
             ),
         )
 
-        previous_state = (
-            old.get(
-                "state"
-            )
+        previous_state = old.get(
+            "state"
         )
 
         item[
@@ -1649,21 +1403,15 @@ def apply_snapshot_comparisons(
             )
         )
 
-        previous_behaviour = (
-            old.get(
-                "behaviour_score"
-            )
-        )
-
         item[
             "previous_behaviour_score"
-        ] = previous_behaviour
+        ] = old.get(
+            "behaviour_score"
+        )
 
-        setup = (
-            validate_trade_setup(
-                item,
-                minimum_rr,
-            )
+        setup = validate_trade_setup(
+            item,
+            minimum_rr,
         )
 
         item[
@@ -1684,16 +1432,14 @@ def apply_snapshot_comparisons(
 
         item[
             "intelligence"
-        ] = (
-            build_intelligence_score(
-                item,
-                minimum_rr,
-            )
+        ] = build_intelligence_score(
+            item,
+            minimum_rr,
         )
 
 
 # =========================================================
-# V7.1 MARKET PHASE
+# MARKET PHASE
 # =========================================================
 
 def classify_market_phase(
@@ -1761,17 +1507,13 @@ def classify_market_phase(
         )
     )
 
-    compression = (
-        one_hour.get(
-            "compression",
-            {},
-        )
+    compression = one_hour.get(
+        "compression",
+        {},
     )
 
-    compression_state = (
-        compression.get(
-            "state"
-        )
+    compression_state = compression.get(
+        "state"
     )
 
     volume_ratio = safe_float(
@@ -1816,10 +1558,8 @@ def classify_market_phase(
         )
     )
 
-    price = (
-        record.get(
-            "last_price"
-        )
+    price = record.get(
+        "last_price"
     )
 
     trends = {
@@ -1839,11 +1579,9 @@ def classify_market_phase(
             ),
     }
 
-    thresholds = (
-        config.get(
-            "universe_scan",
-            {},
-        )
+    thresholds = config.get(
+        "universe_scan",
+        {},
     )
 
     max_24h = float(
@@ -1881,52 +1619,30 @@ def classify_market_phase(
         )
     )
 
-    # ---------------------------------------------
-    # Expansion / extended
-    # ---------------------------------------------
-
     if (
-        abs(
-            change_24h
-        )
-        > max_24h
-        or abs(
-            change_3d
-        )
-        > max_3d
-        or from_base
-        > max_base
-        or above_trigger
-        > max_trigger
-        or above_average
-        > max_average
+        abs(change_24h) > max_24h
+        or abs(change_3d) > max_3d
+        or from_base > max_base
+        or above_trigger > max_trigger
+        or above_average > max_average
     ):
         return "EXPANSION"
-
-    # ---------------------------------------------
-    # Distribution risk
-    # ---------------------------------------------
 
     if (
         stoch_1h > 90
         and stoch_4h > 85
         and change_24h > 5
     ):
-        return (
-            "DISTRIBUTION_RISK"
-        )
+        return "DISTRIBUTION_RISK"
 
     if (
         bb_upper
         and price
         and price
-        > bb_upper
-        * 1.02
+        > bb_upper * 1.02
         and change_24h > 5
     ):
-        return (
-            "DISTRIBUTION_RISK"
-        )
+        return "DISTRIBUTION_RISK"
 
     if (
         volume_ratio >= 4
@@ -1935,13 +1651,7 @@ def classify_market_phase(
         )
         >= 10
     ):
-        return (
-            "EXPANSION_MANAGEMENT"
-        )
-
-    # ---------------------------------------------
-    # Breakdown
-    # ---------------------------------------------
+        return "EXPANSION_MANAGEMENT"
 
     if (
         trends.get(
@@ -1952,14 +1662,9 @@ def classify_market_phase(
             "1H"
         )
         == "BEARISH"
-        and change_24h
-        < -5
+        and change_24h < -5
     ):
         return "BREAKDOWN"
-
-    # ---------------------------------------------
-    # Compression
-    # ---------------------------------------------
 
     if (
         compression_state
@@ -1973,10 +1678,6 @@ def classify_market_phase(
         <= 5
     ):
         return "COMPRESSION"
-
-    # ---------------------------------------------
-    # Accumulation
-    # ---------------------------------------------
 
     if (
         compression_state
@@ -1998,10 +1699,6 @@ def classify_market_phase(
     ):
         return "ACCUMULATION"
 
-    # ---------------------------------------------
-    # Recovery
-    # ---------------------------------------------
-
     if (
         trends.get(
             "15m"
@@ -2022,10 +1719,6 @@ def classify_market_phase(
         < 15
     ):
         return "RECOVERY"
-
-    # ---------------------------------------------
-    # Ignition
-    # ---------------------------------------------
 
     if (
         trends.get(
@@ -2049,10 +1742,6 @@ def classify_market_phase(
         <= 15
     ):
         return "IGNITION"
-
-    # ---------------------------------------------
-    # Default early accumulation
-    # ---------------------------------------------
 
     return "ACCUMULATION"
 
@@ -2112,17 +1801,13 @@ def calculate_behaviour_score(
     record: dict[str, Any],
     previous:
         dict[str, Any] | None,
-    btc_change_24h:
-        float,
-    config:
-        dict[str, Any],
+    btc_change_24h: float,
+    config: dict[str, Any],
 ) -> dict[str, Any]:
 
-    settings = (
-        config.get(
-            "behaviour_engine",
-            {},
-        )
+    settings = config.get(
+        "behaviour_engine",
+        {},
     )
 
     one_hour = (
@@ -2135,11 +1820,9 @@ def calculate_behaviour_score(
         )
     )
 
-    indicators = (
-        one_hour.get(
-            "indicators",
-            {},
-        )
+    indicators = one_hour.get(
+        "indicators",
+        {},
     )
 
     volume_ratio = safe_float(
@@ -2171,7 +1854,7 @@ def calculate_behaviour_score(
         - btc_change_24h
     )
 
-    previous_rs = None
+    previous_rs: float | None = None
 
     if previous:
         previous_symbol_change = (
@@ -2224,63 +1907,47 @@ def calculate_behaviour_score(
         )
     )
 
-    volume_component = (
-        clamp(
-            volume_ratio
-            / 2,
-            0,
-            1,
-        )
+    volume_component = clamp(
+        volume_ratio / 2,
+        0,
+        1,
     )
 
-    compression_component = (
-        clamp(
-            compression
-            / 10,
-            0,
-            1,
-        )
+    compression_component = clamp(
+        compression / 10,
+        0,
+        1,
     )
 
-    rs_component = (
-        clamp(
-            (
-                relative_strength
-                + rs_acceleration
-            )
-            / 10,
-            0,
-            1,
+    rs_component = clamp(
+        (
+            relative_strength
+            + rs_acceleration
         )
+        / 10,
+        0,
+        1,
     )
 
-    oi_component = (
-        clamp(
-            oi_change
-            / 10,
-            0,
-            1,
-        )
+    oi_component = clamp(
+        oi_change / 10,
+        0,
+        1,
     )
 
-    funding_component = (
-        clamp(
-            abs(
-                funding_change
-            )
-            / 100,
-            0,
-            1,
+    funding_component = clamp(
+        abs(
+            funding_change
         )
+        / 100,
+        0,
+        1,
     )
 
-    volatility_component = (
-        clamp(
-            atr_pct
-            / 5,
-            0,
-            1,
-        )
+    volatility_component = clamp(
+        atr_pct / 5,
+        0,
+        1,
     )
 
     trend_count = sum(
@@ -2298,11 +1965,11 @@ def calculate_behaviour_score(
             "BEARISH",
         }
         for timeframe
-        in {
+        in (
             "15m",
             "1H",
             "4H",
-        }
+        )
     )
 
     trend_component = (
@@ -2310,7 +1977,7 @@ def calculate_behaviour_score(
         / 3
     )
 
-    spread = None
+    spread: float | None = None
 
     bid = record.get(
         "bid_price"
@@ -2330,10 +1997,7 @@ def calculate_behaviour_score(
         and price
     ):
         spread = (
-            (
-                ask
-                - bid
-            )
+            (ask - bid)
             / price
             * 100
         )
@@ -2341,10 +2005,8 @@ def calculate_behaviour_score(
     liquidity_component = (
         1.0
         if (
-            spread
-            is not None
-            and spread
-            <= 0.1
+            spread is not None
+            and spread <= 0.1
         )
         else 0.5
     )
@@ -2442,14 +2104,9 @@ def calculate_behaviour_score(
     }
 
     weighted_total = sum(
-        components[
-            key
-        ]
-        * weights[
-            key
-        ]
-        for key
-        in components
+        components[key]
+        * weights[key]
+        for key in components
     )
 
     maximum_total = sum(
@@ -2506,54 +2163,41 @@ def calculate_behaviour_score(
 
 
 # =========================================================
-# QUALITY FILTER / REJECTION REASONS
+# QUALITY FILTER
 # =========================================================
 
 def apply_candidate_quality(
-    record:
-        dict[str, Any],
+    record: dict[str, Any],
     previous:
         dict[str, Any] | None,
-    btc_change_24h:
-        float,
-    config:
-        dict[str, Any],
+    btc_change_24h: float,
+    config: dict[str, Any],
 ) -> None:
 
-    quality = (
-        config.get(
-            "candidate_quality",
-            {},
-        )
+    quality = config.get(
+        "candidate_quality",
+        {},
     )
 
-    universe = (
-        config.get(
-            "universe_scan",
-            {},
-        )
+    universe = config.get(
+        "universe_scan",
+        {},
     )
 
-    phase = (
-        classify_market_phase(
-            record,
-            config,
-        )
+    phase = classify_market_phase(
+        record,
+        config,
     )
 
-    timing = (
-        classify_opportunity_timing(
-            record
-        )
+    timing = classify_opportunity_timing(
+        record
     )
 
-    behaviour = (
-        calculate_behaviour_score(
-            record,
-            previous,
-            btc_change_24h,
-            config,
-        )
+    behaviour = calculate_behaviour_score(
+        record,
+        previous,
+        btc_change_24h,
+        config,
     )
 
     record[
@@ -2578,8 +2222,7 @@ def apply_candidate_quality(
         "btc_change_24h_pct"
     ] = btc_change_24h
 
-    reasons:
-        list[str] = []
+    reasons: list[str] = []
 
     change_24h = safe_float(
         record.get(
@@ -2675,10 +2318,8 @@ def apply_candidate_quality(
         )
     )
 
-    price = (
-        record.get(
-            "last_price"
-        )
+    price = record.get(
+        "last_price"
     )
 
     if (
@@ -2750,11 +2391,9 @@ def apply_candidate_quality(
             "TOO_FAR_ABOVE_7D_AVERAGE"
         )
 
-    stoch_limits = (
-        quality.get(
-            "stoch_rsi_limits",
-            {},
-        )
+    stoch_limits = quality.get(
+        "stoch_rsi_limits",
+        {},
     )
 
     if (
@@ -2829,10 +2468,7 @@ def apply_candidate_quality(
         )
     )
 
-    if (
-        phase
-        not in allowed_phases
-    ):
+    if phase not in allowed_phases:
         reasons.append(
             f"PHASE_{phase}"
         )
@@ -2872,10 +2508,7 @@ def apply_candidate_quality(
     )
 
     discovery_permission = (
-        len(
-            reasons
-        )
-        == 0
+        len(reasons) == 0
         and discovery_score
         >= minimum_discovery
     )
@@ -2963,12 +2596,9 @@ def apply_candidate_quality(
 # =========================================================
 
 def append_state_history(
-    snapshot:
-        dict[str, Any],
-    config_path:
-        Path,
-    config:
-        dict[str, Any],
+    snapshot: dict[str, Any],
+    config_path: Path,
+    config: dict[str, Any],
 ) -> Path:
 
     history_path = (
@@ -3108,17 +2738,12 @@ def append_state_history(
 # =========================================================
 
 def save_snapshot(
-    snapshot:
-        dict[str, Any],
-    config_path:
-        Path,
-    config:
-        dict[str, Any],
+    snapshot: dict[str, Any],
+    config_path: Path,
+    config: dict[str, Any],
 ) -> Path:
 
-    root = (
-        config_path.parent
-    )
+    root = config_path.parent
 
     output_dir = (
         root
@@ -3140,10 +2765,7 @@ def save_snapshot(
 
     path = (
         output_dir
-        / (
-            f"snapshot-"
-            f"{stamp}.json"
-        )
+        / f"snapshot-{stamp}.json"
     )
 
     payload = json.dumps(
@@ -3172,8 +2794,7 @@ def save_snapshot(
 # =========================================================
 
 def print_report(
-    snapshot:
-        dict[str, Any],
+    snapshot: dict[str, Any],
 ) -> None:
 
     print(
@@ -3184,11 +2805,9 @@ def print_report(
         "\n"
     )
 
-    universe = (
-        snapshot.get(
-            "universe",
-            {},
-        )
+    universe = snapshot.get(
+        "universe",
+        {},
     )
 
     print(
@@ -3222,29 +2841,21 @@ def print_report(
         f"{'TRADE':>6}"
     )
 
-    print(
-        header
-    )
+    print(header)
 
     print(
-        "-"
-        * len(
-            header
-        )
+        "-" * len(header)
     )
 
-    for item in (
-        snapshot[
-            "symbols"
-        ]
-    ):
+    for item in snapshot[
+        "symbols"
+    ]:
 
         if "error" in item:
 
             print(
                 f"{item['symbol']:<14} "
-                "ERROR: "
-                f"{item['error']}"
+                f"ERROR: {item['error']}"
             )
 
             continue
@@ -3260,8 +2871,7 @@ def print_report(
 
         rr_text = (
             f"{rr:.2f}"
-            if rr
-            is not None
+            if rr is not None
             else "—"
         )
 
@@ -3285,54 +2895,44 @@ def print_report(
 
 def main() -> int:
 
-    parser = (
-        argparse.ArgumentParser(
-            description=(
-                "Alpha Hunter V7.1 "
-                "full-market behaviour scan"
-            )
+    parser = argparse.ArgumentParser(
+        description=(
+            "Alpha Hunter V7.1 "
+            "full-market behaviour scan"
         )
     )
 
     parser.add_argument(
         "--config",
-        default=
-            "config.json",
+        default="config.json",
     )
 
     args = parser.parse_args()
 
-    config_path = (
-        Path(
-            args.config
-        ).resolve()
-    )
+    config_path = Path(
+        args.config
+    ).resolve()
 
     load_env_file(
         config_path.parent
         / ".env"
     )
 
-    config = (
-        load_config(
-            config_path
-        )
+    config = load_config(
+        config_path
     )
 
     client = (
         BitgetClient
         .from_environment(
-            timeout=
-                config.get(
-                    "request_timeout_seconds",
-                    12,
-                ),
-
-            max_retries=
-                config.get(
-                    "max_retries",
-                    3,
-                ),
+            timeout=config.get(
+                "request_timeout_seconds",
+                12,
+            ),
+            max_retries=config.get(
+                "max_retries",
+                3,
+            ),
         )
     )
 
@@ -3384,8 +2984,7 @@ def main() -> int:
             )
         ).upper():
             row
-        for row
-        in tickers
+        for row in tickers
     }
 
     btc_ticker = (
@@ -3410,14 +3009,12 @@ def main() -> int:
     (
         selected_symbols,
         universe,
-    ) = (
-        select_market_universe(
-            contracts,
-            instruments,
-            tickers,
-            previous_snapshot,
-            config,
-        )
+    ) = select_market_universe(
+        contracts,
+        instruments,
+        tickers,
+        previous_snapshot,
+        config,
     )
 
     available = {
@@ -3427,20 +3024,25 @@ def main() -> int:
             )
         ).upper():
             row
-        for row
-        in contracts
+        for row in contracts
         if row.get(
             "symbol"
         )
     }
 
-    previous_by_symbol = {}
+    previous_by_symbol: dict[
+        str,
+        dict[str, Any],
+    ] = {}
 
     if previous_snapshot:
 
         previous_by_symbol = {
-            item.get(
-                "symbol"
+            str(
+                item.get(
+                    "symbol",
+                    ""
+                )
             ):
                 item
             for item
@@ -3450,22 +3052,13 @@ def main() -> int:
             )
         }
 
-    results:
-        list[
-            dict[
-                str,
-                Any,
-            ]
-        ] = []
+    results: list[
+        dict[str, Any]
+    ] = []
 
-    for symbol in (
-        selected_symbols
-    ):
+    for symbol in selected_symbols:
 
-        if (
-            symbol
-            not in available
-        ):
+        if symbol not in available:
 
             results.append({
                 "symbol":
@@ -3497,9 +3090,7 @@ def main() -> int:
                     symbol,
 
                 "error":
-                    str(
-                        exc
-                    ),
+                    str(exc),
             })
 
     apply_snapshot_comparisons(
@@ -3531,10 +3122,6 @@ def main() -> int:
             config,
         )
 
-    # ---------------------------------------------
-    # Sort primarily by Behaviour Score now
-    # ---------------------------------------------
-
     results.sort(
         key=lambda item:
             (
@@ -3565,8 +3152,7 @@ def main() -> int:
 
     discovery_candidates = [
         item
-        for item
-        in results
+        for item in results
         if item.get(
             "discovery_permission"
         )
@@ -3584,8 +3170,7 @@ def main() -> int:
 
     trade_ready = [
         item
-        for item
-        in results
+        for item in results
         if item.get(
             "v7_trade_ready"
         )
@@ -3637,10 +3222,8 @@ def main() -> int:
 
     snapshot[
         "run_id"
-    ] = (
-        build_run_id(
-            snapshot
-        )
+    ] = build_run_id(
+        snapshot
     )
 
     path = save_snapshot(
@@ -3657,9 +3240,7 @@ def main() -> int:
         )
     )
 
-    cloud_status = (
-        "DISABLED"
-    )
+    cloud_status = "DISABLED"
 
     supabase_settings = (
         SupabaseConfig
@@ -3678,10 +3259,7 @@ def main() -> int:
         )
     ):
 
-        if (
-            supabase_settings
-            is None
-        ):
+        if supabase_settings is None:
 
             cloud_status = (
                 "NOT_CONFIGURED"
@@ -3697,9 +3275,7 @@ def main() -> int:
                     snapshot
                 )
 
-                cloud_status = (
-                    "SAVED"
-                )
+                cloud_status = "SAVED"
 
             except (
                 SupabaseStorageError
