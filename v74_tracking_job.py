@@ -18,6 +18,7 @@ from alpha_hunter.feature_capture import FeatureStorage
 from alpha_hunter.outcome_evaluator import OutcomeEvaluator
 from alpha_hunter.performance import PerformanceStorage
 from alpha_hunter.storage import SupabaseConfig
+from v741_shadow import apply_shadow_scores
 
 
 HORIZONS = (1, 4, 12, 24)
@@ -1265,6 +1266,43 @@ def main() -> int:
         "Run ID:",
         run_id,
     )
+
+    # V7.4.1 SHADOW ONLY
+    # Adds shadow metadata to the frozen snapshot.
+    # Does NOT modify V7.4 ranking, trade permission,
+    # v7_trade_ready, or execution state.
+    shadow_ranked = apply_shadow_scores(
+        snapshot.get(
+            "symbols",
+            [],
+        )
+    )
+
+    print()
+    print(
+        "V7.4.1 SHADOW REVERSAL"
+    )
+
+    print(
+        f"{'SH':>3} "
+        f"{'SYMBOL':<14} "
+        f"{'V74':>5} "
+        f"{'OLD':>7} "
+        f"{'SHADOW':>8}"
+    )
+
+    print(
+        "-" * 50
+    )
+
+    for item in shadow_ranked[:10]:
+        print(
+            f"{item.get('v741_shadow_rank', 0):>3} "
+            f"{item.get('symbol', '—'):<14} "
+            f"{str(item.get('pre_move_rank') or '—'):>5} "
+            f"{float(item.get('pre_move_score') or 0):>7.2f} "
+            f"{float(item.get('v741_shadow_score') or 0):>8.2f}"
+        )
 
     signal_count = (
         save_latest_signal_cohort(
