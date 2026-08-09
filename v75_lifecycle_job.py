@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from alpha_hunter.collector import (
     load_config,
     load_previous_snapshot,
@@ -17,6 +19,7 @@ from alpha_hunter.lifecycle import (
     update_episode,
 )
 from alpha_hunter.env import load_env_file
+from alpha_hunter.storage import SupabaseConfig
 from v741_shadow import apply_shadow_scores
 
 
@@ -32,6 +35,10 @@ HISTORY_PATH = (
     ROOT
     / "data"
     / "v75-lifecycle-history.jsonl"
+)
+
+SUPABASE_TABLE = (
+    "alpha_hunter_lifecycle_episodes"
 )
 
 
@@ -159,6 +166,232 @@ def append_history(
             )
             + "\n"
         )
+
+
+def supabase_headers(
+    settings: SupabaseConfig,
+) -> dict[str, str]:
+    return {
+        "apikey":
+            settings.key,
+
+        "Authorization":
+            f"Bearer {settings.key}",
+
+        "Content-Type":
+            "application/json",
+
+        "Prefer":
+            "resolution=merge-duplicates,"
+            "return=minimal",
+    }
+
+
+def episode_row(
+    episode: LifecycleEpisode,
+) -> dict[str, Any]:
+    row = episode.to_dict()
+
+    # DB owns created_at.
+    # updated_at is refreshed on every upsert.
+    row["updated_at"] = now_utc()
+
+    return row
+
+
+def upsert_supabase(
+    episodes: list[
+        LifecycleEpisode
+    ],
+    settings: SupabaseConfig,
+) -> int:
+    if not episodes:
+        return 0
+
+    rows = [
+        episode_row(
+            episode
+        )
+        for episode in episodes
+    ]
+
+    response = requests.post(
+        (
+            f"{settings.url}"
+            f"/rest/v1/{SUPABASE_TABLE}"
+        ),
+        params={
+            "on_conflict":
+                "episode_id",
+        },
+        headers=supabase_headers(
+            settings
+        ),
+        data=json.dumps(
+            rows,
+            separators=(
+                ",",
+                ":",
+            ),
+        ),
+        timeout=settings.timeout_seconds,
+    )
+
+    if response.status_code not in {
+        200,
+        201,
+        204,
+    }:
+        raise RuntimeError(
+            "V7.5 Supabase upsert failed: "
+            f"HTTP {response.status_code}: "
+            f"{response.text[:800]}"
+        )
+
+    return len(rows)
+
+
+def supabase_count(
+    settings: SupabaseConfig,
+) -> int:
+    response = requests.get(
+        (
+            f"{settings.url}"
+            f"/rest/v1/{SUPABASE_TABLE}"
+        ),
+        params={
+            "select":
+                "episode_id",
+        },
+        headers={
+            "apikey":
+                settings.key,
+
+            "Authorization":
+                f"Bearer {settings.key}",
+
+            "Prefer":
+                "count=exact",
+        },
+        timeout=settings.timeout_seconds,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "V7.5 Supabase count failed: "
+            f"HTTP {response.status_code}: "
+            f"{response.text[:800]}"
+        )
+
+    content_range = (
+        response.headers.get(
+            "content-range",
+            ""
+        )
+    )
+
+    if "/" not in content_range:
+        return len(
+            response.json()
+        )
+
+    total = (
+        content_range
+        .split(
+            "/",
+            1,
+        )[1]
+    )
+
+    try:
+        return int(
+            total
+        )
+
+    except ValueError:
+        return len(
+            response.json()
+        )
+
+
+def load_supabase_state(
+    settings: SupabaseConfig,
+) -> list[LifecycleEpisode]:
+    response = requests.get(
+        (
+            f"{settings.url}"
+            f"/rest/v1/{SUPABASE_TABLE}"
+        ),
+        params={
+            "select":
+                (
+                    "episode_id,symbol,path,"
+                    "first_detected_at_utc,"
+                    "last_detected_at_utc,"
+                    "first_detection_price,"
+                    "latest_price,detections,"
+                    "lifecycle_state,previous_state,"
+                    "v74_score,v74_rank,v74_tier,"
+                    "v741_shadow_score,"
+                    "v741_shadow_rank,"
+                    "direction,trade_permission,"
+                    "v7_trade_ready,"
+                    "max_favorable_excursion_pct,"
+                    "max_adverse_excursion_pct,"
+                    "expansion_3_hit,"
+                    "expansion_5_hit,"
+                    "expansion_10_hit,"
+                    "first_3pct_at_utc,"
+                    "first_5pct_at_utc,"
+                    "first_10pct_at_utc,"
+                    "final_classification"
+                ),
+            "order":
+                "first_detected_at_utc.asc",
+            "limit":
+                "10000",
+        },
+        headers={
+            "apikey":
+                settings.key,
+
+            "Authorization":
+                f"Bearer {settings.key}",
+        },
+        timeout=settings.timeout_seconds,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "V7.5 Supabase load failed: "
+            f"HTTP {response.status_code}: "
+            f"{response.text[:800]}"
+        )
+
+    payload = response.json()
+
+    if not isinstance(
+        payload,
+        list,
+    ):
+        return []
+
+    episodes = []
+
+    for row in payload:
+        if not isinstance(
+            row,
+            dict,
+        ):
+            continue
+
+        episodes.append(
+            LifecycleEpisode(
+                **row
+            )
+        )
+
+    return episodes
 
 
 def prepare_record(
@@ -336,6 +569,18 @@ def main() -> int:
         / "config.json"
     )
 
+    settings = (
+        SupabaseConfig
+        .from_environment(
+            config
+        )
+    )
+
+    if settings is None:
+        raise SystemExit(
+            "Supabase is not configured"
+        )
+
     snapshot = (
         load_previous_snapshot(
             ROOT
@@ -364,6 +609,18 @@ def main() -> int:
     )
 
     episodes = load_state()
+
+    if not episodes:
+        episodes = load_supabase_state(
+            settings
+        )
+
+        if episodes:
+            print(
+                "V7.5 state restored "
+                "from Supabase:",
+                len(episodes),
+            )
 
     candidates = (
         lifecycle_candidates(
@@ -447,13 +704,35 @@ def main() -> int:
                 existing.detections
             )
 
-            update_episode(
-                existing,
-                record,
-                detected_at,
+            # Idempotency guard:
+            # rerunning the exact same frozen snapshot
+            # must not count as another market detection.
+            same_snapshot = (
+                str(
+                    existing.last_detected_at_utc
+                )
+                == str(
+                    detected_at
+                )
+                or (
+                    str(existing.last_detected_at_utc)
+                    .replace("+00:00", "Z")
+                    == str(detected_at)
+                    .replace("+00:00", "Z")
+                )
             )
 
-            updated += 1
+            if same_snapshot:
+                updated += 1
+
+            else:
+                update_episode(
+                    existing,
+                    record,
+                    detected_at,
+                )
+
+                updated += 1
 
             append_history({
                 "event":
@@ -518,6 +797,30 @@ def main() -> int:
 
     save_state(
         episodes
+    )
+
+    supabase_saved = (
+        upsert_supabase(
+            episodes,
+            settings,
+        )
+    )
+
+    db_count = (
+        supabase_count(
+            settings
+        )
+    )
+
+    print()
+    print(
+        "Supabase lifecycle rows upserted:",
+        supabase_saved,
+    )
+
+    print(
+        "Supabase lifecycle row count:",
+        db_count,
     )
 
     print()
