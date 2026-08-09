@@ -8,3 +8,7 @@ __pycache__/
 data/snapshots/
 data/state-history.jsonl
 *.log
+
+# Alpha Hunter runtime lifecycle state
+data/v75-lifecycle-episodes.json
+data/v75-lifecycle-history.jsonl
