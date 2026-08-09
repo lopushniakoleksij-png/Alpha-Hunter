@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -100,6 +101,356 @@ def save_latest_features(
     )
 
 
+def pending_v74_signals(
+    url: str,
+    key: str,
+    horizon_hours: int,
+    limit: int = 1000,
+) -> list[dict[str, Any]]:
+    cutoff = datetime.fromtimestamp(
+        datetime.now(
+            timezone.utc
+        ).timestamp()
+        - horizon_hours
+        * 3600,
+        tz=timezone.utc,
+    ).isoformat()
+
+    signals = get_rows(
+        url,
+        key,
+        "alpha_hunter_signals",
+        {
+            "select":
+                (
+                    "signal_id,symbol,"
+                    "detected_at_utc,state,"
+                    "direction,reference_price,"
+                    "entry_price,stop_loss,"
+                    "take_profit,payload"
+                ),
+
+            # Newest matured signals first.
+            # This prevents historical backlog
+            # from starving current V7.4 cohorts.
+            "detected_at_utc":
+                f"lte.{cutoff}",
+
+            "order":
+                "detected_at_utc.desc",
+
+            "limit":
+                str(limit),
+        },
+    )
+
+    v74_signals = []
+
+    for signal in signals:
+        payload = (
+            signal.get("payload")
+            or {}
+        )
+
+        if not isinstance(
+            payload,
+            dict,
+        ):
+            continue
+
+        tier = payload.get(
+            "pre_move_tier"
+        )
+
+        path_name = payload.get(
+            "pre_move_path"
+        )
+
+        if tier not in {
+            "PRIMARY",
+            "RESERVE",
+        }:
+            continue
+
+        if path_name not in {
+            "CONTINUATION",
+            "REVERSAL",
+        }:
+            continue
+
+        v74_signals.append(
+            signal
+        )
+
+    if not v74_signals:
+        return []
+
+    ids = [
+        str(
+            row["signal_id"]
+        )
+        for row in v74_signals
+        if row.get(
+            "signal_id"
+        )
+    ]
+
+    completed: set[str] = set()
+
+    # Keep PostgREST URLs small.
+    batch_size = 100
+
+    for index in range(
+        0,
+        len(ids),
+        batch_size,
+    ):
+        batch = ids[
+            index:
+            index + batch_size
+        ]
+
+        existing = get_rows(
+            url,
+            key,
+            "alpha_hunter_signal_outcomes",
+            {
+                "select":
+                    "signal_id",
+
+                "horizon_hours":
+                    f"eq.{horizon_hours}",
+
+                "signal_id":
+                    (
+                        "in.("
+                        + ",".join(batch)
+                        + ")"
+                    ),
+
+                "limit":
+                    str(
+                        len(batch)
+                    ),
+            },
+        )
+
+        completed.update(
+            str(
+                row.get(
+                    "signal_id"
+                )
+            )
+            for row in existing
+            if row.get(
+                "signal_id"
+            )
+        )
+
+    return [
+        row
+        for row in v74_signals
+        if str(
+            row.get(
+                "signal_id"
+            )
+        )
+        not in completed
+    ]
+
+
+def evaluate_v74_horizon(
+    evaluator: OutcomeEvaluator,
+    url: str,
+    key: str,
+    horizon_hours: int,
+) -> tuple[int, int]:
+    pending = pending_v74_signals(
+        url,
+        key,
+        horizon_hours,
+    )
+
+    if not pending:
+        return 0, 0
+
+    rows = []
+    failures = 0
+
+    evaluated_at = datetime.now(
+        timezone.utc
+    ).isoformat()
+
+    price_cache: dict[
+        str,
+        float,
+    ] = {}
+
+    for signal in pending:
+        symbol = str(
+            signal.get(
+                "symbol"
+            )
+            or ""
+        )
+
+        try:
+            if symbol not in price_cache:
+                ticker = evaluator.bitget.ticker(
+                    symbol,
+                    evaluator.product_type,
+                )
+
+                price = f(
+                    ticker.get(
+                        "lastPr"
+                    )
+                    or ticker.get(
+                        "last"
+                    )
+                )
+
+                if (
+                    price is None
+                    or price <= 0
+                ):
+                    raise ValueError(
+                        "Invalid current price"
+                    )
+
+                price_cache[
+                    symbol
+                ] = price
+
+            current_price = (
+                price_cache[
+                    symbol
+                ]
+            )
+
+            result = (
+                evaluator.classify(
+                    signal,
+                    current_price,
+                )
+            )
+
+            payload = (
+                signal.get(
+                    "payload"
+                )
+                or {}
+            )
+
+            if not isinstance(
+                payload,
+                dict,
+            ):
+                payload = {}
+
+            rows.append({
+                "signal_id":
+                    signal[
+                        "signal_id"
+                    ],
+
+                "horizon_hours":
+                    horizon_hours,
+
+                "evaluated_at_utc":
+                    evaluated_at,
+
+                "evaluation_price":
+                    current_price,
+
+                "return_pct":
+                    result[
+                        "return_pct"
+                    ],
+
+                "direction_adjusted_return_pct":
+                    result[
+                        "direction_adjusted_return_pct"
+                    ],
+
+                "target_hit":
+                    result[
+                        "target_hit"
+                    ],
+
+                "stop_hit":
+                    result[
+                        "stop_hit"
+                    ],
+
+                "outcome_class":
+                    result[
+                        "outcome_class"
+                    ],
+
+                "payload": {
+                    "measurement_scope":
+                        "V7.4_PRE_MOVE",
+
+                    "direction_used":
+                        result[
+                            "direction_used"
+                        ],
+
+                    "reference_price":
+                        signal.get(
+                            "reference_price"
+                        ),
+
+                    "state":
+                        signal.get(
+                            "state"
+                        ),
+
+                    "pre_move_tier":
+                        payload.get(
+                            "pre_move_tier"
+                        ),
+
+                    "pre_move_path":
+                        payload.get(
+                            "pre_move_path"
+                        ),
+
+                    "pre_move_rank":
+                        payload.get(
+                            "pre_move_rank"
+                        ),
+
+                    "pre_move_score":
+                        payload.get(
+                            "pre_move_score"
+                        ),
+                },
+            })
+
+        except Exception as exc:
+            failures += 1
+
+            print(
+                "V7.4 outcome evaluation "
+                f"failed for {symbol} "
+                f"at {horizon_hours}H: "
+                f"{exc}"
+            )
+
+    evaluator._upsert(
+        "alpha_hunter_signal_outcomes",
+        rows,
+        "signal_id,horizon_hours",
+    )
+
+    return (
+        len(rows),
+        failures,
+    )
+
+
 def evaluate_outcomes(
     config: dict[str, Any],
     settings: SupabaseConfig,
@@ -125,8 +476,11 @@ def evaluate_outcomes(
 
     for horizon in HORIZONS:
         saved, failed = (
-            evaluator.evaluate_horizon(
-                horizon
+            evaluate_v74_horizon(
+                evaluator,
+                settings.url,
+                settings.key,
+                horizon,
             )
         )
 
@@ -134,7 +488,7 @@ def evaluate_outcomes(
         total_failed += failed
 
         print(
-            f"OUTCOMES {horizon}H: "
+            f"V7.4 OUTCOMES {horizon}H: "
             f"saved={saved} "
             f"failed={failed}"
         )
@@ -273,8 +627,11 @@ def load_v74_history(
                 (
                     "signal_id,horizon_hours,"
                     "return_pct,"
-                    "direction_adjusted_return_pct"
+                    "direction_adjusted_return_pct,"
+                    "evaluated_at_utc"
                 ),
+            "order":
+                "evaluated_at_utc.desc",
             "limit":
                 "20000",
         },
