@@ -65,6 +65,14 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 3 — V7.5 OPPORTUNITY LIFECYCLE",
+        [
+            python,
+            "v75_lifecycle_job.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
