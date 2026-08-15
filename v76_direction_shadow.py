@@ -554,6 +554,34 @@ def save_direction_states(
     return len(rows)
 
 
+def directional_move_pct(
+    episode: LifecycleEpisode,
+    direction: str,
+    price: float | None,
+) -> float | None:
+
+    reference = episode.first_detection_price
+
+    if (
+        reference in (None, 0)
+        or price is None
+        or direction not in {
+            "LONG",
+            "SHORT",
+        }
+    ):
+        return None
+
+    raw_move = (
+        price / reference - 1.0
+    ) * 100.0
+
+    if direction == "LONG":
+        return raw_move
+
+    return -raw_move
+
+
 def update_direction_state(
     episode: LifecycleEpisode,
     previous: dict[str, Any] | None,
@@ -587,6 +615,46 @@ def update_direction_state(
             "consecutive_direction_count"
         )
         or 0
+    )
+
+    previous_bucket_text = previous.get(
+        "last_counted_bucket_utc"
+    )
+
+    current_bucket = evaluated_at.replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+    previous_bucket = None
+
+    if previous_bucket_text:
+        try:
+            previous_bucket = datetime.fromisoformat(
+                str(previous_bucket_text)
+                .replace("Z", "+00:00")
+            )
+
+            if previous_bucket.tzinfo is None:
+                previous_bucket = previous_bucket.replace(
+                    tzinfo=timezone.utc
+                )
+
+            previous_bucket = previous_bucket.astimezone(
+                timezone.utc
+            ).replace(
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+
+        except ValueError:
+            previous_bucket = None
+
+    new_time_bucket = (
+        previous_bucket is None
+        or current_bucket > previous_bucket
     )
 
     confirmation_count = int(
@@ -629,11 +697,49 @@ def update_direction_state(
         "price_at_confirmed"
     )
 
+    move_at_emerging_pct = previous.get(
+        "move_at_emerging_pct"
+    )
+
+    move_at_confirmed_pct = previous.get(
+        "move_at_confirmed_pct"
+    )
+
+    # Safe recovery for pre-existing V7.6 rows:
+    # derive timing metrics only from already-frozen prices.
+    if (
+        move_at_emerging_pct is None
+        and price_at_emerging is not None
+        and previous_direction in {"LONG", "SHORT"}
+    ):
+        move_at_emerging_pct = directional_move_pct(
+            episode,
+            previous_direction,
+            float(price_at_emerging),
+        )
+
+    if (
+        move_at_confirmed_pct is None
+        and price_at_confirmed is not None
+        and previous_direction in {"LONG", "SHORT"}
+    ):
+        move_at_confirmed_pct = directional_move_pct(
+            episode,
+            previous_direction,
+            float(price_at_confirmed),
+        )
+
     # ----------------------------------------------
     # CONSECUTIVE DIRECTION COUNT
     # ----------------------------------------------
 
-    if direction == "UNKNOWN":
+    if not new_time_bucket:
+        # Same hourly observation bucket.
+        # Refresh evidence but never manufacture
+        # another persistence confirmation.
+        consecutive = previous_count
+
+    elif direction == "UNKNOWN":
         consecutive = 0
 
     elif (
@@ -665,6 +771,14 @@ def update_direction_state(
                 market_price
             )
 
+            move_at_emerging_pct = (
+                directional_move_pct(
+                    episode,
+                    direction,
+                    market_price,
+                )
+            )
+
         if (
             consecutive >= 2
             and confidence >= 55.0
@@ -678,6 +792,14 @@ def update_direction_state(
 
                 price_at_confirmed = (
                     market_price
+                )
+
+                move_at_confirmed_pct = (
+                    directional_move_pct(
+                        episode,
+                        direction,
+                        market_price,
+                    )
                 )
 
                 confirmation_count += 1
@@ -726,6 +848,12 @@ def update_direction_state(
         "price_at_confirmed":
             price_at_confirmed,
 
+        "move_at_emerging_pct":
+            move_at_emerging_pct,
+
+        "move_at_confirmed_pct":
+            move_at_confirmed_pct,
+
         "highest_confidence":
             highest_confidence,
 
@@ -740,6 +868,13 @@ def update_direction_state(
 
         "last_evaluated_at_utc":
             evaluated_at.isoformat(),
+
+        "last_counted_bucket_utc":
+            (
+                current_bucket.isoformat()
+                if new_time_bucket
+                else previous_bucket_text
+            ),
 
         "confirmation_count":
             confirmation_count,
