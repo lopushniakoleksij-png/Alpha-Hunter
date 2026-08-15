@@ -203,6 +203,20 @@ class LifecycleEpisode:
     first_5pct_at_utc: str | None = None
     first_10pct_at_utc: str | None = None
 
+    market_tracking_started_at_utc: str | None = None
+    measurement_quality: str | None = None
+
+    last_market_check_at_utc: str | None = None
+    market_checks: int = 0
+
+    max_up_excursion_pct: float = 0.0
+    max_down_excursion_pct: float = 0.0
+
+    expansion_direction: str | None = None
+
+    finalized_at_utc: str | None = None
+    is_finalized: bool = False
+
     final_classification: str | None = None
 
     def to_dict(

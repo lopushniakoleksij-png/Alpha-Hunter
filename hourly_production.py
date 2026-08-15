@@ -73,6 +73,22 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 4 — V7.5 INDEPENDENT EPISODE TRACKER",
+        [
+            python,
+            "v75_episode_market_tracker.py",
+        ],
+    )
+
+    run_step(
+        "STEP 5 — V7.5 24H EPISODE FINALIZER",
+        [
+            python,
+            "v75_episode_finalizer.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
