@@ -410,5 +410,51 @@ class TestPostConfirmationStateAndTruth(unittest.TestCase):
         )
 
 
+class TestPostConfirmationPersistenceSchema(unittest.TestCase):
+
+    def test_new_outcome_row_contains_created_at(self):
+        from unittest.mock import patch
+        from v76_post_confirmation_tracker import make_outcome_row
+
+        state = {
+            "episode_id": "mixed-row-schema-test",
+            "symbol": "TESTUSDT",
+            "path": "REVERSAL",
+            "model_version": "7.6-shadow",
+            "first_confirmed_at_utc": CONFIRMED_AT.isoformat(),
+            "price_at_confirmed": 100.0,
+            "move_at_confirmed_pct": 1.0,
+            "current_direction": "SHORT",
+            "direction_state": "DIRECTION_CONFIRMED",
+            "last_confidence": 70.0,
+        }
+
+        episode = SimpleNamespace(
+            symbol="TESTUSDT",
+            path="REVERSAL",
+        )
+
+        with patch(
+            "v76_post_confirmation_tracker.confirmation_shadow",
+            return_value={
+                "direction": "SHORT",
+                "confidence": 70.0,
+                "evaluated_at_utc": CONFIRMED_AT.isoformat(),
+                "market_price": 100.0,
+            },
+        ):
+            row = make_outcome_row(
+                SimpleNamespace(),
+                state,
+                episode,
+                CONFIRMED_AT + timedelta(minutes=10),
+            )
+
+        self.assertIsNotNone(row)
+        self.assertIn("created_at", row)
+        self.assertIn("updated_at", row)
+        self.assertFalse(row["trade_permission"])
+
+
 if __name__ == "__main__":
     unittest.main()

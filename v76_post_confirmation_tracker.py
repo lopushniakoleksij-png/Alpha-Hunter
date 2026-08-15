@@ -362,6 +362,7 @@ def make_outcome_row(
         "is_complete": False,
         "completed_at_utc": None,
         "trade_permission": False,
+        "created_at": now.isoformat(),
         "updated_at": now.isoformat(),
     }
 

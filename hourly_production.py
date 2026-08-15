@@ -105,6 +105,14 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 8 — V7.7 HUGE-RR EXECUTION FEASIBILITY SHADOW",
+        [
+            python,
+            "v77_execution_feasibility_shadow.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
