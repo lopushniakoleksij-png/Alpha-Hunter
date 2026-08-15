@@ -121,6 +121,22 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 10 — V7.9 FULL-UNIVERSE HOURLY LEDGER SHADOW",
+        [
+            python,
+            "v79_universe_hourly_collector.py",
+        ],
+    )
+
+    run_step(
+        "STEP 11 — V7.9 MISSED-MOVER RECALL AUDITOR SHADOW",
+        [
+            python,
+            "v79_missed_mover_recall_auditor.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
