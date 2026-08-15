@@ -217,6 +217,7 @@ class LifecycleEpisode:
     finalized_at_utc: str | None = None
     is_finalized: bool = False
 
+    provisional_classification: str | None = None
     final_classification: str | None = None
 
     def to_dict(

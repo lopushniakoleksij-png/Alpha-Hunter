@@ -89,6 +89,14 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 6 — V7.6 DIRECTION SHADOW",
+        [
+            python,
+            "v76_direction_shadow.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )

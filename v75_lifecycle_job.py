@@ -344,6 +344,16 @@ def load_supabase_state(
                     "first_3pct_at_utc,"
                     "first_5pct_at_utc,"
                     "first_10pct_at_utc,"
+                    "market_tracking_started_at_utc,"
+                    "measurement_quality,"
+                    "last_market_check_at_utc,"
+                    "market_checks,"
+                    "max_up_excursion_pct,"
+                    "max_down_excursion_pct,"
+                    "expansion_direction,"
+                    "finalized_at_utc,"
+                    "is_finalized,"
+                    "provisional_classification,"
                     "final_classification"
                 ),
             "order":
@@ -772,11 +782,16 @@ def main() -> int:
             episode = existing
             action = "UPDATE"
 
-        episode.final_classification = (
+        episode.provisional_classification = (
             classify_episode(
                 episode
             )
         )
+
+        # FINAL ground truth belongs exclusively
+        # to the 24H finalizer.
+        if not episode.is_finalized:
+            episode.final_classification = None
 
         print(
             f"{action:<6} "
@@ -791,8 +806,43 @@ def main() -> int:
             f"{episode.v74_rank or '—'} "
             f"shadow="
             f"{episode.v741_shadow_score or 0:>5.2f} "
-            f"class="
-            f"{episode.final_classification}"
+            f"provisional="
+            f"{episode.provisional_classification} "
+            f"final="
+            f"{episode.final_classification or 'PENDING'}"
+        )
+
+    # =====================================================
+    # GLOBAL GROUND-TRUTH INVARIANT
+    #
+    # Every unfinished episode must keep operational
+    # classification separate from final 24H ground truth.
+    # This also repairs stale local episodes that were not
+    # present in the current surveillance cohort.
+    # =====================================================
+
+    repaired = 0
+
+    for episode in episodes:
+        if episode.is_finalized:
+            continue
+
+        if (
+            episode.provisional_classification is None
+            and episode.final_classification is not None
+        ):
+            episode.provisional_classification = (
+                episode.final_classification
+            )
+
+            repaired += 1
+
+        episode.final_classification = None
+
+    if repaired:
+        print(
+            "Repaired stale provisional classifications:",
+            repaired,
         )
 
     save_state(
