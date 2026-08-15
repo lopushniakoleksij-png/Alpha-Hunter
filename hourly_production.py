@@ -113,6 +113,14 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 9 — V7.8 TIMING & RR DECAY AUDITOR SHADOW",
+        [
+            python,
+            "v78_timing_rr_decay_shadow.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
