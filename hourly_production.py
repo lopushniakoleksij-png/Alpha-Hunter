@@ -97,6 +97,14 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 7 — V7.6 POST-CONFIRMATION OUTCOME TRACKER",
+        [
+            python,
+            "v76_post_confirmation_tracker.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
