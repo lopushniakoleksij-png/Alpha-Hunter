@@ -296,3 +296,66 @@ resume V7.10 investigation from the recorded state.
 
 DO NOT reconstruct state from chat history.
 READ CURRENT_STATE.md FIRST.
+
+---
+
+## V7.10 ENTRY-LOCATION CHECKPOINT — 2026-08-16
+
+Execution replay:
+- Evaluated: 23
+- Correct early direction: 22/23
+- Correct direction NO_PREEXISTING_5R_SETUP: 13
+- Correct direction STOP_FIRST: 3
+- Correct direction TARGET_FIRST: 1
+- Correct direction UNRESOLVED: 5
+
+Stop-policy conclusion:
+- No stop policy promoted.
+- Positive provisional R is small-sample and materially influenced by AVAX.
+- Stop changes alone do not solve NO_SETUP frequency.
+
+Entry-location matrix:
+
+MARKET:
+- TARGET_FIRST 1
+- STOP_FIRST 1
+- NO_SETUP 18
+- Resolved R +4.53
+
+PB25:
+- TARGET_FIRST 2
+- STOP_FIRST 1
+- FILLED_UNRESOLVED 4
+- NOT_FILLED 1
+- TARGET_BEFORE_FILL 0
+- NO_SETUP 14
+- Resolved R +11.87
+
+PB50:
+- TARGET_FIRST 1
+- STOP_FIRST 2
+- FILLED_UNRESOLVED 2
+- NOT_FILLED 4
+- TARGET_BEFORE_FILL 2
+- NO_SETUP 11
+- Resolved R +3.13
+
+PB75:
+- TARGET_FIRST 0
+- STOP_FIRST 3
+- NOT_FILLED 2
+- TARGET_BEFORE_FILL 11
+- FILL_AND_STOP_SAME_BAR 2
+- NO_SETUP 4
+- Resolved R -3.00
+
+DECISION:
+- PB25 is the strongest current entry-location candidate.
+- Evidence is NOT sufficient for production promotion.
+- PB75 appears too deep and frequently misses expansion.
+- Setup geometry / target structure remains the dominant unresolved bottleneck.
+- Trade permission remains FALSE.
+- V7.10 remains SHADOW / RESEARCH.
+
+EXACT NEXT STEP:
+Run v710_target_ladder_diagnostic.py to determine whether NO_SETUP cases are caused by target structure being too close, stop distance being too wide, or farther pre-existing structure restoring 5R.
