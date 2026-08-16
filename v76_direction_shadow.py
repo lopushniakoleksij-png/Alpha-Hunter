@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,10 @@ from alpha_hunter.storage import SupabaseConfig
 from v75_lifecycle_job import (
     load_state,
     load_supabase_state,
+)
+from v710_direction_transition_ledger import (
+    build_transition_rows,
+    insert_transition_rows,
 )
 
 
@@ -554,6 +559,90 @@ def save_direction_states(
     return len(rows)
 
 
+def transition_run_context(
+    evaluated_at: datetime,
+) -> tuple[str, str]:
+
+    production_run_id = str(
+        os.getenv(
+            "ALPHA_HUNTER_PRODUCTION_RUN_ID"
+        )
+        or ""
+    ).strip()
+
+    production_version = str(
+        os.getenv(
+            "ALPHA_HUNTER_PRODUCTION_VERSION"
+        )
+        or ""
+    ).strip()
+
+    if not production_run_id:
+        production_run_id = (
+            "manual-v76-"
+            + evaluated_at.strftime(
+                "%Y%m%dT%H%M%S%fZ"
+            )
+        )
+
+    if not production_version:
+        production_version = (
+            "manual-v76-shadow"
+        )
+
+    return (
+        production_run_id,
+        production_version,
+    )
+
+
+def persist_direction_outputs(
+    settings: SupabaseConfig,
+    rows: list[dict[str, Any]],
+    state_rows: list[dict[str, Any]],
+    *,
+    production_run_id: str,
+    production_version: str,
+    captured_at: datetime,
+) -> tuple[int, int, int]:
+
+    transition_rows = (
+        build_transition_rows(
+            rows,
+            production_run_id,
+            production_version=
+                production_version,
+            captured_at=
+                captured_at,
+        )
+    )
+
+    transitions_saved = (
+        insert_transition_rows(
+            settings,
+            transition_rows,
+        )
+    )
+
+    shadow_saved = save_rows(
+        settings,
+        rows,
+    )
+
+    states_saved = (
+        save_direction_states(
+            settings,
+            state_rows,
+        )
+    )
+
+    return (
+        transitions_saved,
+        shadow_saved,
+        states_saved,
+    )
+
+
 def directional_move_pct(
     episode: LifecycleEpisode,
     direction: str,
@@ -970,6 +1059,13 @@ def main() -> int:
 
     evaluated_at = now_utc()
 
+    (
+        transition_run_id,
+        transition_production_version,
+    ) = transition_run_context(
+        evaluated_at
+    )
+
     previous_states = load_direction_states(
         settings
     )
@@ -1239,14 +1335,17 @@ def main() -> int:
                 f"FAILED: {exc}"
             )
 
-    saved = save_rows(
+    (
+        transitions_saved,
+        saved,
+        states_saved,
+    ) = persist_direction_outputs(
         settings,
         rows,
-    )
-
-    states_saved = save_direction_states(
-        settings,
         state_rows,
+        production_run_id=transition_run_id,
+        production_version=transition_production_version,
+        captured_at=evaluated_at,
     )
 
     longs = sum(
@@ -1313,6 +1412,16 @@ def main() -> int:
     print(
         "Direction state rows saved:",
         states_saved,
+    )
+
+    print(
+        "Immutable transition rows saved:",
+        transitions_saved,
+    )
+
+    print(
+        "Transition run ID:",
+        transition_run_id,
     )
 
     emerging = sum(
