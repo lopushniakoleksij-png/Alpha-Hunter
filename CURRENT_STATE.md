@@ -565,3 +565,47 @@ SAFETY:
 
 EXACT NEXT STEP:
 Add regression tests proving DETECTION, EMERGING and CONFIRMED each use their own phase_at timestamp, then replace the remaining rolling client.candles() calls with phase-anchored retrieval.
+
+---
+
+## V7.8 PHASE-HISTORY WIRING — STAGE 2 RED — 2026-08-16
+
+Regression test added:
+- tests/test_v78_phase_history_wiring.py
+
+Purpose:
+Prove that V7.8 DETECTION, EMERGING and CONFIRMED must each reconstruct candle history using their own phase_at timestamp.
+
+RED TEST RESULT:
+- 1 failed
+- 1 environment warning
+
+Confirmed failure:
+- Expected load_phase_candles() calls: 6
+- Actual calls: 0
+
+Interpretation:
+- load_phase_candles() exists from Stage 1.
+- V7.8 main is NOT yet using it.
+- Current main still uses rolling client.candles() history.
+- The same rolling history is reused across DETECTION / EMERGING / CONFIRMED.
+- Stage 2 defect is reproduced before implementation changes.
+
+TDD STATUS:
+RED — phase-time wiring defect reproduced.
+
+SAFETY:
+- Do not run v78_timing_rr_decay_shadow.py.
+- Do not run production_runner.py.
+- No database reconstruction.
+- No stop-model promotion.
+- Trade permission remains FALSE.
+
+GITHUB RECORDING RULE:
+Every meaningful Alpha Hunter production/research step must follow:
+PLAN → EXECUTE → TEST → VERIFY → RECORD → COMMIT → PUSH → REMOTE VERIFY → NEXT.
+
+No step is considered complete until its checkpoint is present on GitHub.
+
+EXACT NEXT STEP:
+Wire load_phase_candles() into DETECTION, EMERGING and CONFIRMED using each phase's own timestamp, then rerun the Stage 2 regression and full relevant test suite.
