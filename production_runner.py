@@ -916,6 +916,15 @@ def main() -> int:
             "v78_timing_rr_decay_shadow.py",
             240,
         ),
+        Step(
+            (
+                "STEP 10 — V7.10 "
+                "EARLY EXECUTION RR "
+                "SHADOW"
+            ),
+            "v710_early_execution_rr_shadow.py",
+            240,
+        ),
     ]
 
     missed_mover_audit = Step(

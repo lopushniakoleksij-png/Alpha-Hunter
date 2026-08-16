@@ -132,3 +132,121 @@ After reconciliation:
 TEST → VERIFY NO DRIFT → RECORD RESULT → COMMIT SAFE STATE
 
 Only then continue V7.10 research.
+
+---
+
+## PRODUCTION RECONCILIATION UPDATE — 2026-08-16
+
+### Git / Branch State
+
+Active branch:
+feature/v710-early-execution-shadow
+
+Production ledger commit from main:
+7456b99 — Add Alpha Hunter production state ledger
+
+Ledger merged into V7.10 branch:
+a3d7eaf
+
+### Local Working Changes
+
+Modified:
+- .gitignore
+- production_runner.py
+
+Untracked source/test files:
+- restore_previous_snapshot.py
+- tests/test_restore_previous_snapshot.py
+- v75_lifecycle_evaluator.py
+
+Runtime/generated data is now excluded from Git through:
+data/
+
+### V7.10 Runner Verification
+
+production_runner.py local modification adds:
+
+STEP 10 — V7.10 EARLY EXECUTION RR SHADOW
+
+Script:
+v710_early_execution_rr_shadow.py
+
+Verified:
+- Supabase access uses GET/read-only path
+- no requests.post
+- no requests.put
+- no requests.patch
+- no requests.delete
+- no httpx write methods found
+- trade_permission remains False
+
+Current classification:
+SHADOW / READ-ONLY RESEARCH
+
+### Snapshot Restore Verification
+
+restore_previous_snapshot.py:
+
+- reads latest Supabase snapshot with GET
+- does not mutate Supabase
+- writes restored snapshot locally only
+- local target: data/snapshots/latest.json
+- atomic temporary-file replacement used
+
+Test:
+
+python -m unittest tests.test_restore_previous_snapshot -v
+
+Result:
+5 tests run
+5 passed
+0 failures
+PASS
+
+### V7.5 Lifecycle Evaluator Verification
+
+Command:
+
+python v75_lifecycle_evaluator.py
+
+Result:
+PASS
+
+Episodes:
+69
+
+Expansion results:
+3%  = 58/69 = 84.1%
+5%  = 50/69 = 72.5%
+10% = 32/69 = 46.4%
+
+Execution:
+Trade Ready = 0
+Trade Permission = 0
+
+Performance classifications:
+ACTIVE = 11
+EARLY_DETECTION_NO_EXECUTION = 18
+EARLY_EXPANSION = 8
+MISSED_MAJOR_EXPANSION = 32
+
+IMPORTANT FINDING:
+
+Alpha Hunter is detecting many genuine expansion events, including 32 episodes that reached major expansion, but the execution layer generated zero Trade Ready and zero Trade Permission outcomes.
+
+This confirms a major detection-to-execution conversion problem that requires investigation.
+
+### CURRENT SAFETY STATE
+
+No real trade execution introduced.
+No V7.10 Supabase mutation discovered.
+V7.10 remains SHADOW.
+No runtime data will be blindly committed.
+
+### EXACT NEXT STEP
+
+Run full Git status and diff audit before staging anything.
+
+NO COMMIT.
+NO PUSH.
+NO PRODUCTION PROMOTION.
