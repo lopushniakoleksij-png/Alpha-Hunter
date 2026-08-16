@@ -609,3 +609,217 @@ No step is considered complete until its checkpoint is present on GitHub.
 
 EXACT NEXT STEP:
 Wire load_phase_candles() into DETECTION, EMERGING and CONFIRMED using each phase's own timestamp, then rerun the Stage 2 regression and full relevant test suite.
+
+---
+
+# ALPHA HUNTER HARD STOP / HANDOFF CHECKPOINT — 2026-08-16
+
+## CURRENT REMOTE CHECKPOINT
+
+Branch:
+feature/v710-early-execution-shadow
+
+Last verified remote commit before this checkpoint:
+906ba37a334444f67311db2a86e96ac91aebce5d
+
+Commit:
+Record V7.8 phase history wiring RED test
+
+## WHY WORK PAUSED
+
+V7.10 execution research exposed unstable experiment cohorts.
+
+Root cause was traced to V7.8 historical evidence mutation:
+historical phase rows were reconstructed from the current rolling Bitget candle window and upserted over the same snapshot_id.
+
+Older COMPLETE evidence could therefore degrade into:
+INSUFFICIENT_CANDLE_HISTORY.
+
+This made historical research cohorts unstable and made V7.10 comparisons provisional.
+
+## COMPLETED REPAIR WORK
+
+### Stage 1 — COMPLETE SNAPSHOT IMMUTABILITY
+
+Implemented in v78_timing_rr_decay_shadow.py:
+
+- Existing COMPLETE historical snapshots are immutable.
+- COMPLETE evidence is skipped instead of overwritten.
+- INSUFFICIENT evidence may be upgraded to COMPLETE.
+- load_existing_snapshot_rows() added.
+- load_phase_candles() added for phase_at-anchored Bitget history.
+
+Tests:
+
+tests/test_v78_snapshot_immutability.py
+
+TDD progression:
+RED:
+- 2 failed
+- 1 passed
+
+GREEN:
+- 3 passed
+
+Combined verification:
+- V7.8 regression + V7.10 tests: 60 passed
+- Python compile passed
+- git diff --check passed
+
+Stage 1 remote commit:
+baf9b2514f3c769ca782838562b323557001f52e
+
+### Stage 2 — PHASE-HISTORY WIRING
+
+Regression test added:
+
+tests/test_v78_phase_history_wiring.py
+
+Purpose:
+Require independent historical candle reconstruction for:
+
+DETECTION
+→ history anchored to detection_at
+
+EMERGING
+→ history anchored to emerging_at
+
+CONFIRMED
+→ history anchored to confirmed_at
+
+Current RED result:
+
+Expected load_phase_candles() calls: 6
+Actual calls: 0
+
+Result:
+1 failed
+
+This proves V7.8 main still uses rolling client.candles() history.
+
+Stage 2 RED remote commit:
+906ba37a334444f67311db2a86e96ac91aebce5d
+
+## CURRENT CODE STATE
+
+load_phase_candles() EXISTS.
+
+Immutable COMPLETE protection EXISTS.
+
+But V7.8 main is NOT YET wired to load_phase_candles().
+
+The remaining old rolling client.candles() calls must be replaced.
+
+## DO NOT DO YET
+
+Do NOT run:
+
+v78_timing_rr_decay_shadow.py
+
+Do NOT run:
+
+production_runner.py
+
+Do NOT reconstruct Supabase rows yet.
+
+Do NOT promote:
+
+- PB25
+- stop re-anchoring
+- 2% stop cap
+- 3 ATR stop cap
+- any V7.10 execution rule
+
+Trade Permission remains FALSE.
+
+V7.10 remains SHADOW / RESEARCH.
+
+## V7.10 RESULTS CURRENTLY PROVISIONAL
+
+Previous results including:
+
+- target ladder
+- stop policy matrix
+- entry location matrix
+- stop re-anchor replay
+- +18.65 provisional R
+
+must not be treated as validated until:
+
+1. V7.8 evidence integrity is fully repaired.
+2. damaged historical rows are reconstructed.
+3. research cohort episode IDs are frozen.
+4. repeated V7.10 runs reproduce the same cohort/results.
+
+## EXACT NEXT STEP
+
+Implement Stage 2 GREEN:
+
+Replace remaining rolling client.candles() usage in
+v78_timing_rr_decay_shadow.py with load_phase_candles().
+
+Required calls:
+
+DETECTION:
+15m @ detection_at
+1H @ detection_at
+
+EMERGING:
+15m @ emerging_at
+1H @ emerging_at
+
+CONFIRMED:
+15m @ confirmed_at
+1H @ confirmed_at
+
+Then run:
+
+python -m py_compile v78_timing_rr_decay_shadow.py
+
+python -m pytest -q tests/test_v78_phase_history_wiring.py
+
+Expected:
+1 passed
+
+Then run:
+
+python -m pytest -q \
+tests/test_v78_snapshot_immutability.py \
+tests/test_v78_phase_history_wiring.py \
+tests/test_v710_*.py
+
+Expected approximately:
+61 passed
+
+Then:
+
+VERIFY
+→ RECORD Stage 2 GREEN
+→ COMMIT
+→ PUSH
+→ REMOTE SHA VERIFY
+
+Only after remote verification:
+
+NEXT PHASE:
+Controlled damaged historical evidence reconstruction.
+
+Then:
+Freeze fixed episode-ID V7.10 cohort.
+
+Then:
+Rerun V7.10 execution research.
+
+## GOVERNING WORKFLOW
+
+PLAN
+→ EXECUTE
+→ TEST
+→ VERIFY
+→ RECORD
+→ COMMIT
+→ PUSH
+→ REMOTE VERIFY
+→ NEXT
+
+No meaningful Alpha Hunter step is complete until recorded on GitHub.
