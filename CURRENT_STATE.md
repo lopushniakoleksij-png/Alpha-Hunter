@@ -534,3 +534,34 @@ SAFETY:
 
 EXACT NEXT STEP:
 Implement immutable COMPLETE snapshot preservation and phase_at-anchored historical candle loading, then rerun these regression tests to reach GREEN.
+
+---
+
+## V7.8 EVIDENCE INTEGRITY REPAIR — STAGE 1 GREEN — 2026-08-16
+
+Implemented:
+- COMPLETE historical snapshots are now immutable in upsert_rows().
+- Existing COMPLETE evidence is skipped rather than recalculated or overwritten.
+- INSUFFICIENT evidence may still be upgraded to COMPLETE.
+- Added load_phase_candles() for phase_at-anchored Bitget historical retrieval.
+
+Verification:
+- tests/test_v78_snapshot_immutability.py: 3 passed.
+- Combined V7.8 regression + V7.10 suite: 60 passed.
+- git diff --check: clean.
+- Python compile: clean.
+- Only v78_timing_rr_decay_shadow.py modified.
+
+IMPORTANT:
+- load_phase_candles() exists but is NOT yet wired into V7.8 main.
+- V7.8 main still uses current rolling client.candles() history.
+- DETECTION / EMERGING / CONFIRMED therefore still need independent phase-time retrieval.
+
+SAFETY:
+- Do not run v78_timing_rr_decay_shadow.py yet.
+- Do not run production_runner.py yet.
+- No database reconstruction yet.
+- Trade permission remains FALSE.
+
+EXACT NEXT STEP:
+Add regression tests proving DETECTION, EMERGING and CONFIRMED each use their own phase_at timestamp, then replace the remaining rolling client.candles() calls with phase-anchored retrieval.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +102,127 @@ def rr_decay(
     # Positive = reward-to-risk was lost.
     # Negative = reward-to-risk improved.
     return earlier_rr - later_rr
+
+
+
+def load_phase_candles(
+    client: BitgetClient,
+    symbol: str,
+    product_type: str,
+    granularity: str,
+    phase_at: datetime,
+    interval_minutes: int,
+    limit: int = CANDLE_LIMIT,
+) -> list[Any]:
+    """Load historical candles ending at the phase timestamp."""
+
+    if interval_minutes <= 0 or limit <= 0:
+        return []
+
+    phase_at = phase_at.astimezone(timezone.utc)
+
+    end_ms = int(
+        phase_at.timestamp()
+        * 1000
+    )
+
+    start_at = (
+        phase_at
+        - timedelta(
+            minutes=(
+                interval_minutes
+                * int(limit)
+            )
+        )
+    )
+
+    start_ms = int(
+        start_at.timestamp()
+        * 1000
+    )
+
+    return (
+        client._get(
+            "/api/v2/mix/market/history-candles",
+            {
+                "symbol": symbol,
+                "productType": product_type,
+                "granularity": granularity,
+                "startTime": str(start_ms),
+                "endTime": str(end_ms),
+                "limit": str(
+                    min(
+                        max(int(limit), 1),
+                        200,
+                    )
+                ),
+            },
+        )
+        or []
+    )
+
+
+def load_existing_snapshot_rows(
+    settings: SupabaseConfig,
+    snapshot_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Read existing V7.8 evidence before deciding what may be written."""
+
+    ids = sorted(
+        {
+            str(value)
+            for value in snapshot_ids
+            if value
+        }
+    )
+
+    if not ids:
+        return {}
+
+    response = requests.get(
+        f"{settings.url}/rest/v1/{TABLE}",
+        params={
+            "select":
+                "snapshot_id,measurement_quality",
+            "snapshot_id":
+                "in.("
+                + ",".join(ids)
+                + ")",
+        },
+        headers=headers(settings),
+        timeout=settings.timeout_seconds,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "V7.8 existing snapshot load failed: "
+            f"HTTP {response.status_code}: "
+            f"{response.text[:800]}"
+        )
+
+    payload = response.json()
+
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            "V7.8 existing snapshot response "
+            "is not a list"
+        )
+
+    result = {}
+
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+
+        snapshot_id = str(
+            row.get("snapshot_id")
+            or ""
+        )
+
+        if snapshot_id:
+            result[snapshot_id] = row
+
+    return result
 
 
 def build_phase_row(
@@ -518,12 +639,58 @@ def apply_rr_decay(
     return rows
 
 
+
 def upsert_rows(
     settings: SupabaseConfig,
     rows: list[dict[str, Any]],
 ) -> int:
 
     if not rows:
+        return 0
+
+    existing = load_existing_snapshot_rows(
+        settings,
+        [
+            str(
+                row.get("snapshot_id")
+                or ""
+            )
+            for row in rows
+        ],
+    )
+
+    writable_rows = []
+
+    for row in rows:
+        snapshot_id = str(
+            row.get("snapshot_id")
+            or ""
+        )
+
+        previous = existing.get(
+            snapshot_id
+        )
+
+        previous_quality = str(
+            (
+                previous
+                or {}
+            ).get(
+                "measurement_quality"
+            )
+            or ""
+        ).upper()
+
+        # COMPLETE historical evidence is immutable.
+        if (
+            previous is not None
+            and previous_quality == "COMPLETE"
+        ):
+            continue
+
+        writable_rows.append(row)
+
+    if not writable_rows:
         return 0
 
     response = requests.post(
@@ -536,7 +703,7 @@ def upsert_rows(
             merge=True,
         ),
         data=json.dumps(
-            rows,
+            writable_rows,
             separators=(",", ":"),
         ),
         timeout=settings.timeout_seconds,
@@ -553,7 +720,7 @@ def upsert_rows(
             f"{response.text[:800]}"
         )
 
-    return len(rows)
+    return len(writable_rows)
 
 
 def rr_text(
