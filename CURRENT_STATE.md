@@ -359,3 +359,38 @@ DECISION:
 
 EXACT NEXT STEP:
 Run v710_target_ladder_diagnostic.py to determine whether NO_SETUP cases are caused by target structure being too close, stop distance being too wide, or farther pre-existing structure restoring 5R.
+
+---
+
+## V7.10 TARGET-LADDER CHECKPOINT — 2026-08-16
+
+Target-ladder diagnostic:
+- Evaluated: 23
+- Failures: 0
+- FARTHER_STRUCTURE_RESTORES_5R: 5
+- STOP_TOO_WIDE_EVEN_FOR_10PCT: 12
+- TARGET_OR_STRUCTURE_BOTTLENECK: 6
+
+Primary finding:
+- 52.2% of evaluated early episodes fail primarily because structural stop distance is too wide even for a hypothetical 10% reward move.
+- Direction discovery is therefore not the dominant current failure.
+- Stop/invalidation geometry at DIRECTION_EMERGING is now the primary execution bottleneck.
+- Farther pre-existing structure restores >=5R in only a minority of cases.
+- Target selection alone cannot solve the majority of NO_SETUP outcomes.
+
+Examples of excessive stop distance:
+- CYSUSDT: 45.73%
+- HUSDT: 30.74%
+- AEONUSDT: up to 11.52%
+- DOLOUSDT: 8.06%
+
+DECISION:
+- Do not promote PB25 yet.
+- Do not loosen Trade Permission.
+- Do not select a stop policy yet.
+- Investigate how V7.8 creates structural stop/invalidation at DIRECTION_EMERGING.
+- V7.10 remains SHADOW / RESEARCH.
+- Trade permission remains FALSE.
+
+EXACT NEXT STEP:
+Trace stop_price and stop_distance_pct generation through V7.7/V7.8 and determine why early emerging episodes receive excessively wide structural invalidations.
