@@ -250,3 +250,49 @@ Run full Git status and diff audit before staging anything.
 NO COMMIT.
 NO PUSH.
 NO PRODUCTION PROMOTION.
+
+---
+
+## CHECKPOINT COMPLETED — 2026-08-16
+
+Reconciliation commit:
+91b1615 — Reconcile V7.10 shadow production state and recovery tooling
+
+Remote branch:
+feature/v710-early-execution-shadow
+
+Push status:
+PASS
+
+GitHub remote verification:
+PASS
+
+Commit verified remotely:
+91b1615da3818e6f48539d7dfe64b24e046e6a16
+
+Working tree before this ledger update:
+CLEAN
+
+### VERIFIED CHECKPOINT STATE
+
+- Production ledger established
+- Ledger filename corrected to CURRENT_STATE.md
+- Runtime data excluded from Git
+- Snapshot restore tooling added
+- Snapshot restore tests: 5/5 PASS
+- V7.5 lifecycle evaluator: PASS
+- V7.10 runner hook verified
+- V7.10 Supabase path remains read-only
+- Trade permission remains FALSE
+- No real trade execution introduced
+- V7.10 remains SHADOW / RESEARCH
+
+### NEXT STEP
+
+Commit and push this checkpoint ledger update only.
+
+After that:
+resume V7.10 investigation from the recorded state.
+
+DO NOT reconstruct state from chat history.
+READ CURRENT_STATE.md FIRST.
