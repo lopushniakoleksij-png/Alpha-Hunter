@@ -394,3 +394,43 @@ DECISION:
 
 EXACT NEXT STEP:
 Trace stop_price and stop_distance_pct generation through V7.7/V7.8 and determine why early emerging episodes receive excessively wide structural invalidations.
+
+---
+
+## V7.10 STOP-SOURCE ROOT-CAUSE CHECKPOINT — 2026-08-16
+
+Emerging stop-source forensics:
+- Emerging rows evaluated: 23
+- Stop >2%: 15/23 = 65.2%
+- Stop >3 ATR: 12/23 = 52.2%
+- Every observed stop source was 15M structure.
+- No 1H stop source was selected.
+
+Wide stop source breakdown:
+- 15M_SWING_HIGH + 0.25ATR15 buffer: 9
+- 15M_SWING_LOW + 0.25ATR15 buffer: 6
+
+Extreme examples:
+- CYSUSDT SHORT: stop 45.73%, 4.94 ATR
+- HUSDT SHORT: stop 30.74%, 4.42 ATR
+- AEONUSDT SHORT: stop up to 11.52%, 4.23 ATR
+- DOLOUSDT LONG: stop 8.06%, 2.21 ATR
+
+ROOT-CAUSE FINDING:
+- Excessive stops are not being created by 1H structure.
+- The dominant source is the 15M structural extreme used at DIRECTION_EMERGING.
+- During strong displacement, the recent structural extreme can remain far behind price and cease to be useful execution invalidation.
+- The 0.25 ATR buffer widens the stop further but is not the primary cause.
+- Simply forcing a shorter stop window is not yet justified because prior replay showed increased stop-outs.
+
+DECISION:
+- Do not change production stop logic.
+- Do not promote PB25.
+- Do not loosen Trade Permission.
+- Do not impose a hard 2% or 3 ATR production cap yet.
+- Test stop admissibility and local stop re-anchoring in V7.10 shadow research.
+- Trade permission remains FALSE.
+- V7.10 remains SHADOW / RESEARCH.
+
+EXACT NEXT STEP:
+Build a read-only stop re-anchor diagnostic that compares the current V7.8 stop against local re-anchored stops and tests whether waiting for a valid local invalidation can preserve early direction while improving executable RR.
