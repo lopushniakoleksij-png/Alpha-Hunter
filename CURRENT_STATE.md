@@ -494,3 +494,43 @@ REQUIRED FIX:
 
 EXACT NEXT STEP:
 Add failing regression tests for COMPLETE-snapshot preservation and phase-time historical candle reconstruction before modifying V7.8 implementation.
+
+---
+
+## V7.8 IMMUTABILITY REGRESSION TEST — RED CHECKPOINT — 2026-08-16
+
+Regression tests added:
+- tests/test_v78_snapshot_immutability.py
+
+Result:
+- 2 failed
+- 1 passed
+- 1 environment warning
+
+Confirmed failing protections:
+
+1. COMPLETE snapshot preservation
+- Existing COMPLETE snapshot was supplied.
+- Incoming row had the same snapshot_id but INSUFFICIENT_CANDLE_HISTORY.
+- Current upsert_rows() returned 1 and attempted persistence.
+- Expected behavior is 0 writes.
+- Defect reproduced successfully.
+
+2. Phase-time historical reconstruction
+- V7.8 does not currently provide load_phase_candles().
+- Historical candle reconstruction therefore remains dependent on the rolling current-candle window.
+- Defect reproduced successfully.
+
+Passing behavior:
+- Existing INSUFFICIENT snapshot may be upgraded to COMPLETE.
+
+TDD STATUS:
+RED — defects reproduced before implementation changes.
+
+SAFETY:
+- Do not run V7.8.
+- Do not run production_runner.py.
+- Trade permission remains FALSE.
+
+EXACT NEXT STEP:
+Implement immutable COMPLETE snapshot preservation and phase_at-anchored historical candle loading, then rerun these regression tests to reach GREEN.
