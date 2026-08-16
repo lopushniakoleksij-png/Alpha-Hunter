@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
@@ -1019,15 +1020,17 @@ def select_market_universe(
             or 0.0
         )
 
-        change_24h_pct = (
-            (
-                to_float(
-                    ticker.get(
-                        "change24h"
-                    )
-                )
-                or 0.0
+        change_raw = to_float(
+            ticker.get(
+                "change24h"
             )
+        )
+
+        if change_raw is None:
+            continue
+
+        change_24h_pct = (
+            change_raw
             * 100
         )
 
@@ -3260,6 +3263,11 @@ def main() -> int:
     snapshot = {
         "version":
             "0.7.1",
+
+        "production_run_id":
+            os.environ.get(
+                "ALPHA_HUNTER_PRODUCTION_RUN_ID"
+            ),
 
         "collected_at_utc":
             datetime.now(
