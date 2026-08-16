@@ -434,3 +434,63 @@ DECISION:
 
 EXACT NEXT STEP:
 Build a read-only stop re-anchor diagnostic that compares the current V7.8 stop against local re-anchored stops and tests whether waiting for a valid local invalidation can preserve early direction while improving executable RR.
+
+---
+
+## V7.8 HISTORICAL EVIDENCE MUTATION DEFECT — 2026-08-16
+
+Audit result:
+- Raw EMERGING rows: 37
+- Currently usable EMERGING rows: 21
+- Usable correct direction: 20
+- Usable wrong direction: 1
+
+Confirmed historical degradation examples:
+- CAPUSDT episode 70bdc9f4301133fdeb3f2412
+  - EMERGING phase: 2026-08-15T17:08:21Z
+  - measurement_quality: INSUFFICIENT_CANDLE_HISTORY
+  - closed 15M bars available on latest rerun: 7
+  - closed 1H bars available on latest rerun: 9
+
+- CYSUSDT episode a046ccf95346f0da2e8254d4
+  - EMERGING phase: 2026-08-15T17:08:21Z
+  - measurement_quality: INSUFFICIENT_CANDLE_HISTORY
+  - closed 15M bars available on latest rerun: 7
+  - closed 1H bars available on latest rerun: 9
+
+Control:
+- VELVETUSDT episode 96b492a4abe75a7955308345
+  - newer EMERGING phase
+  - COMPLETE
+  - closed 15M bars: 94
+  - closed 1H bars: 112
+
+ROOT CAUSE:
+- V7.8 recalculates historical phase evidence using the current rolling candle window.
+- Older phase timestamps eventually fall outside sufficient rolling history.
+- V7.8 upserts on snapshot_id.
+- A previously COMPLETE historical snapshot can therefore be overwritten by later INSUFFICIENT_CANDLE_HISTORY evidence.
+- Historical research evidence is not currently immutable.
+
+IMPACT:
+- V7.10 cohorts changed between experiments.
+- Previous 23-episode comparisons are not guaranteed stable.
+- Stop-policy, target-ladder, entry-location and re-anchor results remain provisional until evidence integrity is repaired and cohorts are frozen.
+
+IMMEDIATE SAFETY DECISION:
+- Do not run V7.8 again until repaired.
+- Do not run production_runner.py while V7.8 mutation risk remains.
+- Do not promote PB25.
+- Do not promote stop re-anchoring.
+- Do not change Trade Permission.
+- Trade permission remains FALSE.
+
+REQUIRED FIX:
+1. Historical phase candle retrieval must be anchored to phase_at, not today's latest rolling window.
+2. Existing COMPLETE phase evidence must never be downgraded by an incomplete later recalculation.
+3. Add explicit immutable-snapshot regression tests.
+4. Reconstruct damaged historical rows from phase-time historical candles.
+5. Freeze an episode-ID cohort before rerunning V7.10 comparisons.
+
+EXACT NEXT STEP:
+Add failing regression tests for COMPLETE-snapshot preservation and phase-time historical candle reconstruction before modifying V7.8 implementation.
