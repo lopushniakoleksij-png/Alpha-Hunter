@@ -1,0 +1,134 @@
+# ALPHA HUNTER — CURRENT PRODUCTION STATE
+
+Last updated: 2026-08-16 18:04 UK
+Repository: lopushniakoleksij-png/Alpha-Hunter
+Branch: main
+
+## PURPOSE
+
+This file is the mandatory Alpha Hunter production handoff record.
+
+Before any new ChatGPT conversation changes Alpha Hunter production, it must read this record and establish the current state.
+
+No production work may rely only on chat history.
+
+## WORKFLOW RULE
+
+PLAN → EXECUTE → TEST → VERIFY → RECORD → COMMIT → NEXT
+
+No meaningful production step is complete until it is recorded.
+
+## CURRENT GITHUB STATE
+
+Repository verified: YES
+Repository: lopushniakoleksij-png/Alpha-Hunter
+Branch: main
+Latest GitHub commit observed before ledger creation:
+aea31f1 — Add V7.5 independent tracking and 24H finalization
+
+ChatGPT UI GitHub status:
+Connected
+Permission: Allow all
+
+IMPORTANT:
+ChatGPT's GitHub integration previously returned zero accessible repositories.
+Browser verification confirmed that Alpha-Hunter exists.
+Connector/API access still requires separate verification.
+
+## CURRENT PRODUCTION / RESEARCH STATE
+
+Current active research: V7.10 Early Execution / RR Shadow Research
+
+Classification: SHADOW / RESEARCH
+Production permission: NONE
+
+V7.10 must remain read-only until explicitly promoted after testing and verification.
+
+Observed V7.10 diagnostic cases:
+
+WLDUSDT
+Class: WRONG_DIRECTION_BAD_RR
+Direction: SHORT
+Executable RR: 4.78
+Captured RR: 0.01
+Lost RR: 4.78
+Move: -0.03
+
+CAPUSDT
+Class: WRONG_DIRECTION_BAD_RR
+Direction: LONG
+Executable RR: 0.86
+Captured RR: 0.13
+Lost RR: 0.73
+Move: 0.38
+
+V7.10 run explicitly reported:
+
+- READ-ONLY SHADOW RESEARCH
+- No Supabase rows written
+- No trade permission generated
+
+## LOCAL WORKING TREE LAST OBSERVED
+
+Modified:
+production_runner.py
+
+Untracked:
+data/
+restore_previous_snapshot.py
+tests/test_restore_previous_snapshot.py
+
+This local state has NOT yet been reconciled with GitHub.
+
+Do not overwrite, discard, commit, or promote these changes until their purpose and diff are verified.
+
+## CURRENT PROBLEM
+
+Production continuity depended too heavily on ChatGPT conversation history.
+
+When a new chat was started, work state had to be reconstructed manually.
+
+This created:
+
+- wasted time
+- drift risk
+- duplicated investigation
+- incorrect assumptions
+- risk of losing experimental context
+- risk of mixing research and production
+
+## PERMANENT HANDOFF RULE
+
+Every production session must record:
+
+1. What we planned
+2. What we executed
+3. Files changed
+4. Tests performed
+5. Test results
+6. Failures discovered
+7. Decisions made
+8. Production/research classification
+9. Git commit
+10. Exact next step
+
+## NEXT STEP
+
+STOP FEATURE DEVELOPMENT.
+
+First reconcile the local Alpha Hunter working tree against GitHub.
+
+Verify:
+
+- production_runner.py diff
+- data/snapshots/latest.json state
+- restore_previous_snapshot.py
+- tests/test_restore_previous_snapshot.py
+- whether V7.10 changes are intentionally shadow-only
+- whether any production behavior changed unintentionally
+
+After reconciliation:
+
+TEST → VERIFY NO DRIFT → RECORD RESULT → COMMIT SAFE STATE
+
+Only then continue V7.10 research.
