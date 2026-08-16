@@ -1,0 +1,412 @@
+name: Alpha Hunter 5-Day Cloud Live
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alpha-hunter-5d-cloud-live
+  cancel-in-progress: false
+
+jobs:
+  live-cycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Five-day window guard
+        id: window
+        shell: bash
+        run: |
+          NOW=$(date -u +%s)
+          START=$(date -u -d '2026-08-16T21:45:00Z' +%s)
+          END=$(date -u -d '2026-08-21T21:45:00Z' +%s)
+
+          if [ "$NOW" -ge "$START" ] && [ "$NOW" -lt "$END" ]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "Alpha Hunter 5-day cloud window ACTIVE"
+          else
+            echo "active=false" >> "$GITHUB_OUTPUT"
+            echo "Outside Alpha Hunter 5-day cloud window"
+          fi
+
+      - name: Checkout frozen live branch
+        if: steps.window.outputs.active == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: live/alpha-hunter-5d-20260816
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Python
+        if: steps.window.outputs.active == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.window.outputs.active == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run safe Alpha Hunter cloud chain
+        if: steps.window.outputs.active == 'true'
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -uo pipefail
+
+          RUN_ID="cloud5d-$(date -u +%Y%m%dT%H%M%SZ)"
+
+          echo "ALPHA_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+
+          export ALPHA_HUNTER_PRODUCTION_RUN_ID="$RUN_ID"
+          export ALPHA_HUNTER_PRODUCTION_VERSION="cloud-5d-safe-v1"
+
+          BASE="data/cloud-live-5d"
+          LOGDIR="$BASE/logs/$RUN_ID"
+          STATUSDIR="$BASE/status"
+          RAWDIR="$BASE/raw"
+          DEEPDIR="$BASE/deep-snapshots"
+
+          mkdir -p \
+            "$LOGDIR" \
+            "$STATUSDIR" \
+            "$RAWDIR" \
+            "$DEEPDIR"
+
+          STATUS="$STATUSDIR/$RUN_ID.tsv"
+
+          printf "step\tstatus\n" > "$STATUS"
+
+          run_one () {
+            LABEL="$1"
+            SCRIPT="$2"
+            LIMIT="${3:-12m}"
+
+            echo
+            echo "============================================================"
+            echo "$LABEL"
+            echo "============================================================"
+
+            timeout "$LIMIT" \
+              python "$SCRIPT" \
+              2>&1 | tee "$LOGDIR/$LABEL.log"
+
+            CODE=${PIPESTATUS[0]}
+
+            if [ "$CODE" -eq 0 ]; then
+              printf "%s\tPASS\n" "$LABEL" >> "$STATUS"
+            else
+              printf "%s\tFAIL_%s\n" "$LABEL" "$CODE" >> "$STATUS"
+            fi
+
+            return "$CODE"
+          }
+
+          skip_one () {
+            LABEL="$1"
+            REASON="$2"
+
+            printf "%s\tSKIPPED_%s\n" \
+              "$LABEL" "$REASON" >> "$STATUS"
+          }
+
+          echo "=== IMMUTABLE RAW BITGET BACKUP ==="
+
+          python - <<'PY' \
+            2>&1 | tee "$LOGDIR/raw_universe.log"
+          import gzip
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from alpha_hunter.bitget import BitgetClient
+          from alpha_hunter.collector import load_config
+
+          config = load_config(Path("config.json"))
+
+          client = BitgetClient.from_environment(
+              timeout=int(
+                  config.get(
+                      "request_timeout_seconds",
+                      12,
+                  )
+              ),
+              max_retries=int(
+                  config.get(
+                      "max_retries",
+                      3,
+                  )
+              ),
+          )
+
+          product_type = str(
+              config.get(
+                  "product_type",
+                  "usdt-futures",
+              )
+          )
+
+          payload = {
+              "run_id": os.environ[
+                  "ALPHA_HUNTER_PRODUCTION_RUN_ID"
+              ],
+              "captured_at_utc":
+                  datetime.now(
+                      timezone.utc
+                  ).isoformat(),
+              "product_type": product_type,
+              "contracts":
+                  client.contracts(
+                      product_type
+                  ) or [],
+              "instruments":
+                  client.instruments(
+                      product_type
+                  ) or [],
+              "tickers":
+                  client.tickers(
+                      product_type
+                  ) or [],
+              "trade_permission": False,
+              "source":
+                  "BITGET_PUBLIC_API",
+          }
+
+          path = (
+              Path("data/cloud-live-5d/raw")
+              / (
+                  payload["run_id"]
+                  + ".json.gz"
+              )
+          )
+
+          path.parent.mkdir(
+              parents=True,
+              exist_ok=True,
+          )
+
+          with gzip.open(
+              path,
+              "wt",
+              encoding="utf-8",
+          ) as handle:
+              json.dump(
+                  payload,
+                  handle,
+                  separators=(",", ":"),
+              )
+
+          print(
+              "Raw universe saved:",
+              path,
+          )
+          PY
+
+          RAW_CODE=${PIPESTATUS[0]}
+
+          if [ "$RAW_CODE" -eq 0 ]; then
+            printf "raw_universe\tPASS\n" >> "$STATUS"
+          else
+            printf "raw_universe\tFAIL_%s\n" \
+              "$RAW_CODE" >> "$STATUS"
+          fi
+
+          echo "=== STEP 1 — LIVE SCAN ==="
+
+          run_one \
+            live_scan \
+            run.py \
+            15m
+
+          LIVE_CODE=$?
+
+          if [ -f data/snapshots/latest.json ]; then
+            gzip -9 -c \
+              data/snapshots/latest.json \
+              > "$DEEPDIR/$RUN_ID.json.gz"
+          fi
+
+          DB_READY=0
+
+          if \
+            [ -n "${SUPABASE_URL:-}" ] \
+            && \
+            [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]
+          then
+            DB_READY=1
+            echo "Supabase cloud persistence: CONFIGURED"
+          else
+            echo "Supabase cloud persistence: NOT CONFIGURED"
+          fi
+
+          if [ "$LIVE_CODE" -ne 0 ]; then
+            skip_one v79_universe LIVE_SCAN_FAILED
+            skip_one guardrails LIVE_SCAN_FAILED
+            skip_one v74_tracking LIVE_SCAN_FAILED
+            skip_one v75_lifecycle LIVE_SCAN_FAILED
+            skip_one v75_market_tracker LIVE_SCAN_FAILED
+            skip_one v75_finalizer LIVE_SCAN_FAILED
+            skip_one v76_direction LIVE_SCAN_FAILED
+            skip_one v76_post_confirmation LIVE_SCAN_FAILED
+            skip_one v77_execution LIVE_SCAN_FAILED
+            skip_one v79_missed_mover LIVE_SCAN_FAILED
+
+          elif [ "$DB_READY" -ne 1 ]; then
+            skip_one v79_universe SUPABASE_NOT_CONFIGURED
+            skip_one guardrails SUPABASE_NOT_CONFIGURED
+            skip_one v74_tracking SUPABASE_NOT_CONFIGURED
+            skip_one v75_lifecycle SUPABASE_NOT_CONFIGURED
+            skip_one v75_market_tracker SUPABASE_NOT_CONFIGURED
+            skip_one v75_finalizer SUPABASE_NOT_CONFIGURED
+            skip_one v76_direction SUPABASE_NOT_CONFIGURED
+            skip_one v76_post_confirmation SUPABASE_NOT_CONFIGURED
+            skip_one v77_execution SUPABASE_NOT_CONFIGURED
+            skip_one v79_missed_mover SUPABASE_NOT_CONFIGURED
+
+          else
+            run_one \
+              v79_universe \
+              v79_universe_hourly_collector.py \
+              8m
+
+            LEDGER_CODE=$?
+
+            if [ "$LEDGER_CODE" -ne 0 ]; then
+              skip_one guardrails UNIVERSE_LEDGER_FAILED
+              skip_one v74_tracking DATA_GATE_FAILED
+              skip_one v75_lifecycle DATA_GATE_FAILED
+              skip_one v75_market_tracker DATA_GATE_FAILED
+              skip_one v75_finalizer DATA_GATE_FAILED
+              skip_one v76_direction DATA_GATE_FAILED
+              skip_one v76_post_confirmation DATA_GATE_FAILED
+              skip_one v77_execution DATA_GATE_FAILED
+              skip_one v79_missed_mover DATA_GATE_FAILED
+
+            else
+              run_one \
+                guardrails \
+                production_guardrails.py \
+                8m
+
+              GUARD_CODE=$?
+
+              if [ "$GUARD_CODE" -ne 0 ]; then
+                skip_one v74_tracking GUARDRAIL_FAILED
+                skip_one v75_lifecycle GUARDRAIL_FAILED
+                skip_one v75_market_tracker GUARDRAIL_FAILED
+                skip_one v75_finalizer GUARDRAIL_FAILED
+                skip_one v76_direction GUARDRAIL_FAILED
+                skip_one v76_post_confirmation GUARDRAIL_FAILED
+                skip_one v77_execution GUARDRAIL_FAILED
+                skip_one v79_missed_mover GUARDRAIL_FAILED
+
+              else
+                CHAIN_OK=1
+
+                for ENTRY in \
+                  "v74_tracking:v74_tracking_job.py:8m" \
+                  "v75_lifecycle:v75_lifecycle_job.py:8m" \
+                  "v75_market_tracker:v75_episode_market_tracker.py:10m" \
+                  "v75_finalizer:v75_episode_finalizer.py:8m" \
+                  "v76_direction:v76_direction_shadow.py:10m" \
+                  "v76_post_confirmation:v76_post_confirmation_tracker.py:10m" \
+                  "v77_execution:v77_execution_feasibility_shadow.py:10m"
+                do
+                  IFS=: read -r \
+                    LABEL SCRIPT LIMIT \
+                    <<< "$ENTRY"
+
+                  if [ "$CHAIN_OK" -eq 1 ]; then
+                    run_one \
+                      "$LABEL" \
+                      "$SCRIPT" \
+                      "$LIMIT"
+
+                    CODE=$?
+
+                    if [ "$CODE" -ne 0 ]; then
+                      CHAIN_OK=0
+                    fi
+                  else
+                    skip_one \
+                      "$LABEL" \
+                      UPSTREAM_MODEL_FAILED
+                  fi
+                done
+
+                # Independent recall audit.
+                run_one \
+                  v79_missed_mover \
+                  v79_missed_mover_recall_auditor.py \
+                  10m
+              fi
+            fi
+          fi
+
+          echo
+          echo "=== SAFETY ASSERTIONS ==="
+          echo "production_runner.py: BLOCKED"
+          echo "v78_timing_rr_decay_shadow.py: BLOCKED"
+          echo "v710_early_execution_rr_shadow.py: BLOCKED"
+          echo "automatic trading: DISABLED"
+          echo "trade permission: FALSE"
+
+          {
+            echo
+            echo "Run: $RUN_ID"
+            echo "UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "Supabase configured: $DB_READY"
+            echo "Blocked: production_runner.py"
+            echo "Blocked: v78_timing_rr_decay_shadow.py"
+            echo "Blocked: v710_early_execution_rr_shadow.py"
+          } >> "$BASE/cloud-run-ledger.txt"
+
+          exit 0
+
+      - name: Commit hourly evidence to live branch
+        if: always() && steps.window.outputs.active == 'true'
+        shell: bash
+        run: |
+          git config \
+            user.name \
+            "alpha-hunter-cloud"
+
+          git config \
+            user.email \
+            "alpha-hunter-cloud@users.noreply.github.com"
+
+          git add -f \
+            data/cloud-live-5d
+
+          if [ -f data/state-history.jsonl ]; then
+            git add -f \
+              data/state-history.jsonl
+          fi
+
+          if [ -f data/snapshots/latest.json ]; then
+            git add -f \
+              data/snapshots/latest.json
+          fi
+
+          if git diff --cached --quiet; then
+            echo "No cloud evidence changes to commit."
+            exit 0
+          fi
+
+          git commit \
+            -m "Cloud live evidence ${ALPHA_RUN_ID:-unknown}"
+
+          git push \
+            origin \
+            HEAD:live/alpha-hunter-5d-20260816
