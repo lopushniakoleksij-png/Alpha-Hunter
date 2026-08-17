@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-17T07:02:16.678652+00:00
+Hour bucket: 2026-08-17T07:00:00+00:00
+Contract tickers: 755
+Rows attempted: 755
+Deep-scan selected: 30
+Selection snapshot: 2026-08-17T07:02:14.821459+00:00
+Selection run ID: 9294510a7ed406b593a925968d539de4
+Prefilter eligible: 300
+Eligible not selected: 271
+Non-crypto: 286
+Low liquidity: 167
+Over-extended: 2
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+GPSUSDT             +37.92%       N       Y  OVER_EXTENDED
+HUSDT               -34.58%       N       N  OVER_EXTENDED
+BTWUSDT             +19.23%       Y       N  ELIGIBLE_NOT_SELECTED
+USUSDT              +19.02%       Y       N  ELIGIBLE_NOT_SELECTED
+BEATUSDT            -18.73%       Y       Y  DEEP_SCAN_SELECTED
+TUTUSDT             +18.38%       Y       N  ELIGIBLE_NOT_SELECTED
+MUBARAKUSDT         +18.35%       Y       N  ELIGIBLE_NOT_SELECTED
+ACUUSDT             -16.83%       Y       N  ELIGIBLE_NOT_SELECTED
+CYSUSDT             -15.57%       Y       Y  DEEP_SCAN_SELECTED
+STBLUSDT            +14.61%       Y       Y  DEEP_SCAN_SELECTED
+ONGUSDT             +14.43%       Y       Y  DEEP_SCAN_SELECTED
+CHIPUSDT            +14.42%       Y       Y  DEEP_SCAN_SELECTED
+NILUSDT             +13.48%       Y       Y  DEEP_SCAN_SELECTED
+COWUSDT             -12.91%       Y       Y  DEEP_SCAN_SELECTED
+VELVETUSDT          +12.83%       Y       N  ELIGIBLE_NOT_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
