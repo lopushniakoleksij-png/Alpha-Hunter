@@ -1,0 +1,30 @@
+V7.5 state restored from Supabase: 80
+
+ALPHA HUNTER V7.5 OPPORTUNITY LIFECYCLE
+Run ID: 2fe453861715dfec9182401cf6b01ca0
+Timestamp: 2026-08-17T04:46:43.281893+00:00
+Lifecycle candidates: 1
+
+NEW    VELVETUSDT     CONTINUATION  state=PRE_MOVE_DETECTED    det=1   v74=12.00 rank=1 shadow= 0.00 provisional=ACTIVE final=PENDING
+
+Supabase lifecycle rows upserted: 81
+Supabase lifecycle row count: 81
+
+====================================================================================================
+V7.5 LIFECYCLE SUMMARY
+====================================================================================================
+Episodes stored: 81
+Created this run: 1
+Updated this run: 0
+Active episodes: 81
+
+STATE COUNTS
+DIRECTION_EMERGING       8
+EXPANSION                8
+FINALIZED                21
+PRE_MOVE_DETECTED        44
+
+State file: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/v75-lifecycle-episodes.json
+History file: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/v75-lifecycle-history.jsonl
+
+V7.5 LIFECYCLE JOB: PASS

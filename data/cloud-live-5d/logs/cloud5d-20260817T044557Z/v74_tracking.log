@@ -1,0 +1,62 @@
+V7.4 HOURLY PERFORMANCE TRACKER
+Run ID: 2fe453861715dfec9182401cf6b01ca0
+
+V7.4.1 SHADOW REVERSAL
+ SH SYMBOL           V74     OLD   SHADOW
+--------------------------------------------------
+PERFORMANCE SIGNALS SAVED: 30
+FEATURE ROWS SAVED: 30
+V7.4 OUTCOMES 1H: saved=5 failed=0
+V7.4 OUTCOMES 4H: saved=6 failed=0
+V7.4 OUTCOMES 12H: saved=22 failed=0
+V7.4 OUTCOMES 24H: saved=7 failed=0
+OUTCOME EVALUATION COMPLETE: saved=40 failed=0
+
+==========================================================================================
+V7.4 CURRENT SURVEILLANCE COHORT
+==========================================================================================
+RANK SYMBOL         TIER      PATH            SCORE STATE
+------------------------------------------------------------------------------------------
+   1 VELVETUSDT     PRIMARY   CONTINUATION    12.00 NEUTRAL
+
+================================================================================================================================
+V7.4 FORWARD PERFORMANCE — RAW PRICE EXPANSION
+================================================================================================================================
+
+PRIMARY / RESERVE + PATH
+  H TIER      PATH              N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+--------------------------------------------------------------------------------------------------------------------------------
+  1 PRIMARY   CONTINUATION     64   64.1%    0.889%    1.706%    23.4%     4.7%     0.0%    3.1%    1.6%
+  1 PRIMARY   REVERSAL         94   55.3%    0.390%    1.553%    14.9%     2.1%     1.1%    2.1%    0.0%
+  1 RESERVE   CONTINUATION      3   66.7%    0.769%    1.024%     0.0%     0.0%     0.0%    0.0%    0.0%
+  1 RESERVE   REVERSAL         11   63.6%   -0.512%    1.841%    27.3%    18.2%     0.0%    0.0%   18.2%
+  4 PRIMARY   CONTINUATION     54   61.1%    0.870%    3.758%    44.4%    31.5%     9.3%   18.5%   13.0%
+  4 PRIMARY   REVERSAL         93   58.1%    0.556%    2.454%    28.0%    14.0%     0.0%   10.8%    3.2%
+  4 RESERVE   CONTINUATION      3   66.7%    1.023%    1.660%    33.3%     0.0%     0.0%    0.0%    0.0%
+  4 RESERVE   REVERSAL         11   63.6%    0.280%    3.483%    54.5%    18.2%     9.1%    9.1%    9.1%
+ 12 PRIMARY   CONTINUATION     43   67.4%    0.968%    3.792%    41.9%    18.6%     4.7%    9.3%    9.3%
+ 12 PRIMARY   REVERSAL         51   41.2%   -2.005%    4.307%    56.9%    33.3%     3.9%    7.8%   25.5%
+ 12 RESERVE   CONTINUATION      3   33.3%   -0.329%    2.149%    33.3%     0.0%     0.0%    0.0%    0.0%
+ 12 RESERVE   REVERSAL         10   90.0%    2.490%    3.780%    40.0%    40.0%     0.0%   30.0%   10.0%
+
+RANK QUALITY
+  H RANK BUCKET         N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+----------------------------------------------------------------------------------------------------------------
+  1 TOP_1_3           108   56.5%    0.609%    1.738%    20.4%     3.7%     0.9%    2.8%    0.9%
+  1 TOP_4_5            50   64.0%    0.556%    1.350%    14.0%     2.0%     0.0%    2.0%    0.0%
+  1 RESERVE_6_10       14   64.3%   -0.237%    1.666%    21.4%    14.3%     0.0%    0.0%   14.3%
+  4 TOP_1_3            97   52.6%    0.663%    3.098%    39.2%    21.6%     2.1%   15.5%    6.2%
+  4 TOP_4_5            50   72.0%    0.689%    2.613%    24.0%    18.0%     6.0%   10.0%    8.0%
+  4 RESERVE_6_10       14   64.3%    0.440%    3.092%    50.0%    14.3%     7.1%    7.1%    7.1%
+ 12 TOP_1_3            57   45.6%   -1.211%    4.688%    59.6%    33.3%     7.0%   10.5%   22.8%
+ 12 TOP_4_5            37   64.9%    0.226%    3.123%    35.1%    16.2%     0.0%    5.4%   10.8%
+ 12 RESERVE_6_10       13   76.9%    1.840%    3.404%    38.5%    30.8%     0.0%   23.1%    7.7%
+
+Metric definitions:
+AVG RAW = average raw market return from detection price.
+AVG ABS = average absolute price movement regardless of direction.
+EXP3/5/10 = percentage of candidates moving at least 3% / 5% / 10% in either direction.
+UP5 = raw upside move >= +5%; DN5 = raw downside move <= -5%.
+No V7.4 trade-direction assumption is used in these metrics.
+
+V7.4 TRACKING JOB: PASS
