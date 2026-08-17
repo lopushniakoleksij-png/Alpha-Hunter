@@ -1,0 +1,63 @@
+V7.4 HOURLY PERFORMANCE TRACKER
+Run ID: 9d1f3e681f520e6a4c27ef9dc37b3b04
+
+V7.4.1 SHADOW REVERSAL
+ SH SYMBOL           V74     OLD   SHADOW
+--------------------------------------------------
+  1 BTWUSDT            3   10.38    13.79
+  2 COWUSDT            1   13.52     4.85
+PERFORMANCE SIGNALS SAVED: 29
+FEATURE ROWS SAVED: 29
+V7.4 OUTCOMES 1H: saved=9 failed=0
+V7.4 OUTCOMES 4H: saved=6 failed=0
+V7.4 OUTCOMES 12H: saved=4 failed=0
+V7.4 OUTCOMES 24H: saved=12 failed=0
+OUTCOME EVALUATION COMPLETE: saved=31 failed=0
+
+==========================================================================================
+V7.4 CURRENT SURVEILLANCE COHORT
+==========================================================================================
+RANK SYMBOL         TIER      PATH            SCORE STATE
+------------------------------------------------------------------------------------------
+   1 COWUSDT        PRIMARY   REVERSAL        13.52 NEUTRAL
+   2 AIOUSDT        PRIMARY   CONTINUATION    11.93 WATCH_LONG
+   3 BTWUSDT        PRIMARY   REVERSAL        10.38 NEUTRAL
+
+================================================================================================================================
+V7.4 FORWARD PERFORMANCE — RAW PRICE EXPANSION
+================================================================================================================================
+
+PRIMARY / RESERVE + PATH
+  H TIER      PATH              N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+--------------------------------------------------------------------------------------------------------------------------------
+  1 PRIMARY   CONTINUATION     46   78.3%    1.233%    1.962%    28.3%     4.3%     0.0%    4.3%    0.0%
+  1 PRIMARY   REVERSAL         89   59.6%    0.344%    1.980%    21.3%     3.4%     1.1%    2.2%    1.1%
+  1 RESERVE   REVERSAL          3   33.3%   -3.859%    4.136%    66.7%    66.7%     0.0%    0.0%   66.7%
+  4 PRIMARY   CONTINUATION     38   57.9%    1.231%    3.113%    42.1%    21.1%     7.9%   15.8%    5.3%
+  4 PRIMARY   REVERSAL         77   61.0%    0.445%    3.702%    40.3%    24.7%     5.2%   18.2%    6.5%
+  4 RESERVE   REVERSAL          3   33.3%   -1.485%    2.801%    66.7%     0.0%     0.0%    0.0%    0.0%
+ 12 PRIMARY   CONTINUATION     20   90.0%    2.596%    2.701%    25.0%    10.0%     5.0%   10.0%    0.0%
+ 12 PRIMARY   REVERSAL         58   46.6%   -2.541%    6.465%    62.1%    50.0%    17.2%   15.5%   34.5%
+ 12 RESERVE   REVERSAL          3  100.0%    1.629%    1.629%     0.0%     0.0%     0.0%    0.0%    0.0%
+
+RANK QUALITY
+  H RANK BUCKET         N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+----------------------------------------------------------------------------------------------------------------
+  1 TOP_1_3           101   65.3%    0.500%    2.011%    23.8%     3.0%     1.0%    2.0%    1.0%
+  1 TOP_4_5            34   67.6%    1.085%    1.865%    23.5%     5.9%     0.0%    5.9%    0.0%
+  1 RESERVE_6_10        3   33.3%   -3.859%    4.136%    66.7%    66.7%     0.0%    0.0%   66.7%
+  4 TOP_1_3            86   52.3%    0.298%    3.890%    45.3%    26.7%     7.0%   18.6%    8.1%
+  4 TOP_4_5            29   82.8%    1.911%    2.373%    27.6%    13.8%     3.4%   13.8%    0.0%
+  4 RESERVE_6_10        3   33.3%   -1.485%    2.801%    66.7%     0.0%     0.0%    0.0%    0.0%
+ 12 TOP_1_3            55   54.5%   -1.517%    5.967%    58.2%    47.3%    12.7%   16.4%   30.9%
+ 12 TOP_4_5            23   65.2%   -0.524%    4.382%    39.1%    21.7%    17.4%    8.7%   13.0%
+ 12 RESERVE_6_10        3  100.0%    1.629%    1.629%     0.0%     0.0%     0.0%    0.0%    0.0%
+
+Metric definitions:
+AVG RAW = average raw market return from detection price.
+AVG ABS = average absolute price movement regardless of direction.
+EXP3/5/10 = percentage of candidates moving at least 3% / 5% / 10% in either direction.
+UP5 = raw upside move >= +5%; DN5 = raw downside move <= -5%.
+No V7.4 trade-direction assumption is used in these metrics.
+
+V7.4 TRACKING JOB: PASS
