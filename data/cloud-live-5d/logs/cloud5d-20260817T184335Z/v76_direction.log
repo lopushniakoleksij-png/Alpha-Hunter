@@ -1,0 +1,65 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.6 DIRECTION-PROOF ENGINE — SHADOW
+======================================================================================================================
+Eligible forward episodes: 36
+
+SYMBOL         PATH          DIR         CONF   LONG   SHORT       15M        1H
+----------------------------------------------------------------------------------------------------------------------
+ONGUSDT        CONTINUATION  UNKNOWN     0.0%   1.00    3.50     MIXED   BEARISH
+LINKUSDT       CONTINUATION  LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+LINKUSDT       REVERSAL      LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+REDUSDT        REVERSAL      LONG       46.2%   4.00    1.00   BULLISH     MIXED
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    1.50   BULLISH     MIXED
+LINKUSDT       REVERSAL      LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+REDUSDT        REVERSAL      LONG       46.2%   4.00    1.00   BULLISH     MIXED
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    1.50   BULLISH     MIXED
+HUSDT          REVERSAL      LONG       50.6%   4.50    1.50   BULLISH     MIXED
+NILUSDT        CONTINUATION  SHORT      75.0%   0.00    6.00   BEARISH   BEARISH
+AIOUSDT        CONTINUATION  SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+VELVETUSDT     CONTINUATION  SHORT      83.8%   1.00    7.00   BEARISH   BEARISH
+LINKUSDT       REVERSAL      LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+AEONUSDT       REVERSAL      UNKNOWN     0.0%   3.50    1.50     MIXED   BULLISH
+BASEDUSDT      REVERSAL      SHORT      68.8%   0.00    5.50   BEARISH   BEARISH
+NILUSDT        REVERSAL      SHORT      75.0%   0.00    6.00   BEARISH   BEARISH
+CHIPUSDT       CONTINUATION  SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+PIXELUSDT      REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+AIOUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+NILUSDT        REVERSAL      SHORT      75.0%   0.00    6.00   BEARISH   BEARISH
+AIOUSDT        CONTINUATION  SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+ACUUSDT        REVERSAL      LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    1.50   BULLISH     MIXED
+DOLOUSDT       REVERSAL      UNKNOWN     0.0%   3.50    0.00   BULLISH     MIXED
+LINKUSDT       CONTINUATION  LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+BTWUSDT        REVERSAL      LONG       58.8%   5.00    1.00   BULLISH     MIXED
+COWUSDT        REVERSAL      UNKNOWN     0.0%   2.00    2.00     MIXED   BEARISH
+WLDUSDT        REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+AEONUSDT       CONTINUATION  UNKNOWN     0.0%   3.50    1.50     MIXED   BULLISH
+CHIPUSDT       REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+AIOUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+WLDUSDT        CONTINUATION  SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+PRLUSDT        REVERSAL      UNKNOWN     0.0%   3.50    1.50   BULLISH     MIXED
+HUSDT          REVERSAL      LONG       50.6%   4.50    1.50   BULLISH     MIXED
+CHIPUSDT       REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+LINKUSDT       REVERSAL      LONG       56.2%   4.50    0.00     MIXED   BULLISH
+
+======================================================================================================================
+V7.6 SHADOW SUMMARY
+======================================================================================================================
+Evaluated: 36
+LONG: 12
+SHORT: 15
+UNKNOWN: 9
+Failures: 0
+Supabase shadow rows saved: 36
+Direction state rows saved: 36
+Immutable transition rows saved: 36
+Transition run ID: cloud5d-20260817T184335Z
+Direction emerging: 11
+Direction confirmed: 15
+Lost confirmation: 7
+
+IMPORTANT: V7.6 IS SHADOW ONLY.
+No trade permission was generated.
+
+V7.6 DIRECTION SHADOW: PASS
