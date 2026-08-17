@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-17T11:30:16.687412+00:00
+Hour bucket: 2026-08-17T11:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 29
+Selection snapshot: 2026-08-17T11:30:13.977008+00:00
+Selection run ID: 63214203a26996ebf854c11e9a240acb
+Prefilter eligible: 307
+Eligible not selected: 279
+Non-crypto: 290
+Low liquidity: 157
+Over-extended: 5
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+GPSUSDT             +63.96%       N       Y  OVER_EXTENDED
+ACEUSDT             +38.42%       N       N  OVER_EXTENDED
+BEATUSDT            -32.48%       N       N  OVER_EXTENDED
+VELVETUSDT          -31.19%       N       N  OVER_EXTENDED
+HUSDT               -30.31%       N       N  OVER_EXTENDED
+QUSDT               -20.17%       Y       N  ELIGIBLE_NOT_SELECTED
+XPINUSDT            -19.94%       Y       N  ELIGIBLE_NOT_SELECTED
+AIOUSDT             +19.19%       Y       Y  DEEP_SCAN_SELECTED
+DIAUSDT             +16.75%       Y       N  ELIGIBLE_NOT_SELECTED
+CYSUSDT             -14.76%       Y       Y  DEEP_SCAN_SELECTED
+ONGUSDT             +13.96%       Y       Y  DEEP_SCAN_SELECTED
+KIOXIAUSDT          +13.42%       N       N  NON_CRYPTO
+RAREUSDT            +11.75%       Y       Y  DEEP_SCAN_SELECTED
+TUTUSDT             +11.19%       Y       Y  DEEP_SCAN_SELECTED
+ACUUSDT             -11.13%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS

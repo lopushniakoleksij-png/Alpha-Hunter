@@ -1,0 +1,67 @@
+V7.4 HOURLY PERFORMANCE TRACKER
+Run ID: 63214203a26996ebf854c11e9a240acb
+
+V7.4.1 SHADOW REVERSAL
+ SH SYMBOL           V74     OLD   SHADOW
+--------------------------------------------------
+  1 BTWUSDT            4    9.33    14.68
+  2 ACUUSDT            2   10.80     6.33
+PERFORMANCE SIGNALS SAVED: 29
+FEATURE ROWS SAVED: 29
+V7.4 OUTCOMES 1H: saved=16 failed=0
+V7.4 OUTCOMES 4H: saved=11 failed=0
+V7.4 OUTCOMES 12H: saved=21 failed=0
+V7.4 OUTCOMES 24H: saved=21 failed=0
+OUTCOME EVALUATION COMPLETE: saved=69 failed=0
+
+==========================================================================================
+V7.4 CURRENT SURVEILLANCE COHORT
+==========================================================================================
+RANK SYMBOL         TIER      PATH            SCORE STATE
+------------------------------------------------------------------------------------------
+   1 AIOUSDT        PRIMARY   CONTINUATION    11.99 DIRECTION_EMERGING_LONG
+   2 ACUUSDT        PRIMARY   REVERSAL        10.80 NEUTRAL
+   3 LINKUSDT       PRIMARY   CONTINUATION     9.73 DIRECTION_EMERGING_LONG
+   4 BTWUSDT        PRIMARY   REVERSAL         9.33 WATCH_SHORT
+
+================================================================================================================================
+V7.4 FORWARD PERFORMANCE — RAW PRICE EXPANSION
+================================================================================================================================
+
+PRIMARY / RESERVE + PATH
+  H TIER      PATH              N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+--------------------------------------------------------------------------------------------------------------------------------
+  1 PRIMARY   CONTINUATION     46   76.1%    1.284%    2.095%    30.4%     4.3%     0.0%    4.3%    0.0%
+  1 PRIMARY   REVERSAL         90   62.2%    0.468%    1.983%    21.1%     4.4%     2.2%    3.3%    1.1%
+  1 RESERVE   CONTINUATION      1  100.0%    0.849%    0.849%     0.0%     0.0%     0.0%    0.0%    0.0%
+  1 RESERVE   REVERSAL          4   50.0%   -1.994%    4.002%    75.0%    50.0%     0.0%    0.0%   50.0%
+  4 PRIMARY   CONTINUATION     38   57.9%    1.469%    3.446%    42.1%    21.1%    10.5%   15.8%    5.3%
+  4 PRIMARY   REVERSAL         81   63.0%    0.601%    3.657%    39.5%    24.7%     4.9%   18.5%    6.2%
+  4 RESERVE   CONTINUATION      1  100.0%    0.461%    0.461%     0.0%     0.0%     0.0%    0.0%    0.0%
+  4 RESERVE   REVERSAL          4   50.0%   -0.221%    2.994%    75.0%     0.0%     0.0%    0.0%    0.0%
+ 12 PRIMARY   CONTINUATION     23   91.3%    3.503%    3.594%    26.1%    13.0%     8.7%   13.0%    0.0%
+ 12 PRIMARY   REVERSAL         61   45.9%   -2.534%    6.569%    62.3%    52.5%    18.0%   16.4%   36.1%
+ 12 RESERVE   CONTINUATION      1  100.0%    2.731%    2.731%     0.0%     0.0%     0.0%    0.0%    0.0%
+ 12 RESERVE   REVERSAL          4  100.0%    2.626%    2.626%    25.0%    25.0%     0.0%   25.0%    0.0%
+
+RANK QUALITY
+  H RANK BUCKET         N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+----------------------------------------------------------------------------------------------------------------
+  1 TOP_1_3           101   66.3%    0.683%    2.139%    25.7%     4.0%     2.0%    3.0%    1.0%
+  1 TOP_4_5            35   68.6%    0.920%    1.678%    20.0%     5.7%     0.0%    5.7%    0.0%
+  1 RESERVE_6_10        5   60.0%   -1.426%    3.372%    60.0%    40.0%     0.0%    0.0%   40.0%
+  4 TOP_1_3            88   52.3%    0.506%    4.068%    46.6%    27.3%     8.0%   19.3%    8.0%
+  4 TOP_4_5            31   87.1%    1.934%    2.232%    22.6%    12.9%     3.2%   12.9%    0.0%
+  4 RESERVE_6_10        5   60.0%   -0.084%    2.487%    60.0%     0.0%     0.0%    0.0%    0.0%
+ 12 TOP_1_3            58   53.4%   -1.164%    6.501%    62.1%    51.7%    15.5%   19.0%   32.8%
+ 12 TOP_4_5            26   69.2%   -0.250%    4.090%    30.8%    19.2%    15.4%    7.7%   11.5%
+ 12 RESERVE_6_10        5  100.0%    2.647%    2.647%    20.0%    20.0%     0.0%   20.0%    0.0%
+
+Metric definitions:
+AVG RAW = average raw market return from detection price.
+AVG ABS = average absolute price movement regardless of direction.
+EXP3/5/10 = percentage of candidates moving at least 3% / 5% / 10% in either direction.
+UP5 = raw upside move >= +5%; DN5 = raw downside move <= -5%.
+No V7.4 trade-direction assumption is used in these metrics.
+
+V7.4 TRACKING JOB: PASS
