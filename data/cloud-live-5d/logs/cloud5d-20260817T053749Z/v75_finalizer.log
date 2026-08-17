@@ -1,0 +1,80 @@
+
+==============================================================================================================
+ALPHA HUNTER V7.5 24H EPISODE FINALIZER
+==============================================================================================================
+SKIP   CYSUSDT        quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   BTWUSDT        quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   COOKIEUSDT     quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   SUIUSDT        quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   SOLUSDT        quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   SKYAIUSDT      quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   DOGEUSDT       quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   ADAUSDT        quality=LEGACY_PARTIAL    age= 180.81H
+SKIP   IOTXUSDT       quality=LEGACY_PARTIAL    age= 174.65H
+SKIP   MMTUSDT        quality=LEGACY_PARTIAL    age= 174.65H
+SKIP   SUIUSDT        quality=LEGACY_PARTIAL    age= 174.65H
+SKIP   GWEIUSDT       quality=LEGACY_PARTIAL    age= 174.65H
+SKIP   BICOUSDT       quality=LEGACY_PARTIAL    age= 174.65H
+SKIP   MUBARAKUSDT    quality=LEGACY_PARTIAL    age=  57.40H
+SKIP   4USDT          quality=LEGACY_PARTIAL    age=  57.40H
+SKIP   JTOUSDT        quality=LEGACY_PARTIAL    age=  57.40H
+SKIP   FORMUSDT       quality=LEGACY_PARTIAL    age=  57.40H
+SKIP   PUMPUSDT       quality=LEGACY_PARTIAL    age=  56.33H
+SKIP   ACUUSDT        quality=LEGACY_PARTIAL    age=  47.54H
+SKIP   HYPEUSDT       quality=LEGACY_PARTIAL    age=  47.54H
+SKIP   AEONUSDT       quality=LEGACY_PARTIAL    age=  46.52H
+SKIP   BTWUSDT        quality=LEGACY_PARTIAL    age=  46.52H
+WAIT   LINKUSDT       age=  23.21H UP=    2.16% DOWN=   -0.72%
+WAIT   ALICEUSDT      age=  23.21H UP=   14.23% DOWN=   -0.79%
+WAIT   NILUSDT        age=  23.21H UP=   18.52% DOWN=   -0.41%
+WAIT   PUMPUSDT       age=  23.21H UP=    4.57% DOWN=   -4.21%
+WAIT   BRUSDT         age=  23.21H UP=    3.07% DOWN=  -12.44%
+WAIT   HYPEUSDT       age=  23.09H UP=    3.98% DOWN=   -0.04%
+WAIT   CAPUSDT        age=  23.09H UP=    6.36% DOWN=   -6.11%
+WAIT   COWUSDT        age=  23.09H UP=    3.39% DOWN=  -12.77%
+WAIT   VELVETUSDT     age=  23.09H UP=   31.02% DOWN=   -2.20%
+WAIT   WLDUSDT        age=  23.09H UP=    6.79% DOWN=   -1.61%
+WAIT   LINKUSDT       age=  22.04H UP=    2.23% DOWN=   -0.64%
+WAIT   FOLKSUSDT      age=  20.98H UP=    0.93% DOWN=   -4.63%
+WAIT   AEONUSDT       age=  20.42H UP=    0.20% DOWN=  -18.55%
+WAIT   WLDUSDT        age=  18.91H UP=    7.47% DOWN=   -0.98%
+WAIT   PRLUSDT        age=  18.91H UP=   13.09% DOWN=   -0.61%
+WAIT   WLDUSDT        age=  18.36H UP=    7.00% DOWN=   -1.41%
+WAIT   AEONUSDT       age=  18.36H UP=    3.37% DOWN=  -15.97%
+WAIT   HYPEUSDT       age=  18.36H UP=    3.02% DOWN=   -0.74%
+WAIT   BOMEUSDT       age=  17.29H UP=    0.50% DOWN=   -6.24%
+WAIT   DOLOUSDT       age=  17.29H UP=   18.74% DOWN=   -4.45%
+WAIT   VELVETUSDT     age=  16.08H UP=    5.57% DOWN=   -5.30%
+WAIT   HUSDT          age=  14.95H UP=   16.49% DOWN=  -15.33%
+WAIT   BTWUSDT        age=  14.95H UP=   35.61% DOWN=   -0.04%
+WAIT   WLDUSDT        age=  14.21H UP=    6.42% DOWN=    0.00%
+WAIT   AEONUSDT       age=  13.49H UP=    9.32% DOWN=   -7.78%
+WAIT   ROBOUSDT       age=  12.31H UP=    4.11% DOWN=   -7.03%
+WAIT   ONGUSDT        age=   8.59H UP=   18.39% DOWN=   -2.88%
+WAIT   LINKUSDT       age=   8.59H UP=    1.28% DOWN=   -1.13%
+WAIT   LINKUSDT       age=   7.53H UP=    2.03% DOWN=   -0.29%
+WAIT   PRLUSDT        age=   7.53H UP=    5.86% DOWN=   -3.30%
+WAIT   REDUSDT        age=   7.53H UP=    0.00% DOWN=   -3.22%
+WAIT   PRLUSDT        age=   7.52H UP=    5.86% DOWN=   -3.30%
+WAIT   LINKUSDT       age=   7.52H UP=    2.03% DOWN=   -0.29%
+WAIT   REDUSDT        age=   7.52H UP=    0.00% DOWN=   -3.22%
+WAIT   HUSDT          age=   2.60H UP=    3.58% DOWN=  -24.62%
+WAIT   NILUSDT        age=   2.60H UP=    4.46% DOWN=   -3.42%
+WAIT   AIOUSDT        age=   2.60H UP=    5.03% DOWN=   -6.23%
+WAIT   VELVETUSDT     age=   0.89H UP=    0.27% DOWN=   -2.60%
+WAIT   NILUSDT        age=   0.02H UP=    0.15% DOWN=   -0.27%
+WAIT   BASEDUSDT      age=   0.02H UP=    0.20% DOWN=    0.00%
+WAIT   AEONUSDT       age=   0.02H UP=    0.00% DOWN=   -0.55%
+WAIT   LINKUSDT       age=   0.02H UP=    0.02% DOWN=   -0.03%
+
+==============================================================================================================
+FINALIZER SUMMARY
+==============================================================================================================
+Episodes: 85
+Finalized this run: 0
+Waiting for 24H: 42
+Legacy partial skipped: 22
+Already finalized: 21
+Supabase rows upserted: 85
+
+V7.5 EPISODE FINALIZER: PASS
