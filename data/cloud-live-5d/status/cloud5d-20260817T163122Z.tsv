@@ -1,0 +1,13 @@
+step	status
+raw_universe	PASS
+live_scan	PASS
+v79_universe	PASS
+guardrails	PASS
+v74_tracking	PASS
+v75_lifecycle	PASS
+v75_market_tracker	PASS
+v75_finalizer	PASS
+v76_direction	PASS
+v76_post_confirmation	PASS
+v77_execution	PASS
+v79_missed_mover	PASS
