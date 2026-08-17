@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-17T20:31:25.034607+00:00
+Hour bucket: 2026-08-17T20:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 29
+Selection snapshot: 2026-08-17T20:31:22.767003+00:00
+Selection run ID: 36781876d84aa68b2935277c97932db4
+Prefilter eligible: 312
+Eligible not selected: 283
+Non-crypto: 290
+Low liquidity: 152
+Over-extended: 5
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+GPSUSDT             +63.60%       N       N  OVER_EXTENDED
+TUTUSDT             +41.62%       N       N  OVER_EXTENDED
+VELVETUSDT          -41.53%       N       N  OVER_EXTENDED
+CYSUSDT             -39.34%       N       N  OVER_EXTENDED
+BEATUSDT            -28.64%       N       N  OVER_EXTENDED
+QUSDT               -21.34%       Y       N  ELIGIBLE_NOT_SELECTED
+ACEUSDT             +21.15%       Y       Y  DEEP_SCAN_SELECTED
+AIOUSDT             -20.43%       Y       N  ELIGIBLE_NOT_SELECTED
+AXTIUSDT            +18.61%       N       N  NON_CRYPTO
+AEONUSDT            +16.71%       Y       N  ELIGIBLE_NOT_SELECTED
+KIOXIAUSDT          +15.64%       N       N  NON_CRYPTO
+SNXXUSDT            +14.07%       N       N  NON_CRYPTO
+ALLOUSDT            +13.95%       Y       Y  DEEP_SCAN_SELECTED
+XPINUSDT            -13.14%       Y       Y  DEEP_SCAN_SELECTED
+HUSDT               -13.04%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
