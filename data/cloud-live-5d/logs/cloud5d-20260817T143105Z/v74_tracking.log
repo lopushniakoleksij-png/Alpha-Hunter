@@ -1,0 +1,64 @@
+V7.4 HOURLY PERFORMANCE TRACKER
+Run ID: 73a3c9ae6716a78e1071d80ba2c087d7
+
+V7.4.1 SHADOW REVERSAL
+ SH SYMBOL           V74     OLD   SHADOW
+--------------------------------------------------
+  1 WLDUSDT            4    9.96    12.00
+  2 BTWUSDT            3   10.67     9.07
+PERFORMANCE SIGNALS SAVED: 28
+FEATURE ROWS SAVED: 28
+V7.4 OUTCOMES 1H: saved=10 failed=0
+V7.4 OUTCOMES 4H: saved=11 failed=0
+V7.4 OUTCOMES 12H: saved=6 failed=0
+V7.4 OUTCOMES 24H: saved=18 failed=0
+OUTCOME EVALUATION COMPLETE: saved=45 failed=0
+
+==========================================================================================
+V7.4 CURRENT SURVEILLANCE COHORT
+==========================================================================================
+RANK SYMBOL         TIER      PATH            SCORE STATE
+------------------------------------------------------------------------------------------
+   1 AEONUSDT       PRIMARY   CONTINUATION    11.78 WATCH_LONG
+   2 AIOUSDT        PRIMARY   CONTINUATION    11.71 NEUTRAL
+   3 BTWUSDT        PRIMARY   REVERSAL        10.67 NEUTRAL
+   4 WLDUSDT        PRIMARY   REVERSAL         9.96 WATCH_SHORT
+
+================================================================================================================================
+V7.4 FORWARD PERFORMANCE — RAW PRICE EXPANSION
+================================================================================================================================
+
+PRIMARY / RESERVE + PATH
+  H TIER      PATH              N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+--------------------------------------------------------------------------------------------------------------------------------
+  1 PRIMARY   CONTINUATION     42   66.7%    0.802%    1.897%    26.2%     2.4%     0.0%    2.4%    0.0%
+  1 PRIMARY   REVERSAL         84   60.7%    0.569%    2.218%    23.8%     6.0%     2.4%    4.8%    1.2%
+  1 RESERVE   REVERSAL          2   50.0%   -2.877%    3.293%    50.0%    50.0%     0.0%    0.0%   50.0%
+  4 PRIMARY   CONTINUATION     34   52.9%    1.189%    3.432%    44.1%    23.5%     8.8%   17.6%    5.9%
+  4 PRIMARY   REVERSAL         73   64.4%    0.921%    4.076%    45.2%    30.1%     6.8%   23.3%    6.8%
+  4 RESERVE   REVERSAL          2   50.0%   -0.710%    2.684%    50.0%     0.0%     0.0%    0.0%    0.0%
+ 12 PRIMARY   CONTINUATION     18   72.2%    1.742%    3.714%    33.3%    33.3%     5.6%   22.2%   11.1%
+ 12 PRIMARY   REVERSAL         47   44.7%   -2.629%    6.755%    63.8%    48.9%    19.1%   14.9%   34.0%
+ 12 RESERVE   REVERSAL          2  100.0%    1.450%    1.450%     0.0%     0.0%     0.0%    0.0%    0.0%
+
+RANK QUALITY
+  H RANK BUCKET         N    POS%   AVG RAW   AVG ABS    EXP3%    EXP5%   EXP10%    UP5%    DN5%
+----------------------------------------------------------------------------------------------------------------
+  1 TOP_1_3            99   63.6%    0.585%    2.172%    25.3%     5.1%     2.0%    4.0%    1.0%
+  1 TOP_4_5            27   59.3%    0.871%    1.890%    22.2%     3.7%     0.0%    3.7%    0.0%
+  1 RESERVE_6_10        2   50.0%   -2.877%    3.293%    50.0%    50.0%     0.0%    0.0%   50.0%
+  4 TOP_1_3            84   54.8%    0.629%    4.128%    48.8%    29.8%     8.3%   21.4%    8.3%
+  4 TOP_4_5            23   82.6%    2.383%    2.934%    30.4%    21.7%     4.3%   21.7%    0.0%
+  4 RESERVE_6_10        2   50.0%   -0.710%    2.684%    50.0%     0.0%     0.0%    0.0%    0.0%
+ 12 TOP_1_3            50   52.0%   -1.275%    6.100%    58.0%    50.0%    12.0%   20.0%   30.0%
+ 12 TOP_4_5            15   53.3%   -1.897%    5.289%    46.7%    26.7%    26.7%    6.7%   20.0%
+ 12 RESERVE_6_10        2  100.0%    1.450%    1.450%     0.0%     0.0%     0.0%    0.0%    0.0%
+
+Metric definitions:
+AVG RAW = average raw market return from detection price.
+AVG ABS = average absolute price movement regardless of direction.
+EXP3/5/10 = percentage of candidates moving at least 3% / 5% / 10% in either direction.
+UP5 = raw upside move >= +5%; DN5 = raw downside move <= -5%.
+No V7.4 trade-direction assumption is used in these metrics.
+
+V7.4 TRACKING JOB: PASS
