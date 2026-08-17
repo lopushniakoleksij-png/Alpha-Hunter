@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-17T13:42:40.823834+00:00
+Hour bucket: 2026-08-17T13:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 28
+Selection snapshot: 2026-08-17T13:42:38.298410+00:00
+Selection run ID: 3b59d03ca1f026dd292dd8e6ee3e441b
+Prefilter eligible: 312
+Eligible not selected: 284
+Non-crypto: 290
+Low liquidity: 152
+Over-extended: 5
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+GPSUSDT             +59.48%       N       N  OVER_EXTENDED
+ACEUSDT             +31.37%       N       N  OVER_EXTENDED
+BEATUSDT            -30.86%       N       N  OVER_EXTENDED
+CYSUSDT             -30.27%       N       N  OVER_EXTENDED
+VELVETUSDT          -27.05%       N       N  OVER_EXTENDED
+XPINUSDT            -22.45%       Y       N  ELIGIBLE_NOT_SELECTED
+QUSDT               -18.71%       Y       N  ELIGIBLE_NOT_SELECTED
+CBRSUSDT            +13.83%       N       N  NON_CRYPTO
+KIOXIAUSDT          +13.34%       N       N  NON_CRYPTO
+ONGUSDT             +13.23%       Y       Y  DEEP_SCAN_SELECTED
+OUSDT               +12.62%       Y       Y  DEEP_SCAN_SELECTED
+MVLLUSDT            +12.51%       N       N  NON_CRYPTO
+BICOUSDT            -11.94%       Y       Y  DEEP_SCAN_SELECTED
+SNXXUSDT            +11.84%       N       N  NON_CRYPTO
+SKYAIUSDT           +11.79%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
