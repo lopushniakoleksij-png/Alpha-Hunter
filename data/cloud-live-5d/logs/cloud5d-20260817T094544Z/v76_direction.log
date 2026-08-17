@@ -1,0 +1,66 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.6 DIRECTION-PROOF ENGINE — SHADOW
+======================================================================================================================
+Eligible forward episodes: 37
+
+SYMBOL         PATH          DIR         CONF   LONG   SHORT       15M        1H
+----------------------------------------------------------------------------------------------------------------------
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   2.00    1.50     MIXED     MIXED
+WLDUSDT        REVERSAL      UNKNOWN     0.0%   0.00    2.50   BEARISH     MIXED
+HYPEUSDT       CONTINUATION  LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+AEONUSDT       REVERSAL      LONG       87.5%   7.00    0.00   BULLISH   BULLISH
+WLDUSDT        CONTINUATION  UNKNOWN     0.0%   0.00    2.50   BEARISH     MIXED
+DOLOUSDT       REVERSAL      SHORT      62.5%   0.00    5.00   BEARISH   BEARISH
+BOMEUSDT       CONTINUATION  SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+VELVETUSDT     REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+BTWUSDT        CONTINUATION  SHORT      75.0%   0.00    6.00   BEARISH     MIXED
+HUSDT          REVERSAL      SHORT      75.0%   0.00    6.00   BEARISH   BEARISH
+WLDUSDT        CONTINUATION  UNKNOWN     0.0%   0.00    2.50   BEARISH     MIXED
+AEONUSDT       REVERSAL      LONG       87.5%   7.00    0.00   BULLISH   BULLISH
+ROBOUSDT       REVERSAL      UNKNOWN     0.0%   1.00    3.50     MIXED   BEARISH
+LINKUSDT       CONTINUATION  UNKNOWN     0.0%   1.00    2.50   BEARISH     MIXED
+ONGUSDT        CONTINUATION  UNKNOWN     0.0%   2.00    2.00   BEARISH   BULLISH
+LINKUSDT       REVERSAL      UNKNOWN     0.0%   1.00    2.50   BEARISH     MIXED
+REDUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   2.00    1.50     MIXED     MIXED
+REDUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   2.00    1.50     MIXED     MIXED
+LINKUSDT       REVERSAL      UNKNOWN     0.0%   1.00    2.50   BEARISH     MIXED
+NILUSDT        CONTINUATION  SHORT      75.0%   0.00    6.00   BEARISH     MIXED
+HUSDT          REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+AIOUSDT        CONTINUATION  LONG       65.0%   5.50    1.00   BULLISH   BULLISH
+VELVETUSDT     CONTINUATION  SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+LINKUSDT       REVERSAL      UNKNOWN     0.0%   1.00    2.50   BEARISH     MIXED
+AEONUSDT       REVERSAL      LONG       87.5%   7.00    0.00   BULLISH   BULLISH
+BASEDUSDT      REVERSAL      LONG       50.0%   4.00    0.00   BULLISH     MIXED
+NILUSDT        REVERSAL      SHORT      75.0%   0.00    6.00   BEARISH     MIXED
+CHIPUSDT       CONTINUATION  LONG       63.1%   5.50    1.50   BULLISH   BULLISH
+PIXELUSDT      REVERSAL      SHORT      52.5%   1.00    4.50   BEARISH   BEARISH
+AIOUSDT        REVERSAL      LONG       65.0%   5.50    1.00   BULLISH   BULLISH
+ACUUSDT        REVERSAL      LONG       56.2%   4.50    0.00   BULLISH     MIXED
+PRLUSDT        CONTINUATION  UNKNOWN     0.0%   2.00    1.50     MIXED     MIXED
+AIOUSDT        CONTINUATION  LONG       65.0%   5.50    1.00   BULLISH   BULLISH
+NILUSDT        REVERSAL      SHORT      75.0%   0.00    6.00   BEARISH     MIXED
+DOLOUSDT       REVERSAL      SHORT      62.5%   0.00    5.00   BEARISH   BEARISH
+
+======================================================================================================================
+V7.6 SHADOW SUMMARY
+======================================================================================================================
+Evaluated: 37
+LONG: 10
+SHORT: 14
+UNKNOWN: 13
+Failures: 0
+Supabase shadow rows saved: 37
+Direction state rows saved: 37
+Immutable transition rows saved: 37
+Transition run ID: cloud5d-20260817T094544Z
+Direction emerging: 8
+Direction confirmed: 16
+Lost confirmation: 0
+
+IMPORTANT: V7.6 IS SHADOW ONLY.
+No trade permission was generated.
+
+V7.6 DIRECTION SHADOW: PASS
