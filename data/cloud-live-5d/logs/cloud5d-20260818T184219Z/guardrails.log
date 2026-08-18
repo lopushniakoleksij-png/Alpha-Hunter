@@ -1,0 +1,29 @@
+
+====================================================================================================
+ALPHA HUNTER P0-3 PRODUCTION DATA GUARDRAILS
+====================================================================================================
+PASS     snapshot_freshness                 snapshot age 5.6s
+PASS     snapshot_run_id                    run_id=4c4ef0a511bebfd45305c4cb95d5fa5f
+PASS     contract_universe_size             contracts=759
+PASS     ticker_coverage                    ticker coverage=100.0%
+PASS     selected_symbol_consistency        selected_count=26, selected_symbols=26, result_rows=26
+PASS     selected_symbol_uniqueness         unique=26, listed=26
+PASS     deep_scan_success_ratio            deep-scan success=100.0%
+WARN     bitget_private_api                 private API=NOT_CONFIGURED
+PASS     universe_ledger_presence           rows=759
+PASS     universe_ledger_coverage           ledger coverage=100.0%
+PASS     universe_symbol_uniqueness         unique=759, rows=759
+PASS     universe_hour_bucket               expected=2026-08-18 18:00:00+00:00, observed=['2026-08-18T18:00:00+00:00']
+PASS     ledger_selection_context           selection_run_ids=['4c4ef0a511bebfd45305c4cb95d5fa5f']
+PASS     ledger_capture_mode                ledger selection context matches current scan
+PASS     ledger_freshness                   ledger age=3.1s, spread=0.000s
+PASS     ledger_source                      source=BITGET_ALL_TICKERS
+PASS     ledger_measurement_quality         quality=HOURLY_TICKER_SNAPSHOT
+PASS     v79_trade_permission               all V7.9 rows have trade_permission=false
+PASS     ledger_scan_count_consistency      selected=26/26, eligible=320/320
+
+Overall guardrail status: DEGRADED
+Ledger capture mode: FIRST_CAPTURE_MATCH
+Current scan run ID: 4c4ef0a511bebfd45305c4cb95d5fa5f
+Ledger selection run ID: 4c4ef0a511bebfd45305c4cb95d5fa5f
+====================================================================================================
