@@ -1,0 +1,29 @@
+
+====================================================================================================
+ALPHA HUNTER P0-3 PRODUCTION DATA GUARDRAILS
+====================================================================================================
+PASS     snapshot_freshness                 snapshot age 5.0s
+PASS     snapshot_run_id                    run_id=5037867a31543e2e6887e5013b49c883
+PASS     contract_universe_size             contracts=759
+PASS     ticker_coverage                    ticker coverage=100.0%
+PASS     selected_symbol_consistency        selected_count=27, selected_symbols=27, result_rows=27
+PASS     selected_symbol_uniqueness         unique=27, listed=27
+PASS     deep_scan_success_ratio            deep-scan success=100.0%
+WARN     bitget_private_api                 private API=NOT_CONFIGURED
+PASS     universe_ledger_presence           rows=759
+PASS     universe_ledger_coverage           ledger coverage=100.0%
+PASS     universe_symbol_uniqueness         unique=759, rows=759
+PASS     universe_hour_bucket               expected=2026-08-18 09:00:00+00:00, observed=['2026-08-18T09:00:00+00:00']
+PASS     ledger_selection_context           selection_run_ids=['5037867a31543e2e6887e5013b49c883']
+PASS     ledger_capture_mode                ledger selection context matches current scan
+FAIL     ledger_timestamps                  one or more ledger timestamps invalid
+PASS     ledger_source                      source=BITGET_ALL_TICKERS
+PASS     ledger_measurement_quality         quality=HOURLY_TICKER_SNAPSHOT
+PASS     v79_trade_permission               all V7.9 rows have trade_permission=false
+PASS     ledger_scan_count_consistency      selected=27/27, eligible=315/315
+
+Overall guardrail status: FAIL
+Ledger capture mode: FIRST_CAPTURE_MATCH
+Current scan run ID: 5037867a31543e2e6887e5013b49c883
+Ledger selection run ID: 5037867a31543e2e6887e5013b49c883
+====================================================================================================
