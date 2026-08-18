@@ -1,0 +1,72 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.6 DIRECTION-PROOF ENGINE — SHADOW
+======================================================================================================================
+Eligible forward episodes: 43
+
+SYMBOL         PATH          DIR         CONF   LONG   SHORT       15M        1H
+----------------------------------------------------------------------------------------------------------------------
+BTWUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    2.50     MIXED   BULLISH
+ETHUSDT        CONTINUATION  UNKNOWN     0.0%   3.00    0.00   BULLISH   BULLISH
+CHIPUSDT       REVERSAL      SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+HYPEUSDT       CONTINUATION  SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+BTWUSDT        REVERSAL      UNKNOWN     0.0%   3.50    2.50     MIXED   BULLISH
+LINKUSDT       REVERSAL      UNKNOWN     0.0%   2.00    0.00     MIXED   BULLISH
+PUMPUSDT       REVERSAL      LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+HYPEUSDT       CONTINUATION  SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+ZECUSDT        CONTINUATION  UNKNOWN     0.0%   3.00    0.00     MIXED   BULLISH
+CHIPUSDT       REVERSAL      SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+GPSUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+AEONUSDT       CONTINUATION  UNKNOWN     0.0%   1.00    3.50   BEARISH     MIXED
+ETHUSDT        REVERSAL      UNKNOWN     0.0%   3.00    0.00   BULLISH   BULLISH
+DIAUSDT        REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+BTWUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    2.50     MIXED   BULLISH
+DIAUSDT        REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+SOLUSDT        CONTINUATION  LONG       44.4%   4.00    1.50   BULLISH   BULLISH
+DIAUSDT        REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+PUMPUSDT       REVERSAL      LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+ZECUSDT        REVERSAL      UNKNOWN     0.0%   3.00    0.00     MIXED   BULLISH
+AEONUSDT       CONTINUATION  UNKNOWN     0.0%   1.00    3.50   BEARISH     MIXED
+BTCUSDT        CONTINUATION  UNKNOWN     0.0%   0.00    3.50   BEARISH     MIXED
+ZECUSDT        REVERSAL      UNKNOWN     0.0%   3.00    0.00     MIXED   BULLISH
+CHIPUSDT       REVERSAL      SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+LINKUSDT       REVERSAL      UNKNOWN     0.0%   2.00    0.00     MIXED   BULLISH
+HYPEUSDT       REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+PUMPUSDT       REVERSAL      LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+BTWUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    2.50     MIXED   BULLISH
+GPSUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+BTWUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    2.50     MIXED   BULLISH
+GPSUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+ZECUSDT        REVERSAL      UNKNOWN     0.0%   3.00    0.00     MIXED   BULLISH
+BTCUSDT        CONTINUATION  UNKNOWN     0.0%   0.00    3.50   BEARISH     MIXED
+HYPEUSDT       REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+HYPEUSDT       REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH   BEARISH
+LINKUSDT       REVERSAL      UNKNOWN     0.0%   2.00    0.00     MIXED   BULLISH
+LUMIAUSDT      REVERSAL      UNKNOWN     0.0%   3.00    0.00   BULLISH     MIXED
+SOLUSDT        CONTINUATION  LONG       44.4%   4.00    1.50   BULLISH   BULLISH
+ONGUSDT        CONTINUATION  LONG       75.0%   6.00    0.00   BULLISH   BULLISH
+PUMPUSDT       CONTINUATION  LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+BTCUSDT        CONTINUATION  UNKNOWN     0.0%   0.00    3.50   BEARISH     MIXED
+ZECUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+GPSUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+
+======================================================================================================================
+V7.6 SHADOW SUMMARY
+======================================================================================================================
+Evaluated: 43
+LONG: 15
+SHORT: 8
+UNKNOWN: 20
+Failures: 0
+Supabase shadow rows saved: 43
+Direction state rows saved: 43
+Immutable transition rows saved: 43
+Transition run ID: cloud5d-20260818T222706Z
+Direction emerging: 10
+Direction confirmed: 13
+Lost confirmation: 1
+
+IMPORTANT: V7.6 IS SHADOW ONLY.
+No trade permission was generated.
+
+V7.6 DIRECTION SHADOW: PASS
