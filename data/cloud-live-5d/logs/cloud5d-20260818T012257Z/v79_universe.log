@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-18T01:23:42.952053+00:00
+Hour bucket: 2026-08-18T01:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 27
+Selection snapshot: 2026-08-18T01:23:40.000512+00:00
+Selection run ID: 3d6cf529fe9fa27f4a84ba588917769f
+Prefilter eligible: 302
+Eligible not selected: 275
+Non-crypto: 290
+Low liquidity: 162
+Over-extended: 5
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+VELVETUSDT          -44.22%       N       N  OVER_EXTENDED
+GPSUSDT             +42.54%       N       N  OVER_EXTENDED
+CYSUSDT             -35.96%       N       N  OVER_EXTENDED
+TUTUSDT             +30.49%       N       N  OVER_EXTENDED
+AIOUSDT             -29.24%       N       N  OVER_EXTENDED
+QUSDT               -19.97%       Y       N  ELIGIBLE_NOT_SELECTED
+BEATUSDT            -18.34%       Y       Y  DEEP_SCAN_SELECTED
+HUSDT               -16.43%       Y       N  ELIGIBLE_NOT_SELECTED
+PIEVERSEUSDT        +16.22%       Y       Y  DEEP_SCAN_SELECTED
+BICOUSDT            -15.81%       Y       N  ELIGIBLE_NOT_SELECTED
+BLESSUSDT           -14.00%       Y       Y  DEEP_SCAN_SELECTED
+SNXXUSDT            +13.40%       N       N  NON_CRYPTO
+ALLOUSDT            +13.33%       Y       Y  DEEP_SCAN_SELECTED
+CBRSUSDT            +12.99%       N       N  NON_CRYPTO
+ACEUSDT             +12.98%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
