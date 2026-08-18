@@ -1,0 +1,77 @@
+
+==============================================================================================================
+ALPHA HUNTER V7.5 24H EPISODE FINALIZER
+==============================================================================================================
+SKIP   CYSUSDT        quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   BTWUSDT        quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   COOKIEUSDT     quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   SUIUSDT        quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   SOLUSDT        quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   SKYAIUSDT      quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   DOGEUSDT       quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   ADAUSDT        quality=LEGACY_PARTIAL    age= 218.68H
+SKIP   GWEIUSDT       quality=LEGACY_PARTIAL    age= 212.52H
+SKIP   BICOUSDT       quality=LEGACY_PARTIAL    age= 212.52H
+SKIP   IOTXUSDT       quality=LEGACY_PARTIAL    age= 212.52H
+SKIP   MMTUSDT        quality=LEGACY_PARTIAL    age= 212.52H
+SKIP   SUIUSDT        quality=LEGACY_PARTIAL    age= 212.52H
+SKIP   MUBARAKUSDT    quality=LEGACY_PARTIAL    age=  95.27H
+SKIP   4USDT          quality=LEGACY_PARTIAL    age=  95.27H
+SKIP   JTOUSDT        quality=LEGACY_PARTIAL    age=  95.27H
+SKIP   FORMUSDT       quality=LEGACY_PARTIAL    age=  95.27H
+SKIP   PUMPUSDT       quality=LEGACY_PARTIAL    age=  94.20H
+SKIP   ACUUSDT        quality=LEGACY_PARTIAL    age=  85.41H
+SKIP   HYPEUSDT       quality=LEGACY_PARTIAL    age=  85.41H
+SKIP   AEONUSDT       quality=LEGACY_PARTIAL    age=  84.39H
+SKIP   BTWUSDT        quality=LEGACY_PARTIAL    age=  84.39H
+FINAL  HUSDT          direction=DOWN  UP=    6.35% DOWN=  -12.07% class=HUGE_EXPANSION_DOWN
+FINAL  LINKUSDT       direction=NONE  UP=    0.25% DOWN=   -1.96% class=NO_EXPANSION
+FINAL  CHIPUSDT       direction=DOWN  UP=    3.66% DOWN=   -7.42% class=MAJOR_EXPANSION_DOWN
+WAIT   LINKUSDT       age=  22.04H UP=    0.36% DOWN=   -1.85%
+WAIT   HYPEUSDT       age=  22.04H UP=    2.82% DOWN=   -0.94%
+WAIT   BTWUSDT        age=  21.05H UP=   18.01% DOWN=   -3.49%
+WAIT   ETHUSDT        age=  21.05H UP=    1.00% DOWN=   -0.96%
+WAIT   CHIPUSDT       age=  21.05H UP=    6.73% DOWN=   -4.67%
+WAIT   HYPEUSDT       age=  21.05H UP=    2.40% DOWN=   -1.35%
+WAIT   PUMPUSDT       age=  16.55H UP=    4.35% DOWN=   -0.22%
+WAIT   HYPEUSDT       age=  16.55H UP=    2.16% DOWN=   -1.57%
+WAIT   ZECUSDT        age=  16.55H UP=    0.76% DOWN=   -1.92%
+WAIT   BTWUSDT        age=  16.55H UP=   20.03% DOWN=   -1.05%
+WAIT   LINKUSDT       age=  16.55H UP=    1.88% DOWN=   -0.03%
+WAIT   CHIPUSDT       age=  15.65H UP=    3.58% DOWN=   -7.48%
+WAIT   GPSUSDT        age=  15.65H UP=   11.21% DOWN=   -4.20%
+WAIT   AEONUSDT       age=  14.88H UP=    2.91% DOWN=   -7.90%
+WAIT   ETHUSDT        age=  14.88H UP=    1.40% DOWN=   -0.21%
+WAIT   DIAUSDT        age=  14.88H UP=    6.10% DOWN=   -2.57%
+WAIT   BTWUSDT        age=  12.70H UP=   20.19% DOWN=   -0.30%
+WAIT   SOLUSDT        age=  11.85H UP=    1.71% DOWN=   -0.38%
+WAIT   DIAUSDT        age=  11.85H UP=    7.04% DOWN=   -0.49%
+WAIT   PUMPUSDT       age=   8.04H UP=    2.57% DOWN=   -1.46%
+WAIT   ZECUSDT        age=   8.04H UP=    1.52% DOWN=   -1.19%
+WAIT   AEONUSDT       age=   8.04H UP=    2.13% DOWN=   -7.69%
+WAIT   BTCUSDT        age=   8.04H UP=    1.07% DOWN=   -0.52%
+WAIT   DIAUSDT        age=   8.04H UP=    2.40% DOWN=   -2.71%
+WAIT   ZECUSDT        age=   4.90H UP=    1.38% DOWN=   -1.11%
+WAIT   CHIPUSDT       age=   4.90H UP=    2.86% DOWN=   -2.26%
+WAIT   LINKUSDT       age=   4.90H UP=    0.68% DOWN=   -0.31%
+WAIT   HYPEUSDT       age=   4.90H UP=    0.14% DOWN=   -2.09%
+WAIT   PUMPUSDT       age=   4.90H UP=    0.46% DOWN=   -1.91%
+WAIT   BTWUSDT        age=   4.90H UP=    9.60% DOWN=   -2.97%
+WAIT   GPSUSDT        age=   4.90H UP=    8.42% DOWN=   -1.12%
+WAIT   ZECUSDT        age=   0.81H UP=    0.82% DOWN=   -0.10%
+WAIT   BTCUSDT        age=   0.81H UP=    0.08% DOWN=   -0.08%
+WAIT   BTWUSDT        age=   0.81H UP=    4.35% DOWN=    0.00%
+WAIT   GPSUSDT        age=   0.81H UP=    1.02% DOWN=   -0.74%
+WAIT   HYPEUSDT       age=   0.02H UP=    0.14% DOWN=    0.00%
+
+==============================================================================================================
+FINALIZER SUMMARY
+==============================================================================================================
+Episodes: 141
+Finalized this run: 3
+Waiting for 24H: 36
+Legacy partial skipped: 22
+Already finalized: 80
+Supabase rows upserted: 141
+
+V7.5 EPISODE FINALIZER: PASS
