@@ -1,0 +1,56 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.6 POST-CONFIRMATION OUTCOME TRACKER — SHADOW
+======================================================================================================================
+Confirmed outcome rows: 100
+Created this run: 1
+
+BTWUSDT        LONG   quality=FORWARD_COMPLETE now=  -1.19% MFE=   1.12% MAE=  -2.92% lost=Y done=-
+CHIPUSDT       SHORT  quality=FORWARD_COMPLETE now=   0.57% MFE=   0.76% MAE=  -5.16% lost=- done=-
+PRLUSDT        LONG   quality=FORWARD_COMPLETE now=   3.54% MFE=   6.91% MAE=  -0.99% lost=Y done=-
+CHIPUSDT       SHORT  quality=FORWARD_COMPLETE now=   7.62% MFE=   7.79% MAE=  -3.95% lost=Y done=Y
+WLDUSDT        SHORT  quality=FORWARD_COMPLETE now=   8.17% MFE=   9.65% MAE=  -0.77% lost=- done=Y
+BTWUSDT        LONG   quality=FORWARD_COMPLETE now=  15.82% MFE=  18.49% MAE=  -3.10% lost=Y done=-
+WLDUSDT        SHORT  quality=FORWARD_COMPLETE now=   8.17% MFE=   9.65% MAE=  -0.77% lost=- done=Y
+GPSUSDT        LONG   quality=FORWARD_COMPLETE now=  -1.04% MFE=   1.49% MAE=  -2.84% lost=- done=-
+CHIPUSDT       SHORT  quality=FORWARD_COMPLETE now=   4.55% MFE=   4.74% MAE=  -7.40% lost=Y done=-
+DIAUSDT        LONG   quality=FORWARD_COMPLETE now=  -2.07% MFE=   1.30% MAE=  -2.84% lost=Y done=-
+CHIPUSDT       SHORT  quality=FORWARD_COMPLETE now=   0.57% MFE=   0.76% MAE=  -5.16% lost=- done=-
+BTWUSDT        LONG   quality=FORWARD_COMPLETE now=  15.82% MFE=  18.49% MAE=  -3.10% lost=Y done=-
+DIAUSDT        LONG   quality=FORWARD_COMPLETE now=  -2.07% MFE=   1.30% MAE=  -2.84% lost=Y done=-
+LINKUSDT       LONG   quality=FORWARD_COMPLETE now=   0.15% MFE=   0.65% MAE=  -0.36% lost=- done=-
+PUMPUSDT       LONG   quality=FORWARD_COMPLETE now=   2.29% MFE=   3.57% MAE=  -0.78% lost=- done=-
+ETHUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.22% MFE=   0.26% MAE=  -0.37% lost=Y done=-
+DOLOUSDT       LONG   quality=FORWARD_COMPLETE now=  -3.33% MFE=   8.59% MAE=  -6.66% lost=Y done=-
+BTWUSDT        LONG   quality=FORWARD_COMPLETE now=  14.41% MFE=  17.00% MAE=  -0.86% lost=Y done=-
+PUMPUSDT       LONG   quality=FORWARD_COMPLETE now=   2.33% MFE=   3.60% MAE=  -0.74% lost=- done=-
+LINKUSDT       LONG   quality=FORWARD_COMPLETE now=   0.15% MFE=   0.65% MAE=  -0.36% lost=Y done=-
+GPSUSDT        LONG   quality=FORWARD_COMPLETE now=  -1.81% MFE=   0.90% MAE=  -3.62% lost=Y done=-
+PUMPUSDT       LONG   quality=FORWARD_COMPLETE now=   2.29% MFE=   3.57% MAE=  -0.78% lost=- done=-
+LINKUSDT       LONG   quality=FORWARD_COMPLETE now=   0.15% MFE=   0.65% MAE=  -0.36% lost=Y done=-
+GPSUSDT        LONG   quality=FORWARD_COMPLETE now=   3.07% MFE=   8.81% MAE=  -6.27% lost=Y done=-
+BTWUSDT        LONG   quality=FORWARD_COMPLETE now=  14.50% MFE=  17.00% MAE=  -0.86% lost=Y done=-
+HUSDT          SHORT  quality=FORWARD_COMPLETE now=   5.84% MFE=   8.29% MAE=  -0.20% lost=- done=-
+SOLUSDT        LONG   quality=FORWARD_COMPLETE now=   0.89% MFE=   1.52% MAE=  -0.27% lost=Y done=-
+BTCUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.24% MFE=   0.12% MAE=  -0.33% lost=- done=-
+ETHUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.22% MFE=   0.25% MAE=  -0.37% lost=Y done=-
+AEONUSDT       SHORT  quality=FORWARD_COMPLETE now=   1.74% MFE=   2.50% MAE=  -5.58% lost=Y done=-
+BTWUSDT        LONG   quality=FORWARD_COMPLETE now=   7.87% MFE=  10.18% MAE=  -0.15% lost=Y done=-
+LINKUSDT       LONG   quality=FORWARD_COMPLETE now=   0.15% MFE=   0.65% MAE=  -0.36% lost=- done=-
+LUMIAUSDT      SHORT  quality=FORWARD_COMPLETE now=  -0.00% MFE=   0.00% MAE=   0.00% lost=- done=-
+
+======================================================================================================================
+POST-CONFIRMATION TRACKER SUMMARY
+======================================================================================================================
+Outcome rows: 100
+Created this run: 1
+Tracked this run: 33
+Failed: 0
+Supabase rows upserted: 100
+Forward complete: 100
+Completed 24H: 70
+
+IMPORTANT: OUTCOME TRACKER IS MEASUREMENT ONLY.
+No trade permission was generated.
+
+V7.6 POST-CONFIRMATION OUTCOME TRACKER: PASS
