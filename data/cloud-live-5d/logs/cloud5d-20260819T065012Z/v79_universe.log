@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-19T06:51:06.923407+00:00
+Hour bucket: 2026-08-19T06:00:00+00:00
+Contract tickers: 760
+Rows attempted: 760
+Deep-scan selected: 28
+Selection snapshot: 2026-08-19T06:51:04.272595+00:00
+Selection run ID: d48ffc8c82fdf7dfb5a7fccf577e99b4
+Prefilter eligible: 293
+Eligible not selected: 265
+Non-crypto: 291
+Low liquidity: 171
+Over-extended: 5
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+BTWUSDT             +69.67%       N       N  OVER_EXTENDED
+VELVETUSDT          +30.68%       N       N  OVER_EXTENDED
+GPSUSDT             -27.26%       N       N  OVER_EXTENDED
+JCTUSDT             -27.24%       N       N  OVER_EXTENDED
+ACEUSDT             +26.89%       N       N  OVER_EXTENDED
+XPINUSDT            -23.97%       Y       N  ELIGIBLE_NOT_SELECTED
+BEATUSDT            -23.26%       Y       N  ELIGIBLE_NOT_SELECTED
+SKYAIUSDT           -21.04%       Y       N  ELIGIBLE_NOT_SELECTED
+DOSUSDT             +18.31%       Y       N  ELIGIBLE_NOT_SELECTED
+HUSDT               -17.17%       Y       Y  DEEP_SCAN_SELECTED
+REDUSDT             -15.98%       Y       N  ELIGIBLE_NOT_SELECTED
+BRUSDT              +15.62%       Y       Y  DEEP_SCAN_SELECTED
+SNXXUSDT            -14.64%       N       N  NON_CRYPTO
+CFGUSDT             -14.10%       Y       Y  DEEP_SCAN_SELECTED
+AAOIUSDT            -13.79%       N       N  NON_CRYPTO
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
