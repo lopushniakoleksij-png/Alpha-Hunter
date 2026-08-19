@@ -1,0 +1,28 @@
+V7.4 HOURLY PERFORMANCE TRACKER
+Run ID: 1858436726b6705e45f1cd39d76e94b8
+
+V7.4.1 SHADOW REVERSAL
+ SH SYMBOL           V74     OLD   SHADOW
+--------------------------------------------------
+  1 ACEUSDT            2   13.84    10.13
+  2 1000RATSUSDT       1   14.00     6.65
+  3 BTWUSDT            3   11.96     6.20
+PERFORMANCE SIGNALS SAVED: 30
+FEATURE ROWS SAVED: 30
+V7.4 OUTCOMES 1H: saved=10 failed=0
+Traceback (most recent call last):
+  File "/home/runner/work/Alpha-Hunter/Alpha-Hunter/v74_tracking_job.py", line 1390, in <module>
+    main()
+  File "/home/runner/work/Alpha-Hunter/Alpha-Hunter/v74_tracking_job.py", line 1334, in main
+    ) = evaluate_outcomes(
+  File "/home/runner/work/Alpha-Hunter/Alpha-Hunter/v74_tracking_job.py", line 480, in evaluate_outcomes
+    evaluate_v74_horizon(
+  File "/home/runner/work/Alpha-Hunter/Alpha-Hunter/v74_tracking_job.py", line 269, in evaluate_v74_horizon
+    pending = pending_v74_signals(
+  File "/home/runner/work/Alpha-Hunter/Alpha-Hunter/v74_tracking_job.py", line 120, in pending_v74_signals
+    signals = get_rows(
+  File "/home/runner/work/Alpha-Hunter/Alpha-Hunter/v74_tracking_job.py", line 50, in get_rows
+    response.raise_for_status()
+  File "/opt/hostedtoolcache/Python/3.9.25/x64/lib/python3.9/site-packages/requests/models.py", line 1026, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: https://yjgtjzymfurqzqqxcrnp.supabase.co/rest/v1/alpha_hunter_signals?select=signal_id%2Csymbol%2Cdetected_at_utc%2Cstate%2Cdirection%2Creference_price%2Centry_price%2Cstop_loss%2Ctake_profit%2Cpayload&detected_at_utc=lte.2026-08-19T15%3A30%3A06.785372%2B00%3A00&order=detected_at_utc.desc&limit=1000
