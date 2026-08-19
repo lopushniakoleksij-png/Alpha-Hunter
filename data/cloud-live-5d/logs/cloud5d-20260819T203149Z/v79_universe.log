@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-19T20:32:32.047230+00:00
+Hour bucket: 2026-08-19T20:00:00+00:00
+Contract tickers: 756
+Rows attempted: 756
+Deep-scan selected: 30
+Selection snapshot: 2026-08-19T20:32:29.470092+00:00
+Selection run ID: 4ed8c1245a718787ac0eb898950c3c72
+Prefilter eligible: 323
+Eligible not selected: 293
+Non-crypto: 291
+Low liquidity: 137
+Over-extended: 5
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+REUSDT              +33.59%       N       N  OVER_EXTENDED
+GPSUSDT             -33.22%       N       N  OVER_EXTENDED
+PRLUSDT             -29.73%       N       N  OVER_EXTENDED
+BEATUSDT            -28.81%       N       N  OVER_EXTENDED
+TREEUSDT            +27.99%       N       N  OVER_EXTENDED
+MSTUUSDT            +26.94%       N       N  NON_CRYPTO
+TRIAUSDT            -22.24%       Y       N  ELIGIBLE_NOT_SELECTED
+MAGMAUSDT           +20.82%       Y       N  ELIGIBLE_NOT_SELECTED
+MUBARAKUSDT         +20.47%       Y       N  ELIGIBLE_NOT_SELECTED
+CONLUSDT            +19.89%       N       N  NON_CRYPTO
+SKYAIUSDT           +19.38%       Y       N  ELIGIBLE_NOT_SELECTED
+MVLLUSDT            +18.63%       N       N  NON_CRYPTO
+TUTUSDT             -17.75%       Y       Y  DEEP_SCAN_SELECTED
+HYPEUSDT            +17.46%       Y       Y  DEEP_SCAN_SELECTED
+ACEUSDT             -17.10%       Y       N  ELIGIBLE_NOT_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
