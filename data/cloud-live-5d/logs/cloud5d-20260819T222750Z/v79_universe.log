@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-19T22:28:49.701132+00:00
+Hour bucket: 2026-08-19T22:00:00+00:00
+Contract tickers: 756
+Rows attempted: 756
+Deep-scan selected: 30
+Selection snapshot: 2026-08-19T22:28:47.519187+00:00
+Selection run ID: 3f0ce67bd80fe8839cf214da7c6d3fa6
+Prefilter eligible: 340
+Eligible not selected: 310
+Non-crypto: 291
+Low liquidity: 119
+Over-extended: 6
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+MAGMAUSDT           +34.13%       N       N  OVER_EXTENDED
+REUSDT              +33.61%       N       N  OVER_EXTENDED
+GPSUSDT             -33.54%       N       N  OVER_EXTENDED
+MSTUUSDT            +31.52%       N       N  NON_CRYPTO
+PRLUSDT             -29.35%       N       N  OVER_EXTENDED
+SKYAIUSDT           +28.27%       N       N  OVER_EXTENDED
+BEATUSDT            -28.17%       N       N  OVER_EXTENDED
+CONLUSDT            +25.39%       N       N  NON_CRYPTO
+TRUMPUSDT           +24.13%       Y       N  ELIGIBLE_NOT_SELECTED
+MVLLUSDT            +23.12%       N       N  NON_CRYPTO
+MUBARAKUSDT         +22.63%       Y       N  ELIGIBLE_NOT_SELECTED
+HYPEUSDT            +21.53%       Y       N  ELIGIBLE_NOT_SELECTED
+TRIAUSDT            -20.86%       Y       N  ELIGIBLE_NOT_SELECTED
+TUTUSDT             -20.17%       Y       N  ELIGIBLE_NOT_SELECTED
+ARBUSDT             +18.75%       Y       N  ELIGIBLE_NOT_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
