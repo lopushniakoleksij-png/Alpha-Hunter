@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-19T18:40:25.886060+00:00
+Hour bucket: 2026-08-19T18:00:00+00:00
+Contract tickers: 756
+Rows attempted: 756
+Deep-scan selected: 30
+Selection snapshot: 2026-08-19T18:40:23.468690+00:00
+Selection run ID: 3b64c2f4929403fbfc49f7a4022a3331
+Prefilter eligible: 319
+Eligible not selected: 289
+Non-crypto: 291
+Low liquidity: 142
+Over-extended: 4
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+GPSUSDT             -33.81%       N       N  OVER_EXTENDED
+BEATUSDT            -28.66%       N       N  OVER_EXTENDED
+TREEUSDT            +28.30%       N       N  OVER_EXTENDED
+REUSDT              +27.51%       N       N  OVER_EXTENDED
+PRLUSDT             -24.50%       Y       N  ELIGIBLE_NOT_SELECTED
+MUBARAKUSDT         +23.31%       Y       N  ELIGIBLE_NOT_SELECTED
+BTWUSDT             -22.91%       Y       N  ELIGIBLE_NOT_SELECTED
+DOSUSDT             +20.37%       Y       N  ELIGIBLE_NOT_SELECTED
+HUSDT               -20.16%       Y       N  ELIGIBLE_NOT_SELECTED
+MVLLUSDT            +18.89%       N       N  NON_CRYPTO
+TUTUSDT             -18.43%       Y       Y  DEEP_SCAN_SELECTED
+MAGMAUSDT           +17.94%       Y       N  ELIGIBLE_NOT_SELECTED
+MSTUUSDT            +17.39%       N       N  NON_CRYPTO
+TRIAUSDT            -17.37%       Y       N  ELIGIBLE_NOT_SELECTED
+BRUSDT              +16.44%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
