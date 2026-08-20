@@ -1,0 +1,34 @@
+V7.5 state restored from Supabase: 199
+
+ALPHA HUNTER V7.5 OPPORTUNITY LIFECYCLE
+Run ID: 911ca7b8b14dfb0add783430bd8a8315
+Timestamp: 2026-08-20T14:40:53.871718+00:00
+Lifecycle candidates: 6
+
+NEW    VVVUSDT        CONTINUATION  state=DIRECTION_EMERGING   det=1   v74= 9.70 rank=6 shadow= 0.00 provisional=ACTIVE final=PENDING
+UPDATE MUBARAKUSDT    REVERSAL      state=PRE_MOVE_DETECTED    det=2   v74=12.63 rank=2 shadow=12.76 provisional=ACTIVE final=PENDING
+NEW    LAUSDT         CONTINUATION  state=DIRECTION_EMERGING   det=1   v74= 9.95 rank=4 shadow= 0.00 provisional=ACTIVE final=PENDING
+NEW    1000RATSUSDT   CONTINUATION  state=PRE_MOVE_DETECTED    det=1   v74= 9.80 rank=5 shadow= 0.00 provisional=ACTIVE final=PENDING
+UPDATE TREEUSDT       REVERSAL      state=PRE_MOVE_DETECTED    det=2   v74=12.29 rank=3 shadow=14.23 provisional=ACTIVE final=PENDING
+NEW    ACUUSDT        REVERSAL      state=PRE_MOVE_DETECTED    det=1   v74=12.09 rank=3 shadow= 7.96 provisional=ACTIVE final=PENDING
+
+Supabase lifecycle rows upserted: 203
+Supabase lifecycle row count: 203
+
+====================================================================================================
+V7.5 LIFECYCLE SUMMARY
+====================================================================================================
+Episodes stored: 203
+Created this run: 4
+Updated this run: 2
+Active episodes: 203
+
+STATE COUNTS
+DIRECTION_EMERGING       15
+FINALIZED                138
+PRE_MOVE_DETECTED        50
+
+State file: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/v75-lifecycle-episodes.json
+History file: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/v75-lifecycle-history.jsonl
+
+V7.5 LIFECYCLE JOB: PASS
