@@ -1,0 +1,65 @@
+
+ALPHA HUNTER V7.1 — 2026-08-20T18:45:02.942391+00:00
+
+Universe: 30 deep-scanned of 759 contracts
+Eligible after prefilter: 374
+Non-crypto rejected: 294
+
+SYMBOL                  PHASE    TIME   BEHAV                     STATE      RR   DISC  TRADE
+---------------------------------------------------------------------------------------------
+TRUMPUSDT        ACCUMULATION    FAIR    5.91                   NEUTRAL       —    YES     NO
+TRIAUSDT          COMPRESSION   EARLY    5.28  DIRECTION_EMERGING_SHORT    0.08    YES     NO
+SIRENUSDT      DISTRIBUTION_RISK    FAIR    5.23   DIRECTION_EMERGING_LONG    0.07     NO     NO
+SPXUSDT          ACCUMULATION    FAIR    4.99                WATCH_LONG       —     NO     NO
+REUSDT              EXPANSION    LATE    4.97                   NEUTRAL       —     NO     NO
+LISTAUSDT        ACCUMULATION    FAIR    4.94   DIRECTION_EMERGING_LONG    0.00     NO     NO
+FILUSDT          ACCUMULATION    FAIR    4.92                WATCH_LONG       —     NO     NO
+ENSUSDT          ACCUMULATION    FAIR    4.82                WATCH_LONG       —     NO     NO
+CYSUSDT          ACCUMULATION   EARLY    4.64               WATCH_SHORT       —     NO     NO
+ZECUSDT           COMPRESSION   EARLY    4.63                WATCH_LONG       —     NO     NO
+JTOUSDT          ACCUMULATION   EARLY    4.40                   NEUTRAL       —     NO     NO
+NEARUSDT          COMPRESSION   EARLY    4.35                WATCH_LONG       —     NO     NO
+TURBOUSDT        ACCUMULATION    FAIR    4.26                WATCH_LONG       —     NO     NO
+WIFUSDT          ACCUMULATION    FAIR    4.25                WATCH_LONG       —     NO     NO
+BTCUSDT          ACCUMULATION   EARLY    4.09                WATCH_LONG       —     NO     NO
+FETUSDT        DISTRIBUTION_RISK    FAIR    4.07                WATCH_LONG       —     NO     NO
+STXUSDT          ACCUMULATION    FAIR    4.07                WATCH_LONG       —     NO     NO
+ONDOUSDT          COMPRESSION   EARLY    4.04                   NEUTRAL       —     NO     NO
+OPUSDT           ACCUMULATION    FAIR    3.75                WATCH_LONG       —     NO     NO
+LAUSDT            COMPRESSION   EARLY    3.73                WATCH_LONG       —     NO     NO
+GALAUSDT         ACCUMULATION    FAIR    3.64                   NEUTRAL       —     NO     NO
+VVVUSDT           COMPRESSION   EARLY    3.52                   NEUTRAL       —     NO     NO
+KAITOUSDT        ACCUMULATION   EARLY    3.49                   NEUTRAL       —     NO     NO
+CAPUSDT          ACCUMULATION   EARLY    3.35                   NEUTRAL       —     NO     NO
+TRXUSDT          ACCUMULATION   EARLY    3.34                WATCH_LONG       —     NO     NO
+ICXUSDT             BREAKDOWN    FAIR    3.32  DIRECTION_EMERGING_SHORT    0.17     NO     NO
+XMRUSDT          ACCUMULATION   EARLY    3.16                   NEUTRAL       —     NO     NO
+GRAMUSDT         ACCUMULATION   EARLY    2.79                   NEUTRAL       —     NO     NO
+BSBUSDT          ACCUMULATION   EARLY    2.62                WATCH_LONG       —     NO     NO
+WLFIUSDT         ACCUMULATION   EARLY    2.51                   NEUTRAL       —     NO     NO
+
+V7.4 PRE-MOVE SURVEILLANCE
+Eligible: 11 | Primary: 5 | Reserve: 5
+
+PRIMARY
+ 1 CAPUSDT        REVERSAL       12.01 state=NEUTRAL
+ 2 TRUMPUSDT      CONTINUATION   11.72 state=NEUTRAL
+ 3 SPXUSDT        CONTINUATION   11.57 state=WATCH_LONG
+ 4 OPUSDT         CONTINUATION   11.15 state=WATCH_LONG
+ 5 VVVUSDT        REVERSAL       10.08 state=NEUTRAL
+
+RESERVE
+ 6 ONDOUSDT       REVERSAL       10.06 state=NEUTRAL
+ 7 REUSDT         CONTINUATION   10.00 state=NEUTRAL
+ 8 NEARUSDT       CONTINUATION   10.00 state=WATCH_LONG
+ 9 ZECUSDT        CONTINUATION    9.95 state=WATCH_LONG
+10 LAUSDT         CONTINUATION    9.76 state=WATCH_LONG
+
+Run ID: 2cc1fc85b11e8edb40a6ef3a7ce5abe5
+Snapshot saved: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/snapshots/snapshot-20260820T184502Z.json
+State history: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/state-history.jsonl
+Supabase: SAVED
+Qualified discovery candidates: 2
+EARLY candidates: 1
+V7 Trade Ready: 0
+Bitget private API: NOT_CONFIGURED
