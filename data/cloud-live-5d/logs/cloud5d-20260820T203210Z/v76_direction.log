@@ -1,0 +1,84 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.6 DIRECTION-PROOF ENGINE — SHADOW
+======================================================================================================================
+Eligible forward episodes: 55
+
+SYMBOL         PATH          DIR         CONF   LONG   SHORT       15M        1H
+----------------------------------------------------------------------------------------------------------------------
+ZECUSDT        REVERSAL      LONG       62.5%   5.00    0.00   BULLISH   BULLISH
+HYPEUSDT       REVERSAL      LONG       62.5%   5.00    0.00   BULLISH   BULLISH
+OUSDT          CONTINUATION  UNKNOWN     0.0%   2.00    1.50     MIXED   BULLISH
+LINKUSDT       CONTINUATION  UNKNOWN     0.0%   1.50    2.50   BEARISH     MIXED
+1000RATSUSDT   REVERSAL      LONG       50.0%   4.00    0.00     MIXED   BULLISH
+SOLUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+REDUSDT        REVERSAL      LONG       68.8%   5.50    0.00     MIXED   BULLISH
+AEONUSDT       REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+BTCUSDT        CONTINUATION  LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+ETHUSDT        CONTINUATION  UNKNOWN     0.0%   3.00    0.00   BULLISH   BULLISH
+ACEUSDT        REVERSAL      SHORT      56.2%   0.00    4.50   BEARISH     MIXED
+LAUSDT         CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+CAPUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+POLUSDT        CONTINUATION  UNKNOWN     0.0%   1.00    3.50     MIXED   BEARISH
+OPNUSDT        REVERSAL      LONG       62.5%   5.00    0.00   BULLISH   BULLISH
+LAUSDT         REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+PUMPUSDT       CONTINUATION  LONG       46.9%   4.50    2.50     MIXED   BULLISH
+ONGUSDT        CONTINUATION  LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+TRXUSDT        REVERSAL      LONG       68.8%   5.50    0.00   BULLISH   BULLISH
+XMRUSDT        REVERSAL      SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+VVVUSDT        REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+AEONUSDT       REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+LAUSDT         REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+CAPUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+1000RATSUSDT   CONTINUATION  LONG       50.0%   4.00    0.00     MIXED   BULLISH
+WLFIUSDT       REVERSAL      LONG       44.4%   4.00    1.50   BULLISH   BULLISH
+ONGUSDT        REVERSAL      LONG      100.0%   8.00    0.00   BULLISH   BULLISH
+XMRUSDT        REVERSAL      SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+LAUSDT         CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+WLDUSDT        CONTINUATION  LONG       63.1%   5.50    1.50   BULLISH   BULLISH
+CAPUSDT        REVERSAL      SHORT     100.0%   0.00    8.00   BEARISH   BEARISH
+BRUSDT         CONTINUATION  UNKNOWN     0.0%   3.50    1.50     MIXED     MIXED
+VVVUSDT        REVERSAL      LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+MUBARAKUSDT    REVERSAL      UNKNOWN     0.0%   1.00    3.50     MIXED   BEARISH
+TREEUSDT       REVERSAL      UNKNOWN     0.0%   3.50    2.00   BULLISH   BEARISH
+ZROUSDT        CONTINUATION  UNKNOWN     0.0%   1.00    3.50     MIXED   BEARISH
+ACUUSDT        REVERSAL      SHORT      75.0%   0.00    6.00     MIXED   BEARISH
+1000RATSUSDT   CONTINUATION  LONG       50.0%   4.00    0.00     MIXED   BULLISH
+LAUSDT         CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+VVVUSDT        CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+UNIUSDT        CONTINUATION  UNKNOWN     0.0%   3.50    1.50     MIXED   BULLISH
+LAUSDT         CONTINUATION  LONG       50.0%   4.00    0.00   BULLISH   BULLISH
+NEARUSDT       CONTINUATION  UNKNOWN     0.0%   2.50    1.50     MIXED     MIXED
+ZROUSDT        REVERSAL      UNKNOWN     0.0%   1.00    3.50     MIXED   BEARISH
+LITUSDT        CONTINUATION  UNKNOWN     0.0%   2.00    3.00     MIXED     MIXED
+ONDOUSDT       CONTINUATION  SHORT      58.8%   1.00    5.00   BEARISH     MIXED
+BTWUSDT        REVERSAL      LONG       62.5%   5.00    0.00   BULLISH     MIXED
+OPUSDT         CONTINUATION  LONG       44.4%   4.00    1.50   BULLISH   BULLISH
+TREEUSDT       REVERSAL      UNKNOWN     0.0%   3.50    2.00   BULLISH   BEARISH
+WLDUSDT        CONTINUATION  LONG       63.1%   5.50    1.50   BULLISH   BULLISH
+WLFIUSDT       REVERSAL      LONG       44.4%   4.00    1.50   BULLISH   BULLISH
+LDOUSDT        CONTINUATION  SHORT      62.5%   0.00    5.00   BEARISH     MIXED
+XMRUSDT        REVERSAL      SHORT      87.5%   0.00    7.00   BEARISH   BEARISH
+LITUSDT        REVERSAL      UNKNOWN     0.0%   2.00    3.00     MIXED     MIXED
+NEARUSDT       REVERSAL      UNKNOWN     0.0%   2.50    1.50     MIXED     MIXED
+
+======================================================================================================================
+V7.6 SHADOW SUMMARY
+======================================================================================================================
+Evaluated: 55
+LONG: 28
+SHORT: 12
+UNKNOWN: 15
+Failures: 0
+Supabase shadow rows saved: 55
+Direction state rows saved: 55
+Immutable transition rows saved: 55
+Transition run ID: cloud5d-20260820T203210Z
+Direction emerging: 21
+Direction confirmed: 14
+Lost confirmation: 11
+
+IMPORTANT: V7.6 IS SHADOW ONLY.
+No trade permission was generated.
+
+V7.6 DIRECTION SHADOW: PASS
