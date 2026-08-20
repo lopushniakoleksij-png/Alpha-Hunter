@@ -1,0 +1,29 @@
+
+====================================================================================================
+ALPHA HUNTER P0-3 PRODUCTION DATA GUARDRAILS
+====================================================================================================
+PASS     snapshot_freshness                 snapshot age 5.7s
+PASS     snapshot_run_id                    run_id=a40b4302feec3b4b5f26521fb6da402a
+PASS     contract_universe_size             contracts=759
+PASS     ticker_coverage                    ticker coverage=100.0%
+PASS     selected_symbol_consistency        selected_count=30, selected_symbols=30, result_rows=30
+PASS     selected_symbol_uniqueness         unique=30, listed=30
+PASS     deep_scan_success_ratio            deep-scan success=100.0%
+WARN     bitget_private_api                 private API=NOT_CONFIGURED
+PASS     universe_ledger_presence           rows=759
+PASS     universe_ledger_coverage           ledger coverage=100.0%
+PASS     universe_symbol_uniqueness         unique=759, rows=759
+PASS     universe_hour_bucket               expected=2026-08-20 16:00:00+00:00, observed=['2026-08-20T16:00:00+00:00']
+PASS     ledger_selection_context           selection_run_ids=['d1863e43948c56c2907868fccc3c6447']
+WARN     ledger_capture_mode                ledger belongs to an earlier scan in the same hour; immutable first-hour evidence preserved
+PASS     ledger_freshness                   ledger age=135.7s, spread=0.000s
+PASS     ledger_source                      source=BITGET_ALL_TICKERS
+PASS     ledger_measurement_quality         quality=HOURLY_TICKER_SNAPSHOT
+PASS     v79_trade_permission               all V7.9 rows have trade_permission=false
+WARN     ledger_scan_count_consistency      not compared because immutable same-hour ledger belongs to an earlier scan
+
+Overall guardrail status: DEGRADED
+Ledger capture mode: SAME_HOUR_IMMUTABLE_REUSE
+Current scan run ID: a40b4302feec3b4b5f26521fb6da402a
+Ledger selection run ID: d1863e43948c56c2907868fccc3c6447
+====================================================================================================
