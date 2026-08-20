@@ -1,0 +1,55 @@
+
+ALPHA HUNTER V7.1 — 2026-08-20T05:35:01.254526+00:00
+
+Universe: 30 deep-scanned of 756 contracts
+Eligible after prefilter: 360
+Non-crypto rejected: 291
+
+SYMBOL                  PHASE    TIME   BEHAV                     STATE      RR   DISC  TRADE
+---------------------------------------------------------------------------------------------
+MONUSDT        DISTRIBUTION_RISK    FAIR    5.30   DIRECTION_EMERGING_LONG    0.00     NO     NO
+AEROUSDT       DISTRIBUTION_RISK    FAIR    5.09   DIRECTION_EMERGING_LONG    0.00     NO     NO
+GPSUSDT           COMPRESSION   EARLY    4.95                   NEUTRAL       —     NO     NO
+HUSDT            ACCUMULATION    FAIR    4.90                   NEUTRAL       —     NO     NO
+DOSUSDT           COMPRESSION   EARLY    4.83  DIRECTION_EMERGING_SHORT    0.45     NO     NO
+PENDLEUSDT       ACCUMULATION    FAIR    4.67                   NEUTRAL       —     NO     NO
+PROMUSDT          COMPRESSION   EARLY    4.45  DIRECTION_EMERGING_SHORT    0.27     NO     NO
+1000RATSUSDT     ACCUMULATION   EARLY    4.43                WATCH_LONG       —     NO     NO
+APRUSDT             BREAKDOWN   EARLY    4.29  DIRECTION_EMERGING_SHORT    0.02     NO     NO
+CHIPUSDT       DISTRIBUTION_RISK    FAIR    4.23   DIRECTION_EMERGING_LONG    0.17     NO     NO
+ONGUSDT           COMPRESSION   EARLY    4.20                   NEUTRAL       —     NO     NO
+LISTAUSDT        ACCUMULATION    FAIR    3.88   DIRECTION_EMERGING_LONG    0.11     NO     NO
+BICOUSDT          COMPRESSION   EARLY    3.86                   NEUTRAL       —     NO     NO
+ESPUSDT          ACCUMULATION    FAIR    3.84   DIRECTION_EMERGING_LONG    0.03     NO     NO
+XMRUSDT          ACCUMULATION   EARLY    3.84                   NEUTRAL       —     NO     NO
+TREEUSDT             RECOVERY    FAIR    3.50                WATCH_LONG       —     NO     NO
+BANKUSDT          COMPRESSION   EARLY    3.48                   NEUTRAL       —     NO     NO
+WLDUSDT          ACCUMULATION    FAIR    3.38                   NEUTRAL       —     NO     NO
+PEPEUSDT         ACCUMULATION    FAIR    3.32                   NEUTRAL       —     NO     NO
+AEONUSDT          COMPRESSION   EARLY    3.30                WATCH_LONG       —     NO     NO
+TRXUSDT           COMPRESSION   EARLY    3.00                   NEUTRAL       —     NO     NO
+SPXUSDT          ACCUMULATION    FAIR    2.99                WATCH_LONG       —     NO     NO
+ARBUSDT          ACCUMULATION    FAIR    2.91                   NEUTRAL       —     NO     NO
+NILUSDT           COMPRESSION   EARLY    2.88                   NEUTRAL       —     NO     NO
+BRETTUSDT        ACCUMULATION    FAIR    2.52                   NEUTRAL       —     NO     NO
+KAIAUSDT         ACCUMULATION    FAIR    2.48                WATCH_LONG       —     NO     NO
+GALAUSDT         ACCUMULATION   EARLY    2.08                   NEUTRAL       —     NO     NO
+GRVTUSDT         ACCUMULATION   EARLY    1.97                   NEUTRAL       —     NO     NO
+LABUSDT          ACCUMULATION   EARLY    1.53                   NEUTRAL       —     NO     NO
+GRAMUSDT         ACCUMULATION   EARLY    1.41                   NEUTRAL       —     NO     NO
+
+V7.4 PRE-MOVE SURVEILLANCE
+Eligible: 2 | Primary: 2 | Reserve: 0
+
+PRIMARY
+ 1 TRXUSDT        REVERSAL       10.20 state=NEUTRAL
+ 2 ONGUSDT        CONTINUATION    9.96 state=NEUTRAL
+
+Run ID: 5d3f1a6dd883b23ceb26f29f65dcf8d8
+Snapshot saved: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/snapshots/snapshot-20260820T053501Z.json
+State history: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/state-history.jsonl
+Supabase: SAVED
+Qualified discovery candidates: 0
+EARLY candidates: 0
+V7 Trade Ready: 0
+Bitget private API: NOT_CONFIGURED
