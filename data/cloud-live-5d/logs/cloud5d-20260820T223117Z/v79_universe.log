@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-20T22:32:14.066426+00:00
+Hour bucket: 2026-08-20T22:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 30
+Selection snapshot: 2026-08-20T22:32:11.939800+00:00
+Selection run ID: 7527ebdcef7f26665e2f61813b4daac2
+Prefilter eligible: 369
+Eligible not selected: 339
+Non-crypto: 294
+Low liquidity: 89
+Over-extended: 7
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+ONGUSDT             +57.15%       N       N  OVER_EXTENDED
+PEOPLEUSDT          +40.25%       N       N  OVER_EXTENDED
+SANTOSUSDT          +36.58%       N       N  OVER_EXTENDED
+BOMEUSDT            +32.73%       N       N  OVER_EXTENDED
+NEIROCTOUSDT        +31.29%       N       N  OVER_EXTENDED
+ACEUSDT             +30.12%       N       N  OVER_EXTENDED
+ONTUSDT             +25.48%       N       N  OVER_EXTENDED
+PUMPUSDT            +23.16%       Y       N  ELIGIBLE_NOT_SELECTED
+ENAUSDT             +21.87%       Y       N  ELIGIBLE_NOT_SELECTED
+SCRTUSDT            -20.77%       Y       N  ELIGIBLE_NOT_SELECTED
+PRLUSDT             -18.29%       Y       N  ELIGIBLE_NOT_SELECTED
+MONUSDT             +18.04%       Y       N  ELIGIBLE_NOT_SELECTED
+PNUTUSDT            +15.95%       Y       N  ELIGIBLE_NOT_SELECTED
+LISTAUSDT           +14.47%       Y       Y  DEEP_SCAN_SELECTED
+GALAUSDT            +14.03%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS

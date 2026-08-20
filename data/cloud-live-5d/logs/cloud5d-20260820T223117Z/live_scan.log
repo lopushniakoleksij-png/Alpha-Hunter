@@ -1,0 +1,64 @@
+
+ALPHA HUNTER V7.1 — 2026-08-20T22:32:11.939800+00:00
+
+Universe: 30 deep-scanned of 759 contracts
+Eligible after prefilter: 370
+Non-crypto rejected: 294
+
+SYMBOL                  PHASE    TIME   BEHAV                     STATE      RR   DISC  TRADE
+---------------------------------------------------------------------------------------------
+TREEUSDT          COMPRESSION   EARLY    4.90               WATCH_SHORT       —     NO     NO
+PEPEUSDT         ACCUMULATION    FAIR    4.79                WATCH_LONG       —     NO     NO
+WLDUSDT           COMPRESSION    FAIR    4.72                   NEUTRAL       —     NO     NO
+AAVEUSDT          COMPRESSION   EARLY    4.64   DIRECTION_EMERGING_LONG    0.09     NO     NO
+TUTUSDT           COMPRESSION   EARLY    4.63  DIRECTION_EMERGING_SHORT    0.27     NO     NO
+龙虾USDT           ACCUMULATION    FAIR    4.63                WATCH_LONG       —     NO     NO
+NEARUSDT          COMPRESSION   EARLY    4.62   DIRECTION_EMERGING_LONG    0.12     NO     NO
+HYPEUSDT          COMPRESSION    LATE    4.56                WATCH_LONG       —     NO     NO
+ZECUSDT           COMPRESSION   EARLY    4.55                WATCH_LONG       —     NO     NO
+SOLUSDT           COMPRESSION   EARLY    4.48                WATCH_LONG       —     NO     NO
+LINKUSDT          COMPRESSION   EARLY    4.32                   NEUTRAL       —     NO     NO
+LISTAUSDT        ACCUMULATION    FAIR    4.18   DIRECTION_EMERGING_LONG    0.11     NO     NO
+CYSUSDT           COMPRESSION   EARLY    4.18               WATCH_SHORT       —     NO     NO
+BIOUSDT          ACCUMULATION    LATE    4.09                   NEUTRAL       —     NO     NO
+GALAUSDT         ACCUMULATION    FAIR    4.04   DIRECTION_EMERGING_LONG    0.14     NO     NO
+BTCUSDT          ACCUMULATION   EARLY    4.00                WATCH_LONG       —     NO     NO
+ONDOUSDT          COMPRESSION   EARLY    3.99   DIRECTION_EMERGING_LONG    0.29     NO     NO
+ETHUSDT           COMPRESSION    FAIR    3.88                   NEUTRAL       —     NO     NO
+UNIUSDT           COMPRESSION   EARLY    3.75                   NEUTRAL       —     NO     NO
+WIFUSDT          ACCUMULATION    FAIR    3.74                WATCH_LONG       —     NO     NO
+XRPUSDT          ACCUMULATION    LATE    3.67                WATCH_LONG       —     NO     NO
+BRETTUSDT        ACCUMULATION    FAIR    3.64                WATCH_LONG       —     NO     NO
+ADAUSDT          ACCUMULATION   EARLY    3.64                WATCH_LONG       —     NO     NO
+MOODENGUSDT      ACCUMULATION    FAIR    3.46                   NEUTRAL       —     NO     NO
+ACUUSDT          ACCUMULATION    FAIR    3.34                   NEUTRAL       —     NO     NO
+ORDIUSDT         ACCUMULATION    FAIR    3.24                   NEUTRAL       —     NO     NO
+FORMUSDT         ACCUMULATION    FAIR    3.16   DIRECTION_EMERGING_LONG    0.17     NO     NO
+LTCUSDT           COMPRESSION   EARLY    2.86                   NEUTRAL       —     NO     NO
+DOGEUSDT         ACCUMULATION   EARLY    2.86                   NEUTRAL       —     NO     NO
+TURBOUSDT        ACCUMULATION    FAIR    2.36                WATCH_LONG       —     NO     NO
+
+V7.4 PRE-MOVE SURVEILLANCE
+Eligible: 9 | Primary: 5 | Reserve: 4
+
+PRIMARY
+ 1 ACUUSDT        REVERSAL       12.77 state=NEUTRAL
+ 2 TREEUSDT       REVERSAL       12.62 state=WATCH_SHORT
+ 3 WLDUSDT        CONTINUATION   10.00 state=NEUTRAL
+ 4 AAVEUSDT       CONTINUATION   10.00 state=DIRECTION_EMERGING_LONG
+ 5 NEARUSDT       CONTINUATION   10.00 state=DIRECTION_EMERGING_LONG
+
+RESERVE
+ 6 LINKUSDT       CONTINUATION   10.00 state=NEUTRAL
+ 7 UNIUSDT        CONTINUATION   10.00 state=NEUTRAL
+ 8 ZECUSDT        CONTINUATION    9.95 state=WATCH_LONG
+ 9 ONDOUSDT       CONTINUATION    9.87 state=DIRECTION_EMERGING_LONG
+
+Run ID: 7527ebdcef7f26665e2f61813b4daac2
+Snapshot saved: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/snapshots/snapshot-20260820T223211Z.json
+State history: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/state-history.jsonl
+Supabase: SAVED
+Qualified discovery candidates: 0
+EARLY candidates: 0
+V7 Trade Ready: 0
+Bitget private API: NOT_CONFIGURED
