@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-20T03:01:00.401640+00:00
+Hour bucket: 2026-08-20T03:00:00+00:00
+Contract tickers: 756
+Rows attempted: 756
+Deep-scan selected: 30
+Selection snapshot: 2026-08-20T03:00:57.366069+00:00
+Selection run ID: a7b94768abec7ae50d9f783017e0bfa6
+Prefilter eligible: 355
+Eligible not selected: 325
+Non-crypto: 291
+Low liquidity: 104
+Over-extended: 6
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+MAGMAUSDT           +39.01%       N       N  OVER_EXTENDED
+REUSDT              +34.23%       N       N  OVER_EXTENDED
+SKYAIUSDT           +33.82%       N       N  OVER_EXTENDED
+MSTUUSDT            +32.23%       N       N  NON_CRYPTO
+PRLUSDT             -30.75%       N       N  OVER_EXTENDED
+BEATUSDT            -29.96%       N       N  OVER_EXTENDED
+METUSDT             +25.77%       N       N  OVER_EXTENDED
+MVLLUSDT            +25.05%       N       N  NON_CRYPTO
+CONLUSDT            +24.99%       N       N  NON_CRYPTO
+BBUSDT              -23.53%       Y       N  ELIGIBLE_NOT_SELECTED
+HUSDT               -21.78%       Y       N  ELIGIBLE_NOT_SELECTED
+TUTUSDT             -21.08%       Y       N  ELIGIBLE_NOT_SELECTED
+TRIAUSDT            -19.64%       Y       N  ELIGIBLE_NOT_SELECTED
+TRUMPUSDT           +19.40%       Y       N  ELIGIBLE_NOT_SELECTED
+HYPEUSDT            +19.19%       Y       Y  DEEP_SCAN_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
