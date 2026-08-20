@@ -1,0 +1,59 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.6 POST-CONFIRMATION OUTCOME TRACKER — SHADOW
+======================================================================================================================
+Confirmed outcome rows: 167
+Created this run: 5
+
+REDUSDT        LONG   quality=FORWARD_COMPLETE now=   7.75% MFE=  23.66% MAE=  -1.55% lost=Y done=-
+REDUSDT        LONG   quality=FORWARD_COMPLETE now=   7.75% MFE=  23.66% MAE=  -1.55% lost=- done=-
+HYPEUSDT       LONG   quality=FORWARD_COMPLETE now=  19.61% MFE=  20.66% MAE=  -0.12% lost=- done=Y
+VVVUSDT        SHORT  quality=FORWARD_COMPLETE now=  -3.92% MFE=   0.60% MAE=  -6.49% lost=Y done=-
+CAPUSDT        SHORT  quality=FORWARD_COMPLETE now=   5.03% MFE=   7.08% MAE=  -1.44% lost=- done=-
+WLDUSDT        SHORT  quality=FORWARD_COMPLETE now=  -4.83% MFE=   0.36% MAE=  -5.58% lost=Y done=-
+CAPUSDT        SHORT  quality=FORWARD_COMPLETE now=   5.03% MFE=   7.08% MAE=  -1.44% lost=- done=-
+HYPEUSDT       LONG   quality=FORWARD_COMPLETE now=  19.54% MFE=  20.58% MAE=  -0.19% lost=- done=Y
+ACUUSDT        LONG   quality=FORWARD_COMPLETE now= -16.00% MFE=   1.67% MAE= -18.39% lost=Y done=-
+ACEUSDT        SHORT  quality=FORWARD_COMPLETE now= -37.80% MFE=   5.59% MAE= -52.45% lost=Y done=-
+LAUSDT         LONG   quality=FORWARD_COMPLETE now=   1.75% MFE=   2.37% MAE=  -0.36% lost=- done=-
+LAUSDT         LONG   quality=FORWARD_COMPLETE now=   1.75% MFE=   2.37% MAE=  -0.36% lost=- done=-
+LAUSDT         LONG   quality=FORWARD_COMPLETE now=   1.75% MFE=   2.37% MAE=  -0.36% lost=- done=-
+TREEUSDT       SHORT  quality=FORWARD_COMPLETE now=  -0.82% MFE=   0.20% MAE=  -1.60% lost=Y done=-
+MUBARAKUSDT    SHORT  quality=FORWARD_COMPLETE now=   1.29% MFE=   2.43% MAE=  -3.57% lost=- done=-
+PUMPUSDT       LONG   quality=FORWARD_COMPLETE now=   9.72% MFE=  11.98% MAE=  -0.83% lost=- done=-
+TRXUSDT        LONG   quality=FORWARD_COMPLETE now=   0.57% MFE=   0.92% MAE=  -0.21% lost=- done=-
+AEONUSDT       SHORT  quality=FORWARD_COMPLETE now=   0.49% MFE=   3.13% MAE=  -4.85% lost=Y done=-
+ONGUSDT        SHORT  quality=FORWARD_COMPLETE now= -36.43% MFE=   0.18% MAE= -40.96% lost=Y done=-
+AEONUSDT       SHORT  quality=FORWARD_COMPLETE now=   0.49% MFE=   3.13% MAE=  -4.85% lost=Y done=-
+ONGUSDT        SHORT  quality=FORWARD_COMPLETE now= -36.43% MFE=   0.18% MAE= -40.96% lost=Y done=-
+1000RATSUSDT   LONG   quality=FORWARD_COMPLETE now=  -5.32% MFE=   0.79% MAE=  -6.22% lost=Y done=-
+VVVUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.04% MFE=   1.96% MAE=  -0.16% lost=Y done=-
+LAUSDT         LONG   quality=FORWARD_COMPLETE now=   1.75% MFE=   2.37% MAE=  -0.36% lost=- done=-
+XMRUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.82% MFE=   0.47% MAE=  -0.97% lost=Y done=-
+VVVUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.05% MFE=   1.96% MAE=  -0.16% lost=- done=-
+LAUSDT         LONG   quality=FORWARD_COMPLETE now=   1.75% MFE=   2.37% MAE=  -0.36% lost=- done=-
+VVVUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.05% MFE=   1.96% MAE=  -0.16% lost=- done=-
+WLFIUSDT       LONG   quality=FORWARD_COMPLETE now=   0.20% MFE=   0.68% MAE=   0.00% lost=- done=-
+XMRUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.82% MFE=   0.47% MAE=  -0.97% lost=Y done=-
+LAUSDT         LONG   quality=FORWARD_COMPLETE now=   1.75% MFE=   2.37% MAE=  -0.36% lost=- done=-
+1000RATSUSDT   SHORT  quality=FORWARD_COMPLETE now=  -0.00% MFE=   0.00% MAE=   0.00% lost=- done=-
+ACUUSDT        SHORT  quality=FORWARD_COMPLETE now=  -0.00% MFE=   0.00% MAE=   0.00% lost=- done=-
+NEARUSDT       LONG   quality=FORWARD_COMPLETE now=   0.00% MFE=   0.00% MAE=   0.00% lost=- done=-
+POLUSDT        LONG   quality=FORWARD_COMPLETE now=  -0.07% MFE=   0.00% MAE=  -0.07% lost=- done=-
+ONDOUSDT       LONG   quality=FORWARD_COMPLETE now=  -0.06% MFE=   0.00% MAE=  -0.11% lost=- done=-
+
+======================================================================================================================
+POST-CONFIRMATION TRACKER SUMMARY
+======================================================================================================================
+Outcome rows: 167
+Created this run: 5
+Tracked this run: 36
+Failed: 0
+Supabase rows upserted: 167
+Forward complete: 167
+Completed 24H: 133
+
+IMPORTANT: OUTCOME TRACKER IS MEASUREMENT ONLY.
+No trade permission was generated.
+
+V7.6 POST-CONFIRMATION OUTCOME TRACKER: PASS
