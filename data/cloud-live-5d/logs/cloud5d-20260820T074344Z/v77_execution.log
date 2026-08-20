@@ -1,0 +1,162 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.7 HUGE-RR EXECUTION FEASIBILITY — SHADOW
+======================================================================================================================
+Confirmed direction states: 145
+
+SKIP   ACEUSDT        insufficient closed history at confirmation
+SKIP   ALICEUSDT      insufficient closed history at confirmation
+SKIP   ALICEUSDT      insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   VELVETUSDT     insufficient closed history at confirmation
+SKIP   VELVETUSDT     insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   BRUSDT         insufficient closed history at confirmation
+SKIP   CYSUSDT        insufficient closed history at confirmation
+SKIP   ACUUSDT        insufficient closed history at confirmation
+SKIP   AVNTUSDT       insufficient closed history at confirmation
+SKIP   AVAXUSDT       insufficient closed history at confirmation
+SKIP   ROBOUSDT       insufficient closed history at confirmation
+SKIP   CAPUSDT        insufficient closed history at confirmation
+SKIP   CAPUSDT        insufficient closed history at confirmation
+SKIP   CAPUSDT        insufficient closed history at confirmation
+SKIP   CAPUSDT        insufficient closed history at confirmation
+SKIP   PUMPUSDT       insufficient closed history at confirmation
+SKIP   WLFIUSDT       insufficient closed history at confirmation
+SKIP   ALICEUSDT      insufficient closed history at confirmation
+SKIP   CAPUSDT        insufficient closed history at confirmation
+SKIP   BRUSDT         insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   NILUSDT        insufficient closed history at confirmation
+SKIP   VELVETUSDT     insufficient closed history at confirmation
+SKIP   COWUSDT        insufficient closed history at confirmation
+SKIP   PUMPUSDT       insufficient closed history at confirmation
+SKIP   AEONUSDT       insufficient closed history at confirmation
+SKIP   FOLKSUSDT      insufficient closed history at confirmation
+SKIP   PRLUSDT        insufficient closed history at confirmation
+SKIP   AEONUSDT       insufficient closed history at confirmation
+SKIP   DOLOUSDT       insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   HUSDT          insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   AEONUSDT       insufficient closed history at confirmation
+SKIP   BOMEUSDT       insufficient closed history at confirmation
+SKIP   ROBOUSDT       insufficient closed history at confirmation
+SKIP   VELVETUSDT     insufficient closed history at confirmation
+SKIP   ONGUSDT        insufficient closed history at confirmation
+SKIP   REDUSDT        insufficient closed history at confirmation
+SKIP   REDUSDT        insufficient closed history at confirmation
+SKIP   AIOUSDT        insufficient closed history at confirmation
+SKIP   NILUSDT        insufficient closed history at confirmation
+SKIP   PRLUSDT        insufficient closed history at confirmation
+SKIP   PRLUSDT        insufficient closed history at confirmation
+SKIP   VELVETUSDT     insufficient closed history at confirmation
+SKIP   HUSDT          insufficient closed history at confirmation
+SKIP   AEONUSDT       insufficient closed history at confirmation
+SKIP   CHIPUSDT       insufficient closed history at confirmation
+SKIP   PIXELUSDT      insufficient closed history at confirmation
+SKIP   ACUUSDT        insufficient closed history at confirmation
+SKIP   AIOUSDT        insufficient closed history at confirmation
+SKIP   AIOUSDT        insufficient closed history at confirmation
+SKIP   COWUSDT        insufficient closed history at confirmation
+SKIP   PRLUSDT        insufficient closed history at confirmation
+SKIP   BASEDUSDT      insufficient closed history at confirmation
+SKIP   AEONUSDT       insufficient closed history at confirmation
+SKIP   AIOUSDT        insufficient closed history at confirmation
+SKIP   CHIPUSDT       insufficient closed history at confirmation
+SKIP   NILUSDT        insufficient closed history at confirmation
+SKIP   NILUSDT        insufficient closed history at confirmation
+SKIP   CHIPUSDT       insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   WLDUSDT        insufficient closed history at confirmation
+SKIP   DOLOUSDT       insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   CHIPUSDT       insufficient closed history at confirmation
+SKIP   PRLUSDT        insufficient closed history at confirmation
+SKIP   GPSUSDT        insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   HUSDT          insufficient closed history at confirmation
+SKIP   SOLUSDT        insufficient closed history at confirmation
+SKIP   BTCUSDT        insufficient closed history at confirmation
+SKIP   DIAUSDT        insufficient closed history at confirmation
+SKIP   DIAUSDT        insufficient closed history at confirmation
+SKIP   AEONUSDT       insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   CHIPUSDT       insufficient closed history at confirmation
+SKIP   CHIPUSDT       insufficient closed history at confirmation
+SKIP   ETHUSDT        insufficient closed history at confirmation
+SKIP   ETHUSDT        insufficient closed history at confirmation
+SKIP   GPSUSDT        insufficient closed history at confirmation
+SKIP   LINKUSDT       insufficient closed history at confirmation
+SKIP   LINKUSDT       insufficient closed history at confirmation
+SKIP   LINKUSDT       insufficient closed history at confirmation
+SKIP   LINKUSDT       insufficient closed history at confirmation
+SKIP   PUMPUSDT       insufficient closed history at confirmation
+SKIP   PUMPUSDT       insufficient closed history at confirmation
+SKIP   PUMPUSDT       insufficient closed history at confirmation
+SKIP   BTWUSDT        insufficient closed history at confirmation
+SKIP   GPSUSDT        insufficient closed history at confirmation
+SKIP   LUMIAUSDT      insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   HYPEUSDT       insufficient closed history at confirmation
+SKIP   ONGUSDT        insufficient closed history at confirmation
+SKIP   PUMPUSDT       insufficient closed history at confirmation
+SKIP   GPSUSDT        insufficient closed history at confirmation
+SKIP   ZECUSDT        insufficient closed history at confirmation
+SKIP   ZECUSDT        insufficient closed history at confirmation
+SKIP   ZECUSDT        insufficient closed history at confirmation
+SKIP   ZECUSDT        insufficient closed history at confirmation
+SKIP   ZECUSDT        insufficient closed history at confirmation
+BTCUSDT        SHORT   entry=64261.3      stop=64403.045    risk=  0.22% structRR=0.39   status=STRUCTURE_RR_LT_3
+BTCUSDT        SHORT   entry=64261.4      stop=64403.045    risk=  0.22% structRR=0.39   status=STRUCTURE_RR_LT_3
+BTCUSDT        SHORT   entry=64266        stop=64403.045    risk=  0.21% structRR=0.43   status=STRUCTURE_RR_LT_3
+LINKUSDT       LONG    entry=9.661        stop=9.5445555    risk=  1.21% structRR=0.47   status=STRUCTURE_RR_LT_3
+LINKUSDT       LONG    entry=9.661        stop=9.5445555    risk=  1.21% structRR=0.47   status=STRUCTURE_RR_LT_3
+ZECUSDT        SHORT   entry=503.31       stop=506.1191     risk=  0.56% structRR=0.62   status=STRUCTURE_RR_LT_3
+PIEVERSEUSDT   SHORT   entry=0.86456      stop=0.89545841   risk=  3.57% structRR=0.57   status=STRUCTURE_RR_LT_3
+SOLUSDT        LONG    entry=77.465       stop=76.54675     risk=  1.19% structRR=—      status=NO_STRUCTURAL_TARGET
+AEONUSDT       SHORT   entry=0.0803       stop=0.084052931  risk=  4.67% structRR=0.24   status=STRUCTURE_RR_LT_3
+OUSDT          SHORT   entry=0.4724       stop=0.47940849   risk=  1.48% structRR=0.34   status=STRUCTURE_RR_LT_3
+1000RATSUSDT   SHORT   entry=0.0415       stop=0.043664088  risk=  5.21% structRR=0.06   status=STRUCTURE_RR_LT_3
+BTCUSDT        LONG    entry=64813        stop=64316.541    risk=  0.77% structRR=0.21   status=STRUCTURE_RR_LT_3
+ETHUSDT        LONG    entry=1935.35      stop=1915.3141    risk=  1.04% structRR=—      status=NO_STRUCTURAL_TARGET
+SOLUSDT        LONG    entry=78.389       stop=77.137346    risk=  1.60% structRR=—      status=NO_STRUCTURAL_TARGET
+ACEUSDT        SHORT   entry=0.2049       stop=0.2321392    risk= 13.29% structRR=0.06   status=STRUCTURE_RR_LT_3
+ACEUSDT        SHORT   entry=0.2047       stop=0.2321392    risk= 13.40% structRR=0.05   status=STRUCTURE_RR_LT_3
+ACEUSDT        SHORT   entry=0.205        stop=0.2321392    risk= 13.24% structRR=0.06   status=STRUCTURE_RR_LT_3
+ZECUSDT        LONG    entry=512.11       stop=504.51192    risk=  1.48% structRR=0.31   status=STRUCTURE_RR_LT_3
+HYPEUSDT       LONG    entry=61.656       stop=58.705142    risk=  4.79% structRR=0.33   status=STRUCTURE_RR_LT_3
+HYPEUSDT       LONG    entry=61.694       stop=58.705142    risk=  4.84% structRR=0.31   status=STRUCTURE_RR_LT_3
+ACUUSDT        LONG    entry=0.14515      stop=0.13437763   risk=  7.42% structRR=0.04   status=STRUCTURE_RR_LT_3
+REDUSDT        LONG    entry=0.0968       stop=0.092557214  risk=  4.38% structRR=0.14   status=STRUCTURE_RR_LT_3
+REDUSDT        LONG    entry=0.0968       stop=0.092557214  risk=  4.38% structRR=0.14   status=STRUCTURE_RR_LT_3
+ACEUSDT        SHORT   entry=0.1897       stop=0.19771755   risk=  4.23% structRR=1.09   status=STRUCTURE_RR_LT_3
+VVVUSDT        SHORT   entry=14.058       stop=14.308559    risk=  1.78% structRR=0.05   status=STRUCTURE_RR_LT_3
+
+======================================================================================================================
+V7.7 EXECUTION SHADOW SUMMARY
+======================================================================================================================
+Confirmed direction states: 145
+Execution snapshots: 25
+Skipped: 120
+Failures: 0
+Supabase rows upserted: 25
+Structure >=1:3: 0
+Structure >=1:5: 0
+Structure >=1:10: 0
+
+IMPORTANT: V7.7 IS EXECUTION FEASIBILITY SHADOW ONLY.
+3% / 5% / 10% are scenarios, not predicted targets.
+No trade permission was generated.
+
+V7.7 EXECUTION FEASIBILITY: PASS
