@@ -1,0 +1,62 @@
+
+ALPHA HUNTER V7.1 — 2026-08-20T23:29:16.217558+00:00
+
+Universe: 30 deep-scanned of 759 contracts
+Eligible after prefilter: 368
+Non-crypto rejected: 294
+
+SYMBOL                  PHASE    TIME   BEHAV                     STATE      RR   DISC  TRADE
+---------------------------------------------------------------------------------------------
+AAVEUSDT          COMPRESSION   EARLY    5.33   DIRECTION_EMERGING_LONG    0.01    YES     NO
+龙虾USDT           ACCUMULATION    FAIR    5.21   DIRECTION_EMERGING_LONG    0.16    YES     NO
+USELESSUSDT         EXPANSION    LATE    4.98   DIRECTION_EMERGING_LONG    0.07     NO     NO
+WLDUSDT           COMPRESSION    FAIR    4.90   DIRECTION_EMERGING_LONG    0.10     NO     NO
+BIOUSDT          ACCUMULATION    LATE    4.86   DIRECTION_EMERGING_LONG    0.32     NO     NO
+TREEUSDT          COMPRESSION   EARLY    4.78                   NEUTRAL       —     NO     NO
+BTCUSDT          ACCUMULATION   EARLY    4.74   DIRECTION_EMERGING_LONG    0.01     NO     NO
+HYPEUSDT          COMPRESSION    LATE    4.69   DIRECTION_EMERGING_LONG    0.08     NO     NO
+SOLUSDT           COMPRESSION   EARLY    4.65   DIRECTION_EMERGING_LONG    0.03     NO     NO
+ETHUSDT           COMPRESSION    FAIR    4.63   DIRECTION_EMERGING_LONG    0.06     NO     NO
+LINKUSDT          COMPRESSION   EARLY    4.58                WATCH_LONG       —     NO     NO
+LISTAUSDT        ACCUMULATION    FAIR    4.57   DIRECTION_EMERGING_LONG    0.06     NO     NO
+MAGMAUSDT           EXPANSION    LATE    4.55   DIRECTION_EMERGING_LONG    0.33     NO     NO
+XRPUSDT          ACCUMULATION    LATE    4.51   DIRECTION_EMERGING_LONG    0.27     NO     NO
+ZECUSDT           COMPRESSION   EARLY    4.49   DIRECTION_EMERGING_LONG    0.29     NO     NO
+GPSUSDT           COMPRESSION   EARLY    4.49               WATCH_SHORT       —     NO     NO
+NEARUSDT          COMPRESSION   EARLY    4.39   DIRECTION_EMERGING_LONG    0.04     NO     NO
+WIFUSDT          ACCUMULATION    FAIR    4.36   DIRECTION_EMERGING_LONG    0.01     NO     NO
+ARBUSDT           COMPRESSION    FAIR    4.19   DIRECTION_EMERGING_LONG    0.02     NO     NO
+SIRENUSDT        ACCUMULATION    FAIR    4.13   DIRECTION_EMERGING_LONG    0.04     NO     NO
+TUTUSDT           COMPRESSION   EARLY    4.10                   NEUTRAL       —     NO     NO
+ORDIUSDT         ACCUMULATION    FAIR    4.05                WATCH_LONG       —     NO     NO
+ONDOUSDT          COMPRESSION   EARLY    4.01   DIRECTION_EMERGING_LONG    0.18     NO     NO
+MOODENGUSDT      ACCUMULATION    FAIR    3.99   DIRECTION_EMERGING_LONG    0.21     NO     NO
+FORMUSDT         ACCUMULATION    FAIR    3.93   DIRECTION_EMERGING_LONG    0.14     NO     NO
+BEATUSDT            EXPANSION    FAIR    3.66                   NEUTRAL       —     NO     NO
+LTCUSDT           COMPRESSION   EARLY    3.59                WATCH_LONG       —     NO     NO
+GALAUSDT         ACCUMULATION    FAIR    3.44                WATCH_LONG       —     NO     NO
+WLFIUSDT         ACCUMULATION   EARLY    3.33               WATCH_SHORT       —     NO     NO
+DOGEUSDT         ACCUMULATION    FAIR    3.03                WATCH_LONG       —     NO     NO
+
+V7.4 PRE-MOVE SURVEILLANCE
+Eligible: 7 | Primary: 5 | Reserve: 2
+
+PRIMARY
+ 1 TREEUSDT       REVERSAL       13.38 state=NEUTRAL
+ 2 WLDUSDT        CONTINUATION   10.00 state=DIRECTION_EMERGING_LONG
+ 3 NEARUSDT       CONTINUATION   10.00 state=DIRECTION_EMERGING_LONG
+ 4 ZECUSDT        CONTINUATION    9.95 state=DIRECTION_EMERGING_LONG
+ 5 ONDOUSDT       CONTINUATION    9.87 state=DIRECTION_EMERGING_LONG
+
+RESERVE
+ 6 WLFIUSDT       REVERSAL        9.59 state=WATCH_SHORT
+ 7 AAVEUSDT       CONTINUATION    9.00 state=DIRECTION_EMERGING_LONG
+
+Run ID: 968a3c4a258c008e203c283ac2cb10e6
+Snapshot saved: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/snapshots/snapshot-20260820T232916Z.json
+State history: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/state-history.jsonl
+Supabase: SAVED
+Qualified discovery candidates: 2
+EARLY candidates: 1
+V7 Trade Ready: 0
+Bitget private API: NOT_CONFIGURED
