@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-21T11:30:59.027853+00:00
+Hour bucket: 2026-08-21T11:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 30
+Selection snapshot: 2026-08-21T11:30:56.894816+00:00
+Selection run ID: ff375835621b5a41bfa8481e369c9f4b
+Prefilter eligible: 384
+Eligible not selected: 354
+Non-crypto: 294
+Low liquidity: 71
+Over-extended: 10
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+ONGUSDT             +50.73%       N       N  OVER_EXTENDED
+BBUSDT              +42.32%       N       N  OVER_EXTENDED
+ENAUSDT             +40.78%       N       N  OVER_EXTENDED
+PEOPLEUSDT          +37.84%       N       N  OVER_EXTENDED
+NEIROCTOUSDT        +32.49%       N       N  OVER_EXTENDED
+GALAUSDT            +29.65%       N       N  OVER_EXTENDED
+BERAUSDT            +27.04%       N       N  OVER_EXTENDED
+XPLUSDT             +26.67%       N       N  OVER_EXTENDED
+PROMUSDT            +25.35%       N       N  OVER_EXTENDED
+USELESSUSDT         +25.02%       N       N  OVER_EXTENDED
+TURBOUSDT           +24.77%       Y       N  ELIGIBLE_NOT_SELECTED
+SSVUSDT             +24.01%       Y       N  ELIGIBLE_NOT_SELECTED
+BTWUSDT             +23.20%       Y       N  ELIGIBLE_NOT_SELECTED
+USUALUSDT           +23.04%       Y       N  ELIGIBLE_NOT_SELECTED
+PUMPUSDT            +22.60%       Y       N  ELIGIBLE_NOT_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
