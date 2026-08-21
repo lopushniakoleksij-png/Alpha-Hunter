@@ -1,0 +1,38 @@
+V7.5 state restored from Supabase: 233
+
+ALPHA HUNTER V7.5 OPPORTUNITY LIFECYCLE
+Run ID: b5df1ba6c97c2d0eab9cf44dedfb2999
+Timestamp: 2026-08-21T03:06:47.267709+00:00
+Lifecycle candidates: 9
+
+NEW    HYPEUSDT       CONTINUATION  state=PRE_MOVE_DETECTED    det=1   v74=10.00 rank=5 shadow= 0.00 provisional=ACTIVE final=PENDING
+NEW    USELESSUSDT    CONTINUATION  state=PRE_MOVE_DETECTED    det=1   v74=11.64 rank=2 shadow= 0.00 provisional=ACTIVE final=PENDING
+UPDATE ZECUSDT        CONTINUATION  state=DIRECTION_EMERGING   det=4   v74= 9.95 rank=9 shadow= 0.00 provisional=ACTIVE final=PENDING
+UPDATE WLDUSDT        CONTINUATION  state=EXPANSION            det=4   v74=10.00 rank=5 shadow= 0.00 provisional=GOOD_DETECTION final=PENDING
+NEW    MONUSDT        CONTINUATION  state=PRE_MOVE_DETECTED    det=1   v74=11.40 rank=4 shadow= 0.00 provisional=ACTIVE final=PENDING
+UPDATE NEARUSDT       CONTINUATION  state=DIRECTION_EMERGING   det=4   v74=10.00 rank=6 shadow= 0.00 provisional=ACTIVE final=PENDING
+NEW    LDOUSDT        CONTINUATION  state=PRE_MOVE_DETECTED    det=1   v74=10.00 rank=7 shadow= 0.00 provisional=ACTIVE final=PENDING
+NEW    TRUMPUSDT      REVERSAL      state=PRE_MOVE_DETECTED    det=1   v74=11.62 rank=3 shadow= 3.91 provisional=ACTIVE final=PENDING
+UPDATE WLFIUSDT       REVERSAL      state=EXPANSION            det=4   v74= 9.55 rank=8 shadow= 5.71 provisional=GOOD_DETECTION final=PENDING
+
+Supabase lifecycle rows upserted: 238
+Supabase lifecycle row count: 238
+
+====================================================================================================
+V7.5 LIFECYCLE SUMMARY
+====================================================================================================
+Episodes stored: 238
+Created this run: 5
+Updated this run: 4
+Active episodes: 238
+
+STATE COUNTS
+DIRECTION_EMERGING       19
+EXPANSION                3
+FINALIZED                148
+PRE_MOVE_DETECTED        68
+
+State file: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/v75-lifecycle-episodes.json
+History file: /home/runner/work/Alpha-Hunter/Alpha-Hunter/data/v75-lifecycle-history.jsonl
+
+V7.5 LIFECYCLE JOB: PASS
