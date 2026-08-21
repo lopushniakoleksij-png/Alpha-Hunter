@@ -1,0 +1,44 @@
+
+======================================================================================================================
+ALPHA HUNTER V7.9 FULL-UNIVERSE HOURLY LEDGER — SHADOW
+======================================================================================================================
+Observed: 2026-08-21T09:41:20.777697+00:00
+Hour bucket: 2026-08-21T09:00:00+00:00
+Contract tickers: 759
+Rows attempted: 759
+Deep-scan selected: 30
+Selection snapshot: 2026-08-21T09:41:18.216666+00:00
+Selection run ID: 575fa690af602fb8d15c4d6b08051348
+Prefilter eligible: 379
+Eligible not selected: 349
+Non-crypto: 294
+Low liquidity: 78
+Over-extended: 8
+Invalid price skipped: 0
+Rows purged >7d: 0
+
+TOP ABSOLUTE 24H MOVERS
+SYMBOL                  24H    ELIG    SCAN  STATUS
+------------------------------------------------------------------------
+PEOPLEUSDT          +44.33%       N       N  OVER_EXTENDED
+ENAUSDT             +41.66%       N       N  OVER_EXTENDED
+ONGUSDT             +38.70%       N       N  OVER_EXTENDED
+NEIROCTOUSDT        +36.95%       N       N  OVER_EXTENDED
+PROMUSDT            +29.53%       N       N  OVER_EXTENDED
+BBUSDT              +29.35%       N       N  OVER_EXTENDED
+GALAUSDT            +28.32%       N       N  OVER_EXTENDED
+XPINUSDT            +26.90%       N       N  OVER_EXTENDED
+TURBOUSDT           +23.53%       Y       N  ELIGIBLE_NOT_SELECTED
+SSVUSDT             +22.27%       Y       N  ELIGIBLE_NOT_SELECTED
+BTWUSDT             +21.70%       Y       N  ELIGIBLE_NOT_SELECTED
+XPLUSDT             +21.41%       Y       N  ELIGIBLE_NOT_SELECTED
+BCHUSDT             +20.75%       Y       N  ELIGIBLE_NOT_SELECTED
+XRPUSDT             +20.30%       Y       Y  DEEP_SCAN_SELECTED
+USELESSUSDT         +19.91%       Y       N  ELIGIBLE_NOT_SELECTED
+
+IMPORTANT: V7.9 IS MEASUREMENT/AUDIT ONLY.
+Same-hour reruns do not overwrite the first stored universe snapshot.
+Raw universe evidence is retained for 7 days.
+No trade permission was generated.
+
+V7.9 FULL-UNIVERSE LEDGER: PASS
