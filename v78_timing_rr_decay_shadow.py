@@ -643,6 +643,9 @@ def apply_rr_decay(
 def upsert_rows(
     settings: SupabaseConfig,
     rows: list[dict[str, Any]],
+    *,
+    allowed_snapshot_ids: set[str] | None = None,
+    require_complete: bool = False,
 ) -> int:
 
     if not rows:
@@ -680,6 +683,24 @@ def upsert_rows(
             )
             or ""
         ).upper()
+
+        incoming_quality = str(
+            row.get("measurement_quality")
+            or ""
+        ).upper()
+
+        if (
+            allowed_snapshot_ids is not None
+            and snapshot_id
+            not in allowed_snapshot_ids
+        ):
+            continue
+
+        if (
+            require_complete
+            and incoming_quality != "COMPLETE"
+        ):
+            continue
 
         # COMPLETE historical evidence is immutable.
         if (
@@ -735,7 +756,11 @@ def rr_text(
     )
 
 
-def main() -> int:
+def main(
+    *,
+    reconstruction_snapshot_ids:
+        set[str] | None = None,
+) -> int:
 
     load_env_file(ROOT / ".env")
 
@@ -1216,6 +1241,12 @@ def main() -> int:
     saved = upsert_rows(
         settings,
         all_rows,
+        allowed_snapshot_ids=
+            reconstruction_snapshot_ids,
+        require_complete=(
+            reconstruction_snapshot_ids
+            is not None
+        ),
     )
 
     counts = {
