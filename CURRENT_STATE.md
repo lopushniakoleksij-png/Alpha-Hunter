@@ -1,8 +1,8 @@
 # ALPHA HUNTER — CURRENT PRODUCTION STATE
 
-Last updated: 2026-08-16 18:04 UK
+Last updated: 2026-08-22 23:45 UK
 Repository: lopushniakoleksij-png/Alpha-Hunter
-Branch: main
+Branch: fix/v78-phase-history
 
 ## PURPOSE
 
@@ -823,3 +823,75 @@ PLAN
 → NEXT
 
 No meaningful Alpha Hunter step is complete until recorded on GitHub.
+
+## 2026-08-22 FIVE-DAY CLOUD AUDIT AND V7.8 STAGE 2 GREEN
+
+### CLOUD EVIDENCE AUDIT
+
+Audited branch:
+live/alpha-hunter-5d-20260816
+
+Evidence window:
+2026-08-16T22:07:27Z through 2026-08-21T21:28:24Z
+
+Observed:
+
+- 111 cloud run directories
+- 111 raw-universe captures
+- 111 deep snapshots
+- 111 live-scan PASS records
+- 111 v79 universe PASS records
+- 0 traceback, fatal, exception, or explicit error matches in logs
+- approximately 120 hourly observations were expected
+- multiple schedule gaps exceeded 70 minutes
+- the largest observed gaps were approximately 120 minutes
+- only 66 status manifests contain the complete 13-line model chain
+- 40 manifests contain only raw_universe, live_scan, and v79_universe
+- 5 manifests also contain guardrails but not the full downstream chain
+
+Interpretation:
+
+The five-day collection produced substantial usable evidence, but it was
+not a perfectly continuous hourly chain. Missing status entries must not be
+silently interpreted as model PASS or FAIL. The live evidence branch remains
+DATA / LIVE-EVIDENCE ONLY and must not be merged wholesale.
+
+### V7.8 STAGE 2 GREEN
+
+Defect proven by regression test:
+
+V7.8 main used one rolling current-candle response for DETECTION, EMERGING,
+and CONFIRMED. The phase-anchored historical loader existed but was never
+wired into the main execution path.
+
+Repair:
+
+- DETECTION now loads 15m and 1H history anchored to detection_at.
+- EMERGING now loads 15m and 1H history anchored to emerging_at.
+- CONFIRMED now loads 15m and 1H history anchored to confirmed_at.
+- Rolling client.candles() calls were removed from the V7.8 phase comparison.
+- Trade permission remains FALSE.
+- V7.8 remains SHADOW / RESEARCH.
+- V7.10 remains SHADOW / RESEARCH.
+
+Verification:
+
+- V7.8 phase-history and immutability tests: 4 passed
+- Complete repository test suite: 221 passed
+- git diff --check: passed
+
+Branch:
+fix/v78-phase-history
+
+## EXACT NEXT STEP AFTER REMOTE VERIFICATION
+
+Do not promote any V7.10 rule yet.
+
+Next phase:
+
+1. Identify every historical V7.8 row created with rolling/current candles.
+2. Preserve immutable COMPLETE evidence rules while marking damaged rows.
+3. Perform controlled reconstruction using phase-anchored history.
+4. Freeze the repaired episode-ID cohort.
+5. Rerun V7.10 research against that fixed cohort.
+6. Compare results before considering any production promotion.
