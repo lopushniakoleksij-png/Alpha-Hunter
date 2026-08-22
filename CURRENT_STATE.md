@@ -895,3 +895,49 @@ Next phase:
 4. Freeze the repaired episode-ID cohort.
 5. Rerun V7.10 research against that fixed cohort.
 6. Compare results before considering any production promotion.
+
+## 2026-08-23 CONTROLLED V7.8 RECONSTRUCTION SAFEGUARDS
+
+Branch:
+repair/v78-damaged-evidence
+
+Implemented:
+
+- Added v78_reconstruct_damaged_evidence.py.
+- Default execution is read-only dry-run.
+- Dry-run loads all V7.8 evidence with pagination.
+- Existing COMPLETE rows are excluded and remain immutable.
+- Only INSUFFICIENT_CANDLE_HISTORY rows may enter the candidate manifest.
+- Any unexpected non-COMPLETE quality blocks reconstruction.
+- Candidate manifests are deterministically sorted and SHA-256 frozen.
+- Apply mode requires the exact frozen manifest.
+- Candidate-set drift after dry-run blocks apply mode.
+- Apply mode requires an explicit digest confirmation environment value.
+- V7.8 upsert supports a strict snapshot-ID allowlist.
+- Reconstruction writes only rows upgraded to COMPLETE.
+- New, unrelated, incomplete, and non-allowlisted rows cannot be written.
+- Trade permission remains FALSE.
+
+Verification:
+
+- Reconstruction/V7.8 focused tests: 10 passed.
+- Complete repository test suite: 227 passed.
+- Python compile: passed.
+- git diff --check: passed.
+
+Database status:
+
+- No Supabase reconstruction was executed from this workspace.
+- No Supabase credentials were copied, exposed, or requested.
+- No candidate manifest was frozen because Supabase is not configured locally.
+- No production_runner execution occurred.
+- No V7.10 rule was promoted.
+
+## EXACT NEXT STEP
+
+Run the reconstruction tool in an authorized environment with the existing
+Supabase configuration in dry-run mode and freeze its manifest. Audit the
+candidate count, symbols, phases, timestamps, and digest. Only after that
+review may the exact digest be supplied to apply mode. After apply, verify
+that candidates either upgraded to COMPLETE or remained unchanged, then
+freeze the repaired V7.10 episode-ID cohort and rerun research.
