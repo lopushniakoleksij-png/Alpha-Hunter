@@ -1,12 +1,14 @@
 import json
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from restore_previous_snapshot import (
     fetch_latest_snapshot,
+    main,
     restore,
     snapshot_path,
 )
@@ -239,6 +241,51 @@ class TestRestoreWrite(
                 ],
                 "ETHUSDT",
             )
+
+
+class TestCliSafety(
+    unittest.TestCase
+):
+
+    @patch(
+        "restore_previous_snapshot.restore"
+    )
+    @patch(
+        "restore_previous_snapshot.load_config"
+    )
+    @patch(
+        "restore_previous_snapshot.load_env_file"
+    )
+    def test_help_exits_without_side_effects(
+        self,
+        mocked_load_env_file,
+        mocked_load_config,
+        mocked_restore,
+    ):
+        with patch(
+            "sys.stdout",
+            new_callable=StringIO,
+        ) as output:
+            with self.assertRaises(
+                SystemExit
+            ) as raised:
+                main([
+                    "--help"
+                ])
+
+        self.assertEqual(
+            raised.exception.code,
+            0,
+        )
+
+        self.assertIn(
+            "usage:",
+            output.getvalue(),
+        )
+
+        mocked_load_env_file.assert_not_called()
+        mocked_load_config.assert_not_called()
+        mocked_restore.assert_not_called()
 
 
 if __name__ == "__main__":
