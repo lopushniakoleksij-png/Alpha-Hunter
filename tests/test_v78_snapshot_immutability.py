@@ -155,6 +155,69 @@ class TestImmutableCompleteSnapshots(
             "COMPLETE",
         )
 
+    def test_reconstruction_writes_only_allowed_complete_rows(
+        self,
+    ):
+        rows = [
+            {
+                "snapshot_id": "allowed-complete",
+                "measurement_quality": "COMPLETE",
+            },
+            {
+                "snapshot_id": "allowed-incomplete",
+                "measurement_quality":
+                    "INSUFFICIENT_CANDLE_HISTORY",
+            },
+            {
+                "snapshot_id": "not-allowed",
+                "measurement_quality": "COMPLETE",
+            },
+        ]
+
+        existing = [
+            {
+                "snapshot_id": row["snapshot_id"],
+                "measurement_quality":
+                    "INSUFFICIENT_CANDLE_HISTORY",
+            }
+            for row in rows
+        ]
+
+        with (
+            patch(
+                "v78_timing_rr_decay_shadow."
+                "requests.get"
+            ) as get_mock,
+            patch(
+                "v78_timing_rr_decay_shadow."
+                "requests.post"
+            ) as post_mock,
+        ):
+            get_mock.return_value = FakeResponse(
+                200,
+                existing,
+            )
+            post_mock.return_value = FakeResponse(204)
+
+            saved = v78.upsert_rows(
+                settings(),
+                rows,
+                allowed_snapshot_ids={
+                    "allowed-complete",
+                    "allowed-incomplete",
+                },
+                require_complete=True,
+            )
+
+        self.assertEqual(saved, 1)
+        payload = json.loads(
+            post_mock.call_args.kwargs["data"]
+        )
+        self.assertEqual(
+            [row["snapshot_id"] for row in payload],
+            ["allowed-complete"],
+        )
+
 
 class FakeBitgetClient:
     def __init__(self):
