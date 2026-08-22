@@ -976,27 +976,31 @@ def main() -> int:
                 else None
             )
 
-            candles_15m = (
-                client.candles(
+            episode_rows = []
+
+            detection_candles_15m = (
+                load_phase_candles(
+                    client,
                     symbol,
                     product_type,
                     "15m",
+                    detection_at,
+                    15,
                     CANDLE_LIMIT,
                 )
-                or []
             )
 
-            candles_1h = (
-                client.candles(
+            detection_candles_1h = (
+                load_phase_candles(
+                    client,
                     symbol,
                     product_type,
                     "1H",
+                    detection_at,
+                    60,
                     CANDLE_LIMIT,
                 )
-                or []
             )
-
-            episode_rows = []
 
             detection_row = build_phase_row(
                 episode=episode,
@@ -1011,8 +1015,10 @@ def main() -> int:
                 observed_direction_at_phase=None,
                 observed_confidence_at_phase=None,
                 move_consumed_pct=0.0,
-                candles_15m_raw=candles_15m,
-                candles_1h_raw=candles_1h,
+                candles_15m_raw=
+                    detection_candles_15m,
+                candles_1h_raw=
+                    detection_candles_1h,
                 processed_at=processed_at,
             )
 
@@ -1026,6 +1032,30 @@ def main() -> int:
                 and emerging_price
                 not in (None, 0)
             ):
+                emerging_candles_15m = (
+                    load_phase_candles(
+                        client,
+                        symbol,
+                        product_type,
+                        "15m",
+                        emerging_at,
+                        15,
+                        CANDLE_LIMIT,
+                    )
+                )
+
+                emerging_candles_1h = (
+                    load_phase_candles(
+                        client,
+                        symbol,
+                        product_type,
+                        "1H",
+                        emerging_at,
+                        60,
+                        CANDLE_LIMIT,
+                    )
+                )
+
                 emerging_row = build_phase_row(
                     episode=episode,
                     state=state,
@@ -1045,8 +1075,10 @@ def main() -> int:
                             "move_at_emerging_pct"
                         )
                     ),
-                    candles_15m_raw=candles_15m,
-                    candles_1h_raw=candles_1h,
+                    candles_15m_raw=
+                        emerging_candles_15m,
+                    candles_1h_raw=
+                        emerging_candles_1h,
                     processed_at=processed_at,
                 )
 
@@ -1054,6 +1086,30 @@ def main() -> int:
                     episode_rows.append(
                         emerging_row
                     )
+
+            confirmed_candles_15m = (
+                load_phase_candles(
+                    client,
+                    symbol,
+                    product_type,
+                    "15m",
+                    confirmed_at,
+                    15,
+                    CANDLE_LIMIT,
+                )
+            )
+
+            confirmed_candles_1h = (
+                load_phase_candles(
+                    client,
+                    symbol,
+                    product_type,
+                    "1H",
+                    confirmed_at,
+                    60,
+                    CANDLE_LIMIT,
+                )
+            )
 
             confirmed_row = build_phase_row(
                 episode=episode,
@@ -1074,8 +1130,10 @@ def main() -> int:
                         "move_at_confirmed_pct"
                     )
                 ),
-                candles_15m_raw=candles_15m,
-                candles_1h_raw=candles_1h,
+                candles_15m_raw=
+                    confirmed_candles_15m,
+                candles_1h_raw=
+                    confirmed_candles_1h,
                 processed_at=processed_at,
             )
 
