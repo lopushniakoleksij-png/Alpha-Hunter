@@ -57,6 +57,134 @@ def execution_shadow_id(episode_id: str, confirmed_at: datetime) -> str:
     raw = f"{episode_id}|{MODEL_VERSION}|{confirmed_at.isoformat()}".encode()
     return hashlib.sha256(raw).hexdigest()[:24]
 
+def expected_execution_shadow_id(
+    state: dict[str, Any],
+) -> str | None:
+    episode_id = str(
+        state.get("episode_id")
+        or ""
+    ).strip()
+
+    confirmed_at = dt(
+        state.get(
+            "first_confirmed_at_utc"
+        )
+    )
+
+    if (
+        not episode_id
+        or confirmed_at is None
+    ):
+        return None
+
+    return execution_shadow_id(
+        episode_id,
+        confirmed_at,
+    )
+
+
+def reusable_shadow_evidence(
+    state: dict[str, Any],
+    existing: dict[
+        str,
+        dict[str, Any],
+    ],
+) -> bool:
+    shadow_id = (
+        expected_execution_shadow_id(
+            state
+        )
+    )
+
+    if shadow_id is None:
+        return False
+
+    row = existing.get(
+        shadow_id
+    )
+
+    if row is None:
+        return False
+
+    return (
+        row.get("trade_permission")
+        is False
+        and bool(
+            row.get(
+                "feasibility_status"
+            )
+        )
+        and row.get(
+            "candidate_entry"
+        )
+        not in (None, "")
+    )
+
+
+def load_existing_shadow_rows(
+    settings: SupabaseConfig,
+    shadow_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    ids = sorted({
+        str(value)
+        for value in shadow_ids
+        if value
+    })
+
+    if not ids:
+        return {}
+
+    response = requests.get(
+        f"{settings.url}/rest/v1/{TABLE}",
+        params={
+            "select": (
+                "shadow_id,"
+                "trade_permission,"
+                "feasibility_status,"
+                "candidate_entry"
+            ),
+            "shadow_id": (
+                "in.("
+                + ",".join(ids)
+                + ")"
+            ),
+        },
+        headers=headers(settings),
+        timeout=settings.timeout_seconds,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            "V7.7 existing shadow load failed: "
+            f"HTTP {response.status_code}: "
+            f"{response.text[:800]}"
+        )
+
+    payload = response.json()
+
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            "V7.7 existing shadow response "
+            "is not a list"
+        )
+
+    result = {}
+
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+
+        shadow_id = str(
+            row.get("shadow_id")
+            or ""
+        )
+
+        if shadow_id:
+            result[shadow_id] = row
+
+    return result
+
+
 def parse_closed_candles(candles: list[Any], as_of: datetime, timeframe_minutes: int) -> list[dict[str, float | int]]:
     rows = []
     duration = timedelta(minutes=timeframe_minutes)
@@ -268,6 +396,33 @@ def main() -> int:
     ]
     confirmed.sort(key=lambda s: (str(s.get("first_confirmed_at_utc") or ""), str(s.get("symbol") or "")))
 
+    expected_shadow_ids = [
+        shadow_id
+        for state in confirmed
+        for shadow_id in [
+            expected_execution_shadow_id(
+                state
+            )
+        ]
+        if shadow_id is not None
+    ]
+
+    existing_shadow_rows = {}
+
+    for offset in range(
+        0,
+        len(expected_shadow_ids),
+        75,
+    ):
+        existing_shadow_rows.update(
+            load_existing_shadow_rows(
+                settings,
+                expected_shadow_ids[
+                    offset:offset + 75
+                ],
+            )
+        )
+
     client = BitgetClient.from_environment(
         timeout=int(config.get("request_timeout_seconds", 12)),
         max_retries=int(config.get("max_retries", 3)),
@@ -290,6 +445,39 @@ def main() -> int:
             if not episode_id or not symbol or confirmed_at is None:
                 skipped += 1
                 continue
+            shadow_id = (
+                expected_execution_shadow_id(
+                    state
+                )
+            )
+
+            existing_row = (
+                existing_shadow_rows.get(
+                    shadow_id
+                )
+                if shadow_id is not None
+                else None
+            )
+
+            if existing_row is not None:
+                if reusable_shadow_evidence(
+                    state,
+                    existing_shadow_rows,
+                ):
+                    print(
+                        f"SKIP   {symbol:<15}"
+                        "frozen execution evidence "
+                        "already stored"
+                    )
+                    skipped += 1
+                    continue
+
+                raise RuntimeError(
+                    "existing V7.7 shadow is "
+                    "not safe for reuse: "
+                    f"{shadow_id}"
+                )
+
             confirmation = confirmation_shadow(settings, episode_id, confirmed_at)
             if not confirmation:
                 print(f"SKIP   {symbol:<15}confirmation shadow unavailable")

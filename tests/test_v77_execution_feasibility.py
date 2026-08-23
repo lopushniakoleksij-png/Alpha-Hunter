@@ -8,7 +8,9 @@ from v77_execution_feasibility_shadow import (
     choose_stop,
     choose_target,
     execution_shadow_id,
+    expected_execution_shadow_id,
     feasibility_status,
+    reusable_shadow_evidence,
     parse_closed_candles,
     rr,
     stop_distance_pct,
@@ -73,6 +75,124 @@ def confirmation(direction: str = "LONG"):
         "direction": direction,
         "confidence": 80.0,
     }
+
+
+class TestFrozenExecutionReuse(
+    unittest.TestCase
+):
+    def test_expected_shadow_id_matches_frozen_id(
+        self,
+    ):
+        item = state()
+
+        expected = execution_shadow_id(
+            item["episode_id"],
+            CONFIRMED_AT,
+        )
+
+        self.assertEqual(
+            expected_execution_shadow_id(
+                item
+            ),
+            expected,
+        )
+
+    def test_complete_permission_false_row_is_reusable(
+        self,
+    ):
+        item = state()
+
+        shadow_id = (
+            expected_execution_shadow_id(
+                item
+            )
+        )
+
+        self.assertIsNotNone(
+            shadow_id
+        )
+
+        existing = {
+            shadow_id: {
+                "shadow_id":
+                    shadow_id,
+                "trade_permission":
+                    False,
+                "feasibility_status":
+                    "STRUCTURE_RR_5_TO_10",
+                "candidate_entry":
+                    100.0,
+            }
+        }
+
+        self.assertTrue(
+            reusable_shadow_evidence(
+                item,
+                existing,
+            )
+        )
+
+    def test_permission_violation_is_not_reusable(
+        self,
+    ):
+        item = state()
+
+        shadow_id = (
+            expected_execution_shadow_id(
+                item
+            )
+        )
+
+        existing = {
+            shadow_id: {
+                "shadow_id":
+                    shadow_id,
+                "trade_permission":
+                    True,
+                "feasibility_status":
+                    "STRUCTURE_RR_5_TO_10",
+                "candidate_entry":
+                    100.0,
+            }
+        }
+
+        self.assertFalse(
+            reusable_shadow_evidence(
+                item,
+                existing,
+            )
+        )
+
+    def test_incomplete_existing_row_is_not_reusable(
+        self,
+    ):
+        item = state()
+
+        shadow_id = (
+            expected_execution_shadow_id(
+                item
+            )
+        )
+
+        existing = {
+            shadow_id: {
+                "shadow_id":
+                    shadow_id,
+                "trade_permission":
+                    False,
+                "feasibility_status":
+                    None,
+                "candidate_entry":
+                    None,
+            }
+        }
+
+        self.assertFalse(
+            reusable_shadow_evidence(
+                item,
+                existing,
+            )
+        )
 
 
 class TestClosedCandleProtection(unittest.TestCase):
