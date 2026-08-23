@@ -209,6 +209,41 @@ def inspect_candle(
         )
 
 
+def cached_1m_candles(
+    client: BitgetClient,
+    cache: dict[str, list[Any]],
+    symbol: str,
+    product_type: str,
+) -> list[Any]:
+    if symbol not in cache:
+        cache[symbol] = (
+            client.candles(
+                symbol,
+                product_type,
+                "1m",
+                LOOKBACK_CANDLES,
+            )
+            or []
+        )
+
+    return cache[symbol]
+
+
+def cached_ticker(
+    client: BitgetClient,
+    cache: dict[str, dict[str, Any]],
+    symbol: str,
+    product_type: str,
+) -> dict[str, Any]:
+    if symbol not in cache:
+        cache[symbol] = client.ticker(
+            symbol,
+            product_type,
+        )
+
+    return cache[symbol]
+
+
 def main() -> int:
     load_env_file(
         ROOT / ".env"
@@ -267,6 +302,16 @@ def main() -> int:
     checked = 0
     failed = 0
 
+    candle_cache: dict[
+        str,
+        list[Any],
+    ] = {}
+
+    ticker_cache: dict[
+        str,
+        dict[str, Any],
+    ] = {}
+
     print()
     print("=" * 110)
     print(
@@ -320,12 +365,12 @@ def main() -> int:
                             "LEGACY_PARTIAL"
                         )
 
-            candles = client.candles(
+            candles = cached_1m_candles(
+                client,
+                candle_cache,
                 episode.symbol,
                 product_type,
-                "1m",
-                LOOKBACK_CANDLES,
-            ) or []
+            )
 
             ordered = []
 
@@ -358,7 +403,9 @@ def main() -> int:
                     candle,
                 )
 
-            ticker = client.ticker(
+            ticker = cached_ticker(
+                client,
+                ticker_cache,
                 episode.symbol,
                 product_type,
             )
