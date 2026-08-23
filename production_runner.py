@@ -475,6 +475,14 @@ def skipped_step(
 
 
 
+def non_blocking_step_result(
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    tagged = dict(result)
+    tagged["non_blocking"] = True
+    return tagged
+
+
 def find_production_snapshot(
     production_run_id: str,
 ) -> Path | None:
@@ -847,6 +855,16 @@ def main() -> int:
         120,
     )
 
+    money_queue_ledger = Step(
+        (
+            "STEP 1D — V7.10 "
+            "MONEY QUEUE FORWARD "
+            "LEDGER SHADOW"
+        ),
+        "v710_money_queue_forward_ledger.py",
+        30,
+    )
+
     model_steps = [
         Step(
             (
@@ -973,6 +991,15 @@ def main() -> int:
                 )
             )
 
+            report["steps"].append(
+                non_blocking_step_result(
+                    skipped_step(
+                        money_queue_ledger,
+                        "LIVE_SCAN_FAILED",
+                    )
+                )
+            )
+
             for step in model_steps:
                 report["steps"].append(
                     skipped_step(
@@ -1016,6 +1043,20 @@ def main() -> int:
                             "UNIVERSE_LEDGER_"
                             "NOT_CAPTURED"
                         ),
+                    )
+                )
+
+                report[
+                    "steps"
+                ].append(
+                    non_blocking_step_result(
+                        skipped_step(
+                            money_queue_ledger,
+                            (
+                                "UNIVERSE_LEDGER_"
+                                "NOT_CAPTURED"
+                            ),
+                        )
                     )
                 )
 
@@ -1107,6 +1148,60 @@ def main() -> int:
                         "FAILED"
                     )
 
+                save_report(
+                    report
+                )
+
+                if (
+                    guardrail_status
+                    in {
+                        "PASS",
+                        "DEGRADED",
+                    }
+                    and ledger_trustworthy
+                ):
+                    money_queue_result = (
+                        run_step(
+                            money_queue_ledger,
+                            production_run_id=
+                                production_run_id,
+                        )
+                    )
+
+                    report[
+                        "steps"
+                    ].append(
+                        non_blocking_step_result(
+                            money_queue_result
+                        )
+                    )
+
+                else:
+                    money_queue_reason = (
+                        "DATA_GUARDRAIL_FAILED"
+                        if guardrail_status
+                        == "FAIL"
+                        else (
+                            "UNTRUSTWORTHY_"
+                            "UNIVERSE_LEDGER"
+                        )
+                    )
+
+                    report[
+                        "steps"
+                    ].append(
+                        non_blocking_step_result(
+                            skipped_step(
+                                money_queue_ledger,
+                                money_queue_reason,
+                            )
+                        )
+                    )
+
+                # Money Queue is research evidence only.
+                # Its PASS/FAILED/TIMEOUT status must
+                # never mutate production overall_status
+                # or stop the model chain.
                 save_report(
                     report
                 )

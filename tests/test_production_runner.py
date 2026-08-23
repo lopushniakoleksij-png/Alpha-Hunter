@@ -482,11 +482,12 @@ class TestProductionPipeline(
         )
 
         self.assertEqual(
-            calls[:4],
+            calls[:5],
             [
                 "run.py",
                 "v79_universe_hourly_collector.py",
                 "production_guardrails.py",
+                "v710_money_queue_forward_ledger.py",
                 "v74_tracking_job.py",
             ],
         )
@@ -650,6 +651,55 @@ class TestProductionPipeline(
             report["overall_status"],
             "PASS",
         )
+
+    def test_money_queue_failure_is_non_blocking(
+        self,
+    ):
+        exit_code, calls, report = (
+            self.run_main_with_statuses(
+                {
+                    "v710_money_queue_forward_ledger.py":
+                        "FAILED",
+                }
+            )
+        )
+
+        self.assertEqual(
+            exit_code,
+            0,
+        )
+
+        self.assertEqual(
+            report["overall_status"],
+            "PASS",
+        )
+
+        self.assertIn(
+            "v710_early_execution_rr_shadow.py",
+            calls,
+        )
+
+        rows = [
+            row
+            for row in report["steps"]
+            if row["script"]
+            == "v710_money_queue_forward_ledger.py"
+        ]
+
+        self.assertEqual(
+            len(rows),
+            1,
+        )
+
+        self.assertEqual(
+            rows[0]["status"],
+            "FAILED",
+        )
+
+        self.assertTrue(
+            rows[0]["non_blocking"]
+        )
+
 
     def test_model_failure_does_not_lose_final_audit(
         self,
