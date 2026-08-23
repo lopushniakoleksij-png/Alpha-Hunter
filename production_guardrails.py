@@ -1119,11 +1119,14 @@ def validate_universe_ledger(
             or 0
         )
 
-        selection_counts_ok = (
+        selected_counts_ok = (
             selected_rows
             == expected_selected
-            and eligible_rows
-            == expected_eligible
+        )
+
+        eligible_drift = (
+            eligible_rows
+            - expected_eligible
         )
 
         checks.append(
@@ -1131,30 +1134,75 @@ def validate_universe_ledger(
                 "ledger_scan_count_consistency",
                 (
                     "PASS"
-                    if selection_counts_ok
+                    if selected_counts_ok
                     else "FAIL"
                 ),
                 (
                     f"selected="
                     f"{selected_rows}/"
-                    f"{expected_selected}, "
-                    f"eligible="
-                    f"{eligible_rows}/"
-                    f"{expected_eligible}"
+                    f"{expected_selected}"
                 ),
                 critical=True,
+                metrics={
+                    "selected_rows":
+                        selected_rows,
+                    "expected_selected":
+                        expected_selected,
+                },
+            )
+        )
+
+        checks.append(
+            make_check(
+                "ledger_prefilter_live_drift",
+                (
+                    "PASS"
+                    if eligible_drift == 0
+                    else "WARN"
+                ),
+                (
+                    f"current_eligible="
+                    f"{eligible_rows}, "
+                    f"scan_snapshot_eligible="
+                    f"{expected_eligible}, "
+                    f"drift={eligible_drift:+d}"
+                ),
+                critical=False,
+                metrics={
+                    "current_eligible":
+                        eligible_rows,
+                    "scan_snapshot_eligible":
+                        expected_eligible,
+                    "drift":
+                        eligible_drift,
+                },
             )
         )
 
     else:
+        eligible_drift = None
+
         checks.append(
             make_check(
                 "ledger_scan_count_consistency",
                 "WARN",
                 (
-                    "not compared because "
-                    "immutable same-hour ledger "
-                    "belongs to an earlier scan"
+                    "selected count not compared "
+                    "because immutable same-hour "
+                    "ledger belongs to an earlier scan"
+                ),
+                critical=False,
+            )
+        )
+
+        checks.append(
+            make_check(
+                "ledger_prefilter_live_drift",
+                "WARN",
+                (
+                    "eligibility not compared because "
+                    "immutable same-hour ledger belongs "
+                    "to an earlier scan"
                 ),
                 critical=False,
             )

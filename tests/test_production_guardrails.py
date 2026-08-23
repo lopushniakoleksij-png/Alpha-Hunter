@@ -405,6 +405,97 @@ class TestUniverseLedgerGuardrails(
             [],
         )
 
+    def test_live_eligible_drift_is_degraded_not_failed(
+        self,
+    ):
+        context = context_for(
+            snapshot(
+                eligible_count=1,
+            )
+        )
+
+        checks, _ = (
+            guard.validate_universe_ledger(
+                ledger_rows(),
+                snapshot_context=context,
+                current_time=NOW,
+            )
+        )
+
+        drift = check_by_name(
+            checks,
+            "ledger_prefilter_live_drift",
+        )
+
+        selected = check_by_name(
+            checks,
+            "ledger_scan_count_consistency",
+        )
+
+        self.assertEqual(
+            selected["status"],
+            "PASS",
+        )
+
+        self.assertEqual(
+            drift["status"],
+            "WARN",
+        )
+
+        self.assertFalse(
+            drift["critical"]
+        )
+
+        self.assertEqual(
+            guard.overall_status(
+                checks
+            ),
+            "DEGRADED",
+        )
+
+    def test_selected_count_mismatch_still_fails(
+        self,
+    ):
+        context = context_for(
+            snapshot()
+        )
+
+        rows = ledger_rows()
+
+        rows[1][
+            "deep_scan_selected"
+        ] = False
+
+        checks, _ = (
+            guard.validate_universe_ledger(
+                rows,
+                snapshot_context=context,
+                current_time=NOW,
+            )
+        )
+
+        selected = check_by_name(
+            checks,
+            "ledger_scan_count_consistency",
+        )
+
+        self.assertEqual(
+            selected["status"],
+            "FAIL",
+        )
+
+        self.assertTrue(
+            selected["critical"]
+        )
+
+        self.assertEqual(
+            guard.overall_status(
+                checks
+            ),
+            "FAIL",
+        )
+
+
     def test_low_ledger_coverage_fails(
         self,
     ):

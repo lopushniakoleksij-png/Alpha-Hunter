@@ -240,6 +240,76 @@ class TestProductionStepExecution(
         )
 
 
+class TestLedgerGuardrailTrust(
+    unittest.TestCase
+):
+
+    def base_checks(self):
+        names = [
+            "universe_ledger_presence",
+            "universe_ledger_coverage",
+            "universe_symbol_uniqueness",
+            "universe_hour_bucket",
+            "ledger_selection_context",
+            "ledger_freshness",
+            "ledger_source",
+            "ledger_measurement_quality",
+            "ledger_scan_count_consistency",
+            "v79_trade_permission",
+        ]
+
+        return [
+            {
+                "name": name,
+                "status": "PASS",
+                "critical": True,
+            }
+            for name in names
+        ]
+
+    def test_selected_count_failure_is_untrustworthy(
+        self,
+    ):
+        checks = self.base_checks()
+
+        for check in checks:
+            if (
+                check["name"]
+                == "ledger_scan_count_consistency"
+            ):
+                check["status"] = "FAIL"
+
+        self.assertFalse(
+            runner.ledger_guardrail_trustworthy(
+                {
+                    "checks": checks,
+                }
+            )
+        )
+
+    def test_eligible_drift_warning_remains_trustworthy(
+        self,
+    ):
+        checks = self.base_checks()
+
+        checks.append(
+            {
+                "name":
+                    "ledger_prefilter_live_drift",
+                "status": "WARN",
+                "critical": False,
+            }
+        )
+
+        self.assertTrue(
+            runner.ledger_guardrail_trustworthy(
+                {
+                    "checks": checks,
+                }
+            )
+        )
+
+
 class TestProductionPipeline(
     unittest.TestCase
 ):
@@ -314,6 +384,7 @@ class TestProductionPipeline(
                 "ledger_freshness",
                 "ledger_source",
                 "ledger_measurement_quality",
+                "ledger_scan_count_consistency",
                 "v79_trade_permission",
             ]
 

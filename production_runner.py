@@ -549,6 +549,7 @@ def ledger_guardrail_trustworthy(
         "ledger_freshness",
         "ledger_source",
         "ledger_measurement_quality",
+        "ledger_scan_count_consistency",
         "v79_trade_permission",
     }
 
