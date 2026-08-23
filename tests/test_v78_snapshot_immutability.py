@@ -356,3 +356,76 @@ class TestPhaseAnchoredHistory(
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestEarlyCompleteEvidenceSkip(
+    unittest.TestCase
+):
+    def test_expected_ids_include_three_phases(self):
+        state = {
+            "episode_id": "episode-early-skip",
+            "first_emerging_at_utc":
+                "2026-08-15T11:00:00+00:00",
+            "price_at_emerging": 101.0,
+        }
+
+        ids = v78.expected_phase_snapshot_ids(
+            state
+        )
+
+        self.assertEqual(
+            ids,
+            [
+                v78.phase_snapshot_id(
+                    "episode-early-skip",
+                    "DETECTION",
+                ),
+                v78.phase_snapshot_id(
+                    "episode-early-skip",
+                    "EMERGING",
+                ),
+                v78.phase_snapshot_id(
+                    "episode-early-skip",
+                    "CONFIRMED",
+                ),
+            ],
+        )
+
+    def test_all_expected_rows_must_be_complete(self):
+        state = {
+            "episode_id": "episode-early-skip",
+            "first_emerging_at_utc":
+                "2026-08-15T11:00:00+00:00",
+            "price_at_emerging": 101.0,
+        }
+
+        ids = v78.expected_phase_snapshot_ids(
+            state
+        )
+
+        existing = {
+            snapshot_id: {
+                "snapshot_id": snapshot_id,
+                "measurement_quality": "COMPLETE",
+            }
+            for snapshot_id in ids
+        }
+
+        self.assertTrue(
+            v78.phase_evidence_complete(
+                state,
+                existing,
+            )
+        )
+
+        existing[
+            ids[1]
+        ][
+            "measurement_quality"
+        ] = "INSUFFICIENT_CANDLE_HISTORY"
+
+        self.assertFalse(
+            v78.phase_evidence_complete(
+                state,
+                existing,
+            )
+        )

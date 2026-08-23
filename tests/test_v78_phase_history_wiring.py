@@ -126,6 +126,11 @@ class TestPhaseHistoryWiring(unittest.TestCase):
             ),
             patch.object(
                 v78,
+                "load_existing_snapshot_rows",
+                return_value={},
+            ),
+            patch.object(
+                v78,
                 "confirmation_shadow",
                 side_effect=confirmation,
             ),

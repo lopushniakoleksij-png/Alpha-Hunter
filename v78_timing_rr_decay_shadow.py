@@ -80,6 +80,78 @@ def phase_snapshot_id(
     return hashlib.sha256(raw).hexdigest()[:24]
 
 
+def expected_phase_snapshot_ids(
+    state: dict[str, Any],
+) -> list[str]:
+    episode_id = str(
+        state.get("episode_id")
+        or ""
+    ).strip()
+
+    if not episode_id:
+        return []
+
+    phases = [
+        "DETECTION",
+        "CONFIRMED",
+    ]
+
+    emerging_at = dt(
+        state.get(
+            "first_emerging_at_utc"
+        )
+    )
+
+    emerging_price = f(
+        state.get(
+            "price_at_emerging"
+        )
+    )
+
+    if (
+        emerging_at is not None
+        and emerging_price not in (None, 0)
+    ):
+        phases.insert(
+            1,
+            "EMERGING",
+        )
+
+    return [
+        phase_snapshot_id(
+            episode_id,
+            phase,
+        )
+        for phase in phases
+    ]
+
+
+def phase_evidence_complete(
+    state: dict[str, Any],
+    existing: dict[str, dict[str, Any]],
+) -> bool:
+    ids = expected_phase_snapshot_ids(
+        state
+    )
+
+    if not ids:
+        return False
+
+    return all(
+        str(
+            (
+                existing.get(snapshot_id)
+                or {}
+            ).get(
+                "measurement_quality"
+            )
+            or ""
+        ).upper()
+        == "COMPLETE"
+        for snapshot_id in ids
+    )
+
+
 def minutes_between(
     first: datetime,
     later: datetime,
@@ -827,6 +899,34 @@ def main(
         )
     )
 
+    expected_snapshot_ids = []
+
+    for state in confirmed_states:
+        expected_snapshot_ids.extend(
+            expected_phase_snapshot_ids(
+                state
+            )
+        )
+
+    existing_phase_rows = {}
+
+    # Batch the Supabase reads so the
+    # snapshot-ID filter does not create
+    # an excessively large request URL.
+    for offset in range(
+        0,
+        len(expected_snapshot_ids),
+        75,
+    ):
+        existing_phase_rows.update(
+            load_existing_snapshot_rows(
+                settings,
+                expected_snapshot_ids[
+                    offset:offset + 75
+                ],
+            )
+        )
+
     client = (
         BitgetClient
         .from_environment(
@@ -884,6 +984,18 @@ def main(
         )
 
         try:
+            if phase_evidence_complete(
+                state,
+                existing_phase_rows,
+            ):
+                print(
+                    f"SKIP   {symbol:<15}"
+                    "complete timing/RR evidence "
+                    "already stored"
+                )
+                skipped += 1
+                continue
+
             if episode is None:
                 print(
                     f"SKIP   {symbol:<15}"
