@@ -4,6 +4,7 @@ from alpha_hunter.traceability import (
     ReadyEpisode,
     attach_fill_matches,
     make_ready_id,
+    readiness_diagnostic,
     rolling_summary,
     strict_production_ready,
     update_ready_ledger,
@@ -127,3 +128,75 @@ def test_rolling_summary_separates_symbols_from_episodes():
     assert summary["distinct_trade_ready_episodes"] == 3
     assert summary["trade_ready_long"] == 2
     assert summary["trade_ready_short"] == 1
+
+
+def test_readiness_diagnostic_ranks_blockers_and_closest_candidates():
+    snapshots = [
+        {
+            "symbols": [
+                {
+                    "symbol": "FARUSDT",
+                    "trade_permission": False,
+                    "v7_trade_ready": False,
+                    "behaviour_score": 4.0,
+                    "market_phase": "EXPANSION",
+                    "opportunity_timing": "LATE",
+                    "execution_setup": {
+                        "direction": None,
+                        "rr": None,
+                        "checks": {},
+                    },
+                    "rejection_reasons": ["PHASE_EXPANSION"],
+                },
+                {
+                    "symbol": "NEARUSDT",
+                    "trade_permission": False,
+                    "v7_trade_ready": False,
+                    "behaviour_score": 8.0,
+                    "market_phase": "IGNITION",
+                    "opportunity_timing": "EARLY",
+                    "execution_setup": {
+                        "direction": "LONG",
+                        "rr": 6.0,
+                        "checks": {
+                            "direction_aligned": True,
+                            "participation_confirmed": False,
+                        },
+                    },
+                    "rejection_reasons": [],
+                },
+                {
+                    "symbol": "BROKENUSDT",
+                    "error": "ticker unavailable",
+                },
+            ]
+        }
+    ]
+
+    diagnostic = readiness_diagnostic(snapshots)
+
+    assert diagnostic["classification"] == "AUDIT_ONLY_DOES_NOT_GRANT_PERMISSION"
+    assert diagnostic["evaluated_candidate_observations"] == 2
+    assert diagnostic["data_error_observations"] == 1
+    assert diagnostic["strict_ready_observations"] == 0
+    assert diagnostic["ranked_gate_blockers"][0] == {
+        "reason": "TRADE_PERMISSION",
+        "observations": 2,
+        "observation_pct": 100.0,
+    }
+    assert diagnostic["ranked_execution_check_failures"] == [
+        {
+            "reason": "PARTICIPATION_CONFIRMED",
+            "observations": 1,
+            "observation_pct": 50.0,
+        }
+    ]
+    closest = diagnostic["current_closest_candidates"]
+    assert closest[0]["symbol"] == "NEARUSDT"
+    assert closest[0]["conditions_passed"] == 5
+    assert closest[0]["failed_conditions"] == ["TRADE_PERMISSION"]
+    assert closest[0]["execution_check_failures"] == [
+        "PARTICIPATION_CONFIRMED"
+    ]
+    assert closest[0]["quality_rejections"] == []
+    assert closest[0]["audit_only"] is True
