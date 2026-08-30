@@ -89,6 +89,14 @@ def main() -> int:
         ],
     )
 
+    run_step(
+        "STEP 6 — 7D SIGNAL → EXECUTION TRACEABILITY",
+        [
+            python,
+            "traceability_job.py",
+        ],
+    )
+
     finished = datetime.now(
         timezone.utc
     )
