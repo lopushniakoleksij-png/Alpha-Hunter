@@ -1,8 +1,8 @@
 # ALPHA HUNTER — CURRENT PRODUCTION STATE
 
-Last updated: 2026-08-16 18:04 UK
+Last updated: 2026-08-30 17:55 UK
 Repository: lopushniakoleksij-png/Alpha-Hunter
-Branch: main
+Branch: fix/p0-bitget-fill-traceability-20260830
 
 ## PURPOSE
 
@@ -17,6 +17,60 @@ No production work may rely only on chat history.
 PLAN → EXECUTE → TEST → VERIFY → RECORD → COMMIT → NEXT
 
 No meaningful production step is complete until it is recorded.
+
+## 2026-08-30 P0 TRACEABILITY STABILIZATION UPDATE
+
+This update supersedes the older point-in-time repository and working-tree
+observations below. Historical research notes remain evidence and are not
+production permission.
+
+Classification: P0 STABILIZATION / READ-ONLY EXCHANGE INTEGRATION
+
+Protected primary hourly task: REMAINS ENABLED AND UNCHANGED
+
+Production baseline:
+
+- `origin/main`: `89e42a9`
+- Open diagnostic PR #3 remains separate and unmerged
+- Repair branch: `fix/p0-bitget-fill-traceability-20260830`
+- Repair commit: `9b5ccf5` — Repair Bitget fill traceability coverage
+
+Executed:
+
+- Replaced obsolete `/api/v2/mix/order/fill-history` with the documented
+  read-only futures fill endpoint `/api/v2/mix/order/fills`
+- Added strict `fillList` / `endId` schema validation and cursor pagination
+- Added window, endpoint, page, count, timestamp, completeness, and schema
+  coverage telemetry
+- Changed zero-fill, malformed, unconfigured, stalled, and truncated coverage
+  from false `PASS` to `INCOMPLETE`
+- Changed unlinked open-like fills to a non-zero traceability failure exit
+- Added `--fill-history-smoke-test`, which performs no orders, Supabase writes,
+  cache writes, snapshot writes, or account changes
+
+Verification:
+
+- Python compilation: PASS
+- Focused traceability tests: 12 PASS
+- Full regression suite: 30 PASS
+- Diff validation: PASS
+- No-credential smoke-test safety behavior: PASS; reported `INCOMPLETE` and
+  exited 2 without writes
+- Credentialed live read-only smoke test: PENDING before merge
+
+Not changed:
+
+- Trading thresholds, gates, scoring, R:R, candidate selection, or permissions
+- Bitget order placement, modification, cancellation, leverage, or position mode
+- Scheduler, deployment, protected automation, or PR #3
+
+Next production step:
+
+1. Publish a review-only PR without merging.
+2. Run the credentialed read-only fill-history smoke test on the production Mac.
+3. Review the returned fill count, page coverage, schema status, and unlinked
+   opening fills.
+4. Merge only after the live evidence is complete and trusted.
 
 ## CURRENT GITHUB STATE
 
