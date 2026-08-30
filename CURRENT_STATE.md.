@@ -31,7 +31,6 @@ Production baseline:
 - `origin/main`: `89e42a9`
 - Open diagnostic PR #3 remains separate and unmerged
 - Repair branch: `fix/p0-bitget-fill-traceability-20260830`
-- Current repair branch head: `9ac84d1`
 
 Executed:
 
