@@ -1,6 +1,6 @@
 # ALPHA HUNTER — CURRENT PRODUCTION STATE
 
-Last updated: 2026-08-30 17:55 UK
+Last updated: 2026-08-30 22:40 UK
 Repository: lopushniakoleksij-png/Alpha-Hunter
 Branch: fix/p0-bitget-fill-traceability-20260830
 
@@ -38,8 +38,9 @@ Production baseline:
 
 Executed:
 
-- Replaced obsolete `/api/v2/mix/order/fill-history` with the documented
-  read-only futures fill endpoint `/api/v2/mix/order/fills`
+- Replaced the order-specific `/api/v2/mix/order/fill-history` usage with the
+  documented account-wide futures fill endpoint `/api/v2/mix/order/fills` for
+  rolling account fill reconciliation
 - Added strict `fillList` / `endId` schema validation and cursor pagination
 - Added window, endpoint, page, count, timestamp, completeness, and schema
   coverage telemetry
@@ -65,13 +66,26 @@ Not changed:
 - Bitget order placement, modification, cancellation, leverage, or position mode
 - Scheduler, deployment, protected automation, or PR #3
 
+## CURRENT CORE STABILIZATION DIRECTIVE
+
+Until Stage 0 exits successfully, this is the governing production plan:
+
+1. DO NOT expand architecture, tune trading thresholds, add features, or perform cleanup while a genuine P0 blocker remains.
+2. KEEP Alpha Hunter Primary Hourly enabled, hourly, and without COUNT / UNTIL / end date.
+3. FIRST validate the Bitget fill-reconciliation repair using the credentialed read-only smoke test on the production Mac.
+4. MERGE the P0 repair only after evidence shows `status=CONNECTED`, `complete=true`, `schema_validated=true`, `fill_count > 0`, credible timestamps/window, and no write/order path.
+5. THEN reconcile `hourly.py` and `hourly_production.py` into one canonical production orchestration path without changing trading rules.
+6. PUT the canonical production path on a verified hourly scheduler.
+7. REQUIRE three consecutive genuine live production cycles with fresh data, snapshot persistence, Supabase/state persistence, readiness diagnostics, trustworthy traceability, and no unexplained READY/execution gaps before declaring Stage 0 complete.
+8. PR #3 readiness-root-cause diagnostics stays separate until the P0 traceability repair is validated and integrated safely.
+
+Stage 0 exit condition: one reliable live hourly Alpha Hunter production loop, no unresolved P0 blocker, production code aligned with GitHub main, and end-to-end production evidence trusted.
+
 Next production step:
 
-1. Publish a review-only PR without merging.
-2. Run the credentialed read-only fill-history smoke test on the production Mac.
-3. Review the returned fill count, page coverage, schema status, and unlinked
-   opening fills.
-4. Merge only after the live evidence is complete and trusted.
+1. Run the credentialed read-only fill-history smoke test on the production Mac.
+2. Review the returned fill count, page coverage, schema status, time window, and unlinked opening fills.
+3. Merge only after the live evidence is complete and trusted.
 
 ## CURRENT GITHUB STATE
 
