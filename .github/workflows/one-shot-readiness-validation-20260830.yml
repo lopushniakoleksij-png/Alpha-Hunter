@@ -15,7 +15,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 30
 
     steps:
       - name: Checkout merged main commit
@@ -36,14 +36,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run one production cycle
+      - name: Fresh live market scan
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -o pipefail
-          python hourly_production.py 2>&1 | tee readiness-validation.log
+          python run.py 2>&1 | tee live-scan.log
+
+      - name: Run merged readiness traceability report
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          python traceability_job.py 2>&1 | tee traceability.log
 
       - name: Print readiness blocker payload
         if: always()
@@ -72,8 +81,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: readiness-validation-20260830
+          name: readiness-validation-20260830-run2
           if-no-files-found: warn
           path: |
-            readiness-validation.log
+            live-scan.log
+            traceability.log
+            data/snapshots/latest.json
             data/signal-execution-ledger-7d.json
