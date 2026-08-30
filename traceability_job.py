@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import json
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +17,7 @@ from alpha_hunter.traceability import (
     TRACEABILITY_VERSION,
     ReadyEpisode,
     attach_fill_matches,
+    fill_timestamp,
     readiness_diagnostic,
     rolling_summary,
     update_ready_ledger,
@@ -26,6 +29,21 @@ CACHE_PATH = ROOT / "data" / "signal-execution-ledger-7d.json"
 HISTORY_PATH = ROOT / "data" / "signal-execution-ledger-history.jsonl"
 WINDOW_HOURS = 168
 MAX_FILL_PAGES = 20
+FILL_HISTORY_ENDPOINT = "/api/v2/mix/order/fills"
+FILL_PAGE_LIMIT = 100
+REQUIRED_FILL_FIELDS = (
+    "tradeId",
+    "orderId",
+    "symbol",
+    "cTime",
+)
+
+
+@dataclass
+class FillHistoryResult:
+    status: str
+    fills: list[dict[str, Any]]
+    coverage: dict[str, Any]
 
 
 def now_utc() -> datetime:
@@ -118,59 +136,241 @@ def rebuild_ready_episodes(
     return episodes
 
 
+def fill_coverage_template(
+    product_type: str,
+    start: datetime,
+    end: datetime,
+) -> dict[str, Any]:
+    return {
+        "endpoint": FILL_HISTORY_ENDPOINT,
+        "product_type": product_type,
+        "window_start_utc": iso(start),
+        "window_end_utc": iso(end),
+        "requested_page_limit": FILL_PAGE_LIMIT,
+        "maximum_pages": MAX_FILL_PAGES,
+        "pages_fetched": 0,
+        "last_page_size": None,
+        "fill_count": 0,
+        "unique_trade_id_count": 0,
+        "oldest_fill_at_utc": None,
+        "newest_fill_at_utc": None,
+        "schema_validated": False,
+        "complete": False,
+        "status": "NOT_STARTED",
+        "detail": None,
+    }
+
+
+def finish_fill_history_result(
+    status: str,
+    fills: list[dict[str, Any]],
+    coverage: dict[str, Any],
+    *,
+    complete: bool,
+    schema_validated: bool,
+    detail: str | None = None,
+) -> FillHistoryResult:
+    timestamps = [
+        timestamp
+        for fill in fills
+        if (timestamp := fill_timestamp(fill)) is not None
+    ]
+    coverage.update(
+        {
+            "fill_count": len(fills),
+            "unique_trade_id_count": len(
+                {
+                    str(fill.get("tradeId") or "").strip()
+                    for fill in fills
+                    if str(fill.get("tradeId") or "").strip()
+                }
+            ),
+            "oldest_fill_at_utc": (
+                min(timestamps).isoformat()
+                if timestamps
+                else None
+            ),
+            "newest_fill_at_utc": (
+                max(timestamps).isoformat()
+                if timestamps
+                else None
+            ),
+            "schema_validated": schema_validated,
+            "complete": complete,
+            "status": status,
+            "detail": detail,
+        }
+    )
+    return FillHistoryResult(
+        status=status,
+        fills=fills,
+        coverage=coverage,
+    )
+
+
+def invalid_fill_fields(fill: dict[str, Any]) -> list[str]:
+    invalid = [
+        field
+        for field in REQUIRED_FILL_FIELDS
+        if not str(fill.get(field) or "").strip()
+    ]
+    if "cTime" not in invalid and fill_timestamp(fill) is None:
+        invalid.append("cTime")
+    return invalid
+
+
 def load_fill_history(
     client: BitgetClient,
     product_type: str,
     start: datetime,
     end: datetime,
-) -> tuple[str, list[dict[str, Any]]]:
+) -> FillHistoryResult:
+    coverage = fill_coverage_template(product_type, start, end)
     if not client.private_api_configured:
-        return "NOT_CONFIGURED", []
+        return finish_fill_history_result(
+            "NOT_CONFIGURED",
+            [],
+            coverage,
+            complete=False,
+            schema_validated=False,
+            detail="Bitget private API credentials are not configured",
+        )
 
     params: dict[str, Any] = {
         "productType": product_type,
         "startTime": str(int(start.timestamp() * 1000)),
         "endTime": str(int(end.timestamp() * 1000)),
-        "limit": "100",
+        "limit": str(FILL_PAGE_LIMIT),
     }
     fills: list[dict[str, Any]] = []
     seen_trade_ids: set[str] = set()
     cursor: str | None = None
 
-    for _ in range(MAX_FILL_PAGES):
+    for page_number in range(1, MAX_FILL_PAGES + 1):
         if cursor:
             params["idLessThan"] = cursor
         try:
             data = client._get(
-                "/api/v2/mix/order/fill-history",
-                params,
+                FILL_HISTORY_ENDPOINT,
+                dict(params),
                 private=True,
             )
         except BitgetAPIError as exc:
-            return f"FAILED: {exc}", fills
+            return finish_fill_history_result(
+                "FAILED",
+                fills,
+                coverage,
+                complete=False,
+                schema_validated=False,
+                detail=f"Bitget fill request failed on page {page_number}: {exc}",
+            )
 
+        coverage["pages_fetched"] = page_number
         if not isinstance(data, dict):
-            break
-        page = data.get("fillList") or []
-        if not isinstance(page, list) or not page:
-            break
-        added = 0
-        for fill in page:
-            if not isinstance(fill, dict):
-                continue
-            trade_id = str(fill.get("tradeId") or "")
-            if trade_id and trade_id in seen_trade_ids:
-                continue
-            if trade_id:
-                seen_trade_ids.add(trade_id)
-            fills.append(fill)
-            added += 1
+            return finish_fill_history_result(
+                "INVALID_SCHEMA",
+                fills,
+                coverage,
+                complete=False,
+                schema_validated=False,
+                detail=(
+                    f"Page {page_number} data must be an object containing "
+                    "fillList and endId"
+                ),
+            )
+        if "fillList" not in data or not isinstance(data["fillList"], list):
+            return finish_fill_history_result(
+                "INVALID_SCHEMA",
+                fills,
+                coverage,
+                complete=False,
+                schema_validated=False,
+                detail=f"Page {page_number} fillList is missing or is not a list",
+            )
+
+        page = data["fillList"]
+        coverage["last_page_size"] = len(page)
+        if not page:
+            status = "CONNECTED" if fills else "ZERO_FILLS"
+            detail = None if fills else "The validated window returned zero fills"
+            return finish_fill_history_result(
+                status,
+                fills,
+                coverage,
+                complete=True,
+                schema_validated=True,
+                detail=detail,
+            )
+
         next_cursor = str(data.get("endId") or "").strip()
-        if not next_cursor or next_cursor == cursor or added == 0:
-            break
+        if not next_cursor:
+            return finish_fill_history_result(
+                "INVALID_SCHEMA",
+                fills,
+                coverage,
+                complete=False,
+                schema_validated=False,
+                detail=f"Page {page_number} endId is missing or empty",
+            )
+
+        for row_number, fill in enumerate(page, start=1):
+            if not isinstance(fill, dict):
+                return finish_fill_history_result(
+                    "INVALID_SCHEMA",
+                    fills,
+                    coverage,
+                    complete=False,
+                    schema_validated=False,
+                    detail=(
+                        f"Page {page_number} fill {row_number} is not an object"
+                    ),
+                )
+            invalid = invalid_fill_fields(fill)
+            if invalid:
+                return finish_fill_history_result(
+                    "INVALID_SCHEMA",
+                    fills,
+                    coverage,
+                    complete=False,
+                    schema_validated=False,
+                    detail=(
+                        f"Page {page_number} fill {row_number} has invalid fields: "
+                        + ", ".join(invalid)
+                    ),
+                )
+            trade_id = str(fill["tradeId"]).strip()
+            if trade_id in seen_trade_ids:
+                continue
+            seen_trade_ids.add(trade_id)
+            fills.append(fill)
+
+        if len(page) < FILL_PAGE_LIMIT:
+            return finish_fill_history_result(
+                "CONNECTED",
+                fills,
+                coverage,
+                complete=True,
+                schema_validated=True,
+            )
+        if next_cursor == cursor:
+            return finish_fill_history_result(
+                "PAGINATION_STALLED",
+                fills,
+                coverage,
+                complete=False,
+                schema_validated=True,
+                detail=f"Bitget repeated endId on page {page_number}",
+            )
         cursor = next_cursor
 
-    return "CONNECTED", fills
+    return finish_fill_history_result(
+        "PAGINATION_LIMIT_REACHED",
+        fills,
+        coverage,
+        complete=False,
+        schema_validated=True,
+        detail=f"Fill retrieval reached the safety limit of {MAX_FILL_PAGES} pages",
+    )
 
 
 def save_cache(
@@ -221,12 +421,29 @@ def print_report(
     diagnostic: dict[str, Any],
     fill_status: str,
 ) -> None:
+    coverage = summary.get("fill_history_coverage") or {}
     print()
     print("=" * 96)
     print("ALPHA HUNTER — ROLLING 7-DAY SIGNAL → EXECUTION TRACEABILITY")
     print("=" * 96)
     print("Window:", summary["window_start_utc"], "→", summary["window_end_utc"])
     print("Bitget private fill history:", fill_status)
+    print("Fill endpoint:", coverage.get("endpoint") or "N/A")
+    print(
+        "Fill coverage:",
+        f"fills={coverage.get('fill_count', 0)}",
+        f"pages={coverage.get('pages_fetched', 0)}",
+        f"complete={coverage.get('complete', False)}",
+        f"schema_validated={coverage.get('schema_validated', False)}",
+    )
+    print(
+        "Fill time range:",
+        coverage.get("oldest_fill_at_utc") or "N/A",
+        "→",
+        coverage.get("newest_fill_at_utc") or "N/A",
+    )
+    if coverage.get("detail"):
+        print("Fill coverage detail:", coverage["detail"])
     print("Distinct TRADE READY coins:", summary["distinct_trade_ready_coins"])
     print("Distinct TRADE READY episodes:", summary["distinct_trade_ready_episodes"])
     print("TRADE READY LONG:", summary["trade_ready_long"])
@@ -290,9 +507,54 @@ def print_report(
     print("=" * 96)
 
 
-def main() -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run Alpha Hunter signal-to-execution traceability",
+    )
+    parser.add_argument(
+        "--fill-history-smoke-test",
+        action="store_true",
+        help=(
+            "read and validate Bitget fill-history coverage without writing "
+            "snapshots, caches, orders, or account changes"
+        ),
+    )
+    return parser.parse_args(argv)
+
+
+def run_fill_history_smoke_test(config: dict[str, Any]) -> int:
+    end = now_utc()
+    start = end - timedelta(hours=WINDOW_HOURS)
+    client = BitgetClient.from_environment(
+        timeout=int(config.get("request_timeout_seconds", 12)),
+        max_retries=int(config.get("max_retries", 3)),
+    )
+    result = load_fill_history(
+        client,
+        str(config.get("product_type") or "usdt-futures"),
+        start,
+        end,
+    )
+    pass_eligible = bool(
+        result.status == "CONNECTED"
+        and result.coverage.get("complete") is True
+        and result.coverage.get("schema_validated") is True
+        and result.coverage.get("fill_count", 0) > 0
+    )
+    print("ALPHA HUNTER — READ-ONLY BITGET FILL-HISTORY SMOKE TEST")
+    print("No orders, snapshots, caches, or account changes are performed.")
+    print(json.dumps(result.coverage, indent=2, sort_keys=True))
+    print("Smoke-test status:", "PASS" if pass_eligible else "INCOMPLETE")
+    return 0 if pass_eligible else 2
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     load_env_file(ROOT / ".env")
     config = load_config(ROOT / "config.json")
+    if args.fill_history_smoke_test:
+        return run_fill_history_smoke_test(config)
+
     settings = SupabaseConfig.from_environment(config)
     end = now_utc()
     start = end - timedelta(hours=WINDOW_HOURS)
@@ -317,14 +579,22 @@ def main() -> int:
         timeout=int(config.get("request_timeout_seconds", 12)),
         max_retries=int(config.get("max_retries", 3)),
     )
-    fill_status, fills = load_fill_history(
+    fill_history = load_fill_history(
         client,
         str(config.get("product_type") or "usdt-futures"),
         start,
         end,
     )
+    fill_status = fill_history.status
+    fills = fill_history.fills
     attach_fill_matches(episodes, fills)
-    summary = rolling_summary(episodes, fills=fills, now_utc=end, hours=WINDOW_HOURS)
+    summary = rolling_summary(
+        episodes,
+        fills=fills,
+        now_utc=end,
+        hours=WINDOW_HOURS,
+        fill_history_coverage=fill_history.coverage,
+    )
 
     quality = config.get("candidate_quality") or {}
     diagnostic = readiness_diagnostic(
@@ -353,7 +623,11 @@ def main() -> int:
         print("SIGNAL → EXECUTION TRACEABILITY FAILURE: unlinked open-like fills exist")
     if summary["distinct_trade_ready_episodes"] == 0:
         print("ZERO TRADE READY DIAGNOSTIC REQUIRED")
-
+    if summary["traceability_status"] == "FAIL":
+        return 1
+    if summary["traceability_status"] != "PASS":
+        print("SIGNAL → EXECUTION TRACEABILITY INCOMPLETE: fill coverage is untrusted")
+        return 2
     return 0
 
 

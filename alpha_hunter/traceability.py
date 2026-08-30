@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-TRACEABILITY_VERSION = "1.1"
+TRACEABILITY_VERSION = "1.2"
 ROLLING_WINDOW_HOURS = 168
 DEFAULT_MINIMUM_EXECUTION_SCORE = 7.5
 DEFAULT_MINIMUM_EXECUTION_RR = 5.0
@@ -365,6 +365,7 @@ def rolling_summary(
     fills: list[dict[str, Any]] | None = None,
     now_utc: Any | None = None,
     hours: int = ROLLING_WINDOW_HOURS,
+    fill_history_coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     now = _dt(now_utc or datetime.now(timezone.utc))
     start = now - timedelta(hours=hours)
@@ -383,6 +384,28 @@ def rolling_summary(
     )
     fills = fills or []
     unlinked = unlinked_open_like_fills(episodes, fills, start)
+    coverage = dict(fill_history_coverage or {})
+    coverage_status = str(
+        coverage.get("status") or "NOT_EVALUATED"
+    ).upper()
+    coverage_fill_count = coverage.get("fill_count")
+    fill_history_pass_eligible = bool(
+        coverage_status == "CONNECTED"
+        and coverage.get("complete") is True
+        and coverage.get("schema_validated") is True
+        and isinstance(coverage_fill_count, int)
+        and coverage_fill_count > 0
+        and coverage_fill_count == len(fills)
+    )
+    traceability_status = (
+        "FAIL"
+        if unlinked
+        else (
+            "PASS"
+            if fill_history_pass_eligible
+            else "INCOMPLETE"
+        )
+    )
     return {
         "window_start_utc": start.isoformat(),
         "window_end_utc": now.isoformat(),
@@ -395,11 +418,10 @@ def rolling_summary(
         "ready_symbols": distinct_symbols,
         "ready_ids": [episode.ready_id for episode in window],
         "unlinked_open_like_fill_count": len(unlinked),
-        "traceability_status": (
-            "FAIL"
-            if unlinked
-            else "PASS"
-        ),
+        "fill_history_status": coverage_status,
+        "fill_history_pass_eligible": fill_history_pass_eligible,
+        "fill_history_coverage": coverage,
+        "traceability_status": traceability_status,
     }
 
 
