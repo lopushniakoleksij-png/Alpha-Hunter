@@ -7,10 +7,26 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-TRACEABILITY_VERSION = "1.1"
+TRACEABILITY_VERSION = "1.2"
 ROLLING_WINDOW_HOURS = 168
 DEFAULT_MINIMUM_EXECUTION_SCORE = 7.5
 DEFAULT_MINIMUM_EXECUTION_RR = 5.0
+INDEPENDENT_READINESS_GATES = (
+    "DIRECTION_AVAILABLE",
+    "EXECUTION_SCORE",
+    "EXECUTION_RR",
+    "ELIGIBLE_PHASE",
+    "EARLY_TIMING",
+)
+TRADE_PERMISSION_DEPENDENCIES = (
+    "DIRECTION_AVAILABLE",
+    "STRUCTURE_VALID",
+    "MOMENTUM_CONFIRMED",
+    "PARTICIPATION_CONFIRMED",
+    "FUNDING_NOT_EXTREME",
+    "DATA_INTEGRITY_MIN_88",
+    "RR_MINIMUM_MET",
+)
 
 
 def _dt(value: Any) -> datetime:
@@ -39,6 +55,77 @@ def _float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _pct(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(numerator / denominator * 100.0, 2)
+
+
+def _rounded(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(value, 6)
+
+
+def _percentile(sorted_values: list[float], fraction: float) -> float | None:
+    if not sorted_values:
+        return None
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    position = (len(sorted_values) - 1) * fraction
+    lower = int(position)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = position - lower
+    return (
+        sorted_values[lower] * (1.0 - weight)
+        + sorted_values[upper] * weight
+    )
+
+
+def _numeric_distribution(
+    values: list[float],
+    eligible_observations: int,
+    minimum: float,
+) -> dict[str, Any]:
+    ordered = sorted(values)
+    meeting = sum(value >= minimum for value in ordered)
+    return {
+        "eligible_observations": eligible_observations,
+        "observations_with_value": len(ordered),
+        "value_coverage_pct": _pct(len(ordered), eligible_observations),
+        "minimum_observed": _rounded(ordered[0] if ordered else None),
+        "p25": _rounded(_percentile(ordered, 0.25)),
+        "median": _rounded(_percentile(ordered, 0.50)),
+        "p75": _rounded(_percentile(ordered, 0.75)),
+        "p90": _rounded(_percentile(ordered, 0.90)),
+        "maximum_observed": _rounded(ordered[-1] if ordered else None),
+        "required_minimum": minimum,
+        "meeting_minimum_observations": meeting,
+        "meeting_minimum_pct_of_eligible": _pct(
+            meeting,
+            eligible_observations,
+        ),
+        "meeting_minimum_pct_of_values": _pct(meeting, len(ordered)),
+    }
+
+
+def _categorical_distribution(
+    counts: Counter[str],
+    total: int,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "value": value,
+            "observations": count,
+            "observation_pct": _pct(count, total),
+        }
+        for value, count in sorted(
+            counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
 
 
 def strict_production_ready(record: dict[str, Any]) -> bool:
@@ -445,11 +532,21 @@ def readiness_diagnostic(
     changing any execution gate.
     """
     blocker_counts: Counter[str] = Counter()
+    root_gate_failures: Counter[str] = Counter()
+    root_gate_evaluations: Counter[str] = Counter()
     execution_check_failures: Counter[str] = Counter()
+    execution_check_evaluations: Counter[str] = Counter()
     quality_rejections: Counter[str] = Counter()
+    direction_counts: Counter[str] = Counter()
+    phase_counts: Counter[str] = Counter()
+    timing_counts: Counter[str] = Counter()
+    behaviour_scores: list[float] = []
+    reward_risks: list[float] = []
+    snapshots_evaluated = 0
     evaluated_observations = 0
     data_error_observations = 0
     strict_ready_observations = 0
+    trade_permission_observations = 0
     latest_records: list[dict[str, Any]] = []
 
     for snapshot in snapshots:
@@ -458,6 +555,7 @@ def readiness_diagnostic(
         symbols = snapshot.get("symbols") or []
         if not isinstance(symbols, list):
             continue
+        snapshots_evaluated += 1
         current_records = [row for row in symbols if isinstance(row, dict)]
         latest_records = current_records
 
@@ -471,6 +569,8 @@ def readiness_diagnostic(
             evaluated_observations += 1
             if strict_production_ready(record):
                 strict_ready_observations += 1
+            if record.get("trade_permission") is True:
+                trade_permission_observations += 1
 
             conditions = _readiness_conditions(
                 record,
@@ -484,14 +584,42 @@ def readiness_diagnostic(
             )
 
             setup = record.get("execution_setup") or {}
-            if isinstance(setup, dict):
-                checks = setup.get("checks") or {}
-                if isinstance(checks, dict):
-                    execution_check_failures.update(
-                        str(name).upper()
-                        for name, passed in checks.items()
-                        if passed is False
-                    )
+            if not isinstance(setup, dict):
+                setup = {}
+            direction = record_direction(record)
+            direction_counts[direction or "NONE"] += 1
+            phase = str(record.get("market_phase") or "").upper().strip()
+            timing = (
+                str(record.get("opportunity_timing") or "")
+                .upper()
+                .strip()
+            )
+            phase_counts[phase or "UNAVAILABLE"] += 1
+            timing_counts[timing or "UNAVAILABLE"] += 1
+
+            score = _float(record.get("behaviour_score"))
+            if score is not None:
+                behaviour_scores.append(score)
+            reward_risk = _float(setup.get("rr"))
+            if direction is not None and reward_risk is not None:
+                reward_risks.append(reward_risk)
+
+            for gate in INDEPENDENT_READINESS_GATES:
+                if gate == "EXECUTION_RR" and direction is None:
+                    continue
+                root_gate_evaluations[gate] += 1
+                if not conditions[gate]:
+                    root_gate_failures[gate] += 1
+
+            checks = setup.get("checks") or {}
+            if isinstance(checks, dict):
+                for name, passed in checks.items():
+                    normalized = str(name).upper()
+                    if passed is not True and passed is not False:
+                        continue
+                    execution_check_evaluations[normalized] += 1
+                    if passed is False:
+                        execution_check_failures[normalized] += 1
 
             reasons = record.get("rejection_reasons") or []
             if isinstance(reasons, (list, tuple, set)):
@@ -506,17 +634,56 @@ def readiness_diagnostic(
             {
                 "reason": reason,
                 "observations": count,
-                "observation_pct": (
-                    round(count / evaluated_observations * 100.0, 2)
-                    if evaluated_observations
-                    else 0.0
-                ),
+                "observation_pct": _pct(count, evaluated_observations),
             }
             for reason, count in sorted(
                 counter.items(),
                 key=lambda item: (-item[1], item[0]),
             )
         ]
+
+    def ranked_conditional(
+        failures: Counter[str],
+        evaluations: Counter[str],
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "reason": reason,
+                "failed_observations": failed,
+                "eligible_observations": evaluations[reason],
+                "failure_pct_when_eligible": _pct(
+                    failed,
+                    evaluations[reason],
+                ),
+                "observation_pct": _pct(failed, evaluated_observations),
+            }
+            for reason, failed in sorted(
+                failures.items(),
+                key=lambda item: (
+                    -_pct(item[1], evaluations[item[0]]),
+                    -item[1],
+                    item[0],
+                ),
+            )
+        ]
+
+    score_distribution = _numeric_distribution(
+        behaviour_scores,
+        evaluated_observations,
+        minimum_execution_score,
+    )
+    reward_risk_distribution = _numeric_distribution(
+        reward_risks,
+        root_gate_evaluations["EXECUTION_RR"],
+        minimum_execution_rr,
+    )
+
+    def reachability_status(distribution: dict[str, Any]) -> str:
+        if distribution["eligible_observations"] == 0:
+            return "NOT_EVALUATED"
+        if distribution["meeting_minimum_observations"] == 0:
+            return "UNREACHED_IN_OBSERVED_COHORT"
+        return "OBSERVED"
 
     closest: list[dict[str, Any]] = []
     for record in latest_records:
@@ -541,15 +708,48 @@ def readiness_diagnostic(
         reasons = record.get("rejection_reasons") or []
         if not isinstance(reasons, (list, tuple, set)):
             reasons = []
+        direction = record_direction(record)
+        independent_conditions = {
+            name: conditions[name]
+            for name in INDEPENDENT_READINESS_GATES
+            if name != "EXECUTION_RR" or direction is not None
+        }
+        entry = _float(setup.get("entry"))
+        stop = _float(setup.get("stop"))
+        target = _float(setup.get("target"))
+        risk = _float(setup.get("risk"))
+        reward = _float(setup.get("reward"))
+        reward_risk = _float(setup.get("rr"))
+        risk_pct = (
+            risk / abs(entry) * 100.0
+            if risk is not None and entry not in (None, 0)
+            else None
+        )
+        reward_pct = (
+            reward / abs(entry) * 100.0
+            if reward is not None and entry not in (None, 0)
+            else None
+        )
         closest.append(
             {
                 "symbol": symbol,
-                "direction": record_direction(record),
+                "direction": direction,
                 "conditions_passed": sum(conditions.values()),
                 "conditions_total": len(conditions),
                 "failed_conditions": [
                     name
                     for name, passed in conditions.items()
+                    if not passed
+                ],
+                "independent_conditions_passed": sum(
+                    independent_conditions.values()
+                ),
+                "independent_conditions_total": len(
+                    independent_conditions
+                ),
+                "failed_independent_conditions": [
+                    name
+                    for name, passed in independent_conditions.items()
                     if not passed
                 ],
                 "execution_check_failures": [
@@ -563,7 +763,22 @@ def readiness_diagnostic(
                     if str(reason).strip()
                 ],
                 "behaviour_score": _float(record.get("behaviour_score")),
-                "reward_risk": _float(setup.get("rr")),
+                "reward_risk": reward_risk,
+                "minimum_reward_risk": minimum_execution_rr,
+                "reward_risk_shortfall": _rounded(
+                    max(0.0, minimum_execution_rr - reward_risk)
+                    if reward_risk is not None
+                    else None
+                ),
+                "execution_geometry": {
+                    "entry": entry,
+                    "stop": stop,
+                    "target": target,
+                    "risk": risk,
+                    "reward": reward,
+                    "risk_pct_of_entry": _rounded(risk_pct),
+                    "reward_pct_of_entry": _rounded(reward_pct),
+                },
                 "market_phase": record.get("market_phase"),
                 "opportunity_timing": record.get("opportunity_timing"),
                 "trade_permission": record.get("trade_permission") is True,
@@ -574,7 +789,7 @@ def readiness_diagnostic(
 
     closest.sort(
         key=lambda item: (
-            -item["conditions_passed"],
+            -item["independent_conditions_passed"],
             -(
                 item["behaviour_score"]
                 if item["behaviour_score"] is not None
@@ -591,13 +806,81 @@ def readiness_diagnostic(
 
     return {
         "classification": "AUDIT_ONLY_DOES_NOT_GRANT_PERMISSION",
+        "snapshots_evaluated": snapshots_evaluated,
         "evaluated_candidate_observations": evaluated_observations,
         "data_error_observations": data_error_observations,
         "strict_ready_observations": strict_ready_observations,
+        "trade_permission_observations": trade_permission_observations,
         "minimum_execution_score": minimum_execution_score,
         "minimum_execution_reward_risk": minimum_execution_rr,
         "ranked_gate_blockers": ranked(blocker_counts),
+        "ranked_root_gate_blockers": ranked_conditional(
+            root_gate_failures,
+            root_gate_evaluations,
+        ),
+        "composite_trade_permission_gate": {
+            "gate": "TRADE_PERMISSION",
+            "classification": "COMPOSITE_NOT_INDEPENDENT_ROOT_CAUSE",
+            "failed_observations": blocker_counts["TRADE_PERMISSION"],
+            "observation_pct": _pct(
+                blocker_counts["TRADE_PERMISSION"],
+                evaluated_observations,
+            ),
+            "depends_on": list(TRADE_PERMISSION_DEPENDENCIES),
+        },
+        "gate_dependency_model": {
+            "STRICT_PRODUCTION_READY": [
+                "TRADE_PERMISSION",
+                "V7_TRADE_READY",
+            ],
+            "V7_TRADE_READY": [
+                "TRADE_PERMISSION",
+                "EXECUTION_SCORE",
+                "EXECUTION_RR",
+                "ELIGIBLE_PHASE",
+                "EARLY_TIMING",
+            ],
+            "TRADE_PERMISSION": list(TRADE_PERMISSION_DEPENDENCIES),
+            "diagnostic_interpretation": (
+                "TRADE_PERMISSION and V7_TRADE_READY are composite outcomes; "
+                "use conditional root blockers to avoid double-counting their "
+                "dependencies"
+            ),
+        },
         "ranked_execution_check_failures": ranked(execution_check_failures),
+        "ranked_execution_check_failures_when_evaluated": (
+            ranked_conditional(
+                execution_check_failures,
+                execution_check_evaluations,
+            )
+        ),
         "ranked_quality_rejections": ranked(quality_rejections),
+        "behaviour_score_distribution": score_distribution,
+        "reward_risk_distribution_directional": reward_risk_distribution,
+        "direction_distribution": _categorical_distribution(
+            direction_counts,
+            evaluated_observations,
+        ),
+        "market_phase_distribution": _categorical_distribution(
+            phase_counts,
+            evaluated_observations,
+        ),
+        "opportunity_timing_distribution": _categorical_distribution(
+            timing_counts,
+            evaluated_observations,
+        ),
+        "reachability": {
+            "classification": "OBSERVATIONAL_AUDIT_ONLY",
+            "execution_score_gate": reachability_status(
+                score_distribution
+            ),
+            "execution_reward_risk_gate": reachability_status(
+                reward_risk_distribution
+            ),
+            "thresholds_changed": False,
+            "trade_permission_granted": (
+                trade_permission_observations > 0
+            ),
+        },
         "current_closest_candidates": closest[:max(0, closest_limit)],
     }
