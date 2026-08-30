@@ -20,9 +20,7 @@ No meaningful production step is complete until it is recorded.
 
 ## 2026-08-30 P0 TRACEABILITY STABILIZATION UPDATE
 
-This update supersedes the older point-in-time repository and working-tree
-observations below. Historical research notes remain evidence and are not
-production permission.
+This update supersedes the older point-in-time repository and working-tree observations below. Historical research notes remain evidence and are not production permission.
 
 Classification: P0 STABILIZATION / READ-ONLY EXCHANGE INTEGRATION
 
@@ -33,21 +31,16 @@ Production baseline:
 - `origin/main`: `89e42a9`
 - Open diagnostic PR #3 remains separate and unmerged
 - Repair branch: `fix/p0-bitget-fill-traceability-20260830`
-- Current repair branch head: `2b7c1e2`
+- Current repair branch head: `9ac84d1`
 
 Executed:
 
-- Replaced the order-specific `/api/v2/mix/order/fill-history` usage with the
-  documented account-wide futures fill endpoint `/api/v2/mix/order/fills` for
-  rolling account fill reconciliation
+- Replaced the order-specific `/api/v2/mix/order/fill-history` usage with the documented account-wide futures fill endpoint `/api/v2/mix/order/fills` for rolling account fill reconciliation
 - Added strict `fillList` / `endId` schema validation and cursor pagination
-- Added window, endpoint, page, count, timestamp, completeness, and schema
-  coverage telemetry
-- Changed zero-fill, malformed, unconfigured, stalled, and truncated coverage
-  from false `PASS` to `INCOMPLETE`
+- Added window, endpoint, page, count, timestamp, completeness, and schema coverage telemetry
+- Changed zero-fill, malformed, unconfigured, stalled, and truncated coverage from false `PASS` to `INCOMPLETE`
 - Changed unlinked open-like fills to a non-zero traceability failure exit
-- Added `--fill-history-smoke-test`, which performs no orders, Supabase writes,
-  cache writes, snapshot writes, or account changes
+- Added `--fill-history-smoke-test`, which performs no orders, Supabase writes, cache writes, snapshot writes, or account changes
 
 Verification:
 
@@ -55,8 +48,7 @@ Verification:
 - Focused traceability tests: 12 PASS
 - Full regression suite: 30 PASS
 - Diff validation: PASS
-- No-credential smoke-test safety behavior: PASS; reported `INCOMPLETE` and
-  exited 2 without writes
+- No-credential smoke-test safety behavior: PASS; reported `INCOMPLETE` and exited 2 without writes
 - Credentialed live read-only smoke test: PENDING before merge
 
 Not changed:
