@@ -33,7 +33,8 @@ Production baseline:
 - `origin/main`: `89e42a9`
 - Open diagnostic PR #3 remains separate and unmerged
 - Repair branch: `fix/p0-bitget-fill-traceability-20260830`
-- Repair commit: `9b5ccf5` — Repair Bitget fill traceability coverage
+- GitHub repair commit: `c32dfd1` — Repair Bitget fill traceability coverage
+- Local equivalent commit: `9b5ccf5`
 
 Executed:
 
