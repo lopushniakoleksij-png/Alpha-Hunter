@@ -1,0 +1,79 @@
+name: Alpha Hunter One-Shot Readiness Validation
+
+on:
+  push:
+    branches:
+      - ops/live-readiness-validation-20260830
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpha-hunter-one-shot-readiness-validation-20260830
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout merged main commit
+        uses: actions/checkout@v4
+        with:
+          ref: 89e42a9f43952017a0371b39ffd9a01579dd7bd6
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run one production cycle
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          python hourly_production.py 2>&1 | tee readiness-validation.log
+
+      - name: Print readiness blocker payload
+        if: always()
+        shell: bash
+        run: |
+          if [ -f data/signal-execution-ledger-7d.json ]; then
+            python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("data/signal-execution-ledger-7d.json")
+          payload = json.loads(path.read_text(encoding="utf-8"))
+          print("TRACEABILITY_VERSION:", payload.get("traceability_version"))
+          print("GENERATED_AT_UTC:", payload.get("generated_at_utc"))
+          print("FILL_HISTORY_STATUS:", payload.get("fill_history_status"))
+          print("SUMMARY:")
+          print(json.dumps(payload.get("summary"), indent=2, sort_keys=True))
+          print("READINESS_DIAGNOSTIC:")
+          print(json.dumps(payload.get("readiness_diagnostic"), indent=2, sort_keys=True))
+          PY
+          else
+            echo "No readiness cache was produced."
+          fi
+
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: readiness-validation-20260830
+          if-no-files-found: warn
+          path: |
+            readiness-validation.log
+            data/signal-execution-ledger-7d.json
