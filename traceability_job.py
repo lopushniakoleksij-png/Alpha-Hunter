@@ -12,8 +12,10 @@ from alpha_hunter.collector import load_config, load_previous_snapshot
 from alpha_hunter.env import load_env_file
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage
 from alpha_hunter.traceability import (
+    TRACEABILITY_VERSION,
     ReadyEpisode,
     attach_fill_matches,
+    readiness_diagnostic,
     rolling_summary,
     update_ready_ledger,
 )
@@ -174,13 +176,16 @@ def load_fill_history(
 def save_cache(
     episodes: list[ReadyEpisode],
     summary: dict[str, Any],
+    diagnostic: dict[str, Any],
     fill_status: str,
 ) -> None:
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "traceability_version": TRACEABILITY_VERSION,
         "generated_at_utc": iso(now_utc()),
         "fill_history_status": fill_status,
         "summary": summary,
+        "readiness_diagnostic": diagnostic,
         "episodes": [episode.to_dict() for episode in episodes],
     }
     temp = CACHE_PATH.with_suffix(".json.tmp")
@@ -195,14 +200,16 @@ def enrich_latest_snapshot(
     latest: dict[str, Any],
     episodes: list[ReadyEpisode],
     summary: dict[str, Any],
+    diagnostic: dict[str, Any],
     fill_status: str,
     settings: SupabaseConfig,
 ) -> None:
     latest["signal_execution_traceability"] = {
-        "version": "1.0",
+        "version": TRACEABILITY_VERSION,
         "generated_at_utc": iso(now_utc()),
         "fill_history_status": fill_status,
         "summary": summary,
+        "readiness_diagnostic": diagnostic,
         "ready_episodes": [episode.to_dict() for episode in episodes],
     }
     SupabaseStorage(settings).save_snapshot(latest)
@@ -211,6 +218,7 @@ def enrich_latest_snapshot(
 def print_report(
     episodes: list[ReadyEpisode],
     summary: dict[str, Any],
+    diagnostic: dict[str, Any],
     fill_status: str,
 ) -> None:
     print()
@@ -244,6 +252,41 @@ def print_report(
             )
     else:
         print("No strict production TRADE READY episodes in the rolling window.")
+        print()
+        print("READINESS BLOCKER DIAGNOSTIC — AUDIT ONLY / NO PERMISSION")
+        print(
+            "Evaluated candidate observations:",
+            diagnostic.get("evaluated_candidate_observations", 0),
+            "| Data-error observations:",
+            diagnostic.get("data_error_observations", 0),
+        )
+        blockers = diagnostic.get("ranked_gate_blockers") or []
+        if blockers:
+            for row in blockers[:8]:
+                print(
+                    f"- {row['reason']}: {row['observations']} observations "
+                    f"({row['observation_pct']:.2f}%)"
+                )
+        else:
+            print("- No evaluated candidate observations were available.")
+
+        closest = diagnostic.get("current_closest_candidates") or []
+        if closest:
+            print()
+            print("CURRENT CLOSEST CANDIDATES — NOT TRADE READY")
+            for row in closest:
+                direction = row.get("direction") or "NONE"
+                failed = ", ".join(row.get("failed_conditions") or []) or "NONE"
+                details = (
+                    (row.get("execution_check_failures") or [])
+                    + (row.get("quality_rejections") or [])
+                )
+                detail_text = ", ".join(details) or "NONE"
+                print(
+                    f"- {row['symbol']} {direction}: "
+                    f"{row['conditions_passed']}/{row['conditions_total']} conditions; "
+                    f"failed={failed}; detail={detail_text}"
+                )
     print("=" * 96)
 
 
@@ -283,10 +326,28 @@ def main() -> int:
     attach_fill_matches(episodes, fills)
     summary = rolling_summary(episodes, fills=fills, now_utc=end, hours=WINDOW_HOURS)
 
-    save_cache(episodes, summary, fill_status)
+    quality = config.get("candidate_quality") or {}
+    diagnostic = readiness_diagnostic(
+        snapshots,
+        minimum_execution_score=float(
+            quality.get("minimum_execution_score", 7.5)
+        ),
+        minimum_execution_rr=float(
+            quality.get("minimum_execution_reward_risk", 5.0)
+        ),
+    )
+
+    save_cache(episodes, summary, diagnostic, fill_status)
     if settings is not None:
-        enrich_latest_snapshot(latest, episodes, summary, fill_status, settings)
-    print_report(episodes, summary, fill_status)
+        enrich_latest_snapshot(
+            latest,
+            episodes,
+            summary,
+            diagnostic,
+            fill_status,
+            settings,
+        )
+    print_report(episodes, summary, diagnostic, fill_status)
 
     if summary["unlinked_open_like_fill_count"]:
         print("SIGNAL → EXECUTION TRACEABILITY FAILURE: unlinked open-like fills exist")
