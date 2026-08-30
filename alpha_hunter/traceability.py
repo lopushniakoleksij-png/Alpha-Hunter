@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-TRACEABILITY_VERSION = "1.0"
+TRACEABILITY_VERSION = "1.1"
 ROLLING_WINDOW_HOURS = 168
+DEFAULT_MINIMUM_EXECUTION_SCORE = 7.5
+DEFAULT_MINIMUM_EXECUTION_RR = 5.0
 
 
 def _dt(value: Any) -> datetime:
@@ -397,4 +400,204 @@ def rolling_summary(
             if unlinked
             else "PASS"
         ),
+    }
+
+
+def _readiness_conditions(
+    record: dict[str, Any],
+    minimum_execution_score: float,
+    minimum_execution_rr: float,
+) -> dict[str, bool]:
+    phase = str(record.get("market_phase") or "").upper().strip()
+    timing = str(record.get("opportunity_timing") or "").upper().strip()
+    score = _float(record.get("behaviour_score"))
+    setup = record.get("execution_setup") or {}
+    if not isinstance(setup, dict):
+        setup = {}
+    reward_risk = _float(setup.get("rr"))
+
+    return {
+        "DIRECTION_AVAILABLE": record_direction(record) is not None,
+        "TRADE_PERMISSION": record.get("trade_permission") is True,
+        "EXECUTION_SCORE": (
+            score is not None
+            and score >= minimum_execution_score
+        ),
+        "EXECUTION_RR": (
+            reward_risk is not None
+            and reward_risk >= minimum_execution_rr
+        ),
+        "ELIGIBLE_PHASE": phase in {"RECOVERY", "IGNITION"},
+        "EARLY_TIMING": timing == "EARLY",
+    }
+
+
+def readiness_diagnostic(
+    snapshots: list[dict[str, Any]],
+    minimum_execution_score: float = DEFAULT_MINIMUM_EXECUTION_SCORE,
+    minimum_execution_rr: float = DEFAULT_MINIMUM_EXECUTION_RR,
+    closest_limit: int = 5,
+) -> dict[str, Any]:
+    """Explain why observed candidates did not become strictly trade ready.
+
+    This is audit-only. It ranks failed production conditions and surfaces the
+    nearest candidates from the latest snapshot without granting permission or
+    changing any execution gate.
+    """
+    blocker_counts: Counter[str] = Counter()
+    execution_check_failures: Counter[str] = Counter()
+    quality_rejections: Counter[str] = Counter()
+    evaluated_observations = 0
+    data_error_observations = 0
+    strict_ready_observations = 0
+    latest_records: list[dict[str, Any]] = []
+
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        symbols = snapshot.get("symbols") or []
+        if not isinstance(symbols, list):
+            continue
+        current_records = [row for row in symbols if isinstance(row, dict)]
+        latest_records = current_records
+
+        for record in current_records:
+            symbol = str(record.get("symbol") or "").strip()
+            if not symbol:
+                continue
+            if "error" in record:
+                data_error_observations += 1
+                continue
+            evaluated_observations += 1
+            if strict_production_ready(record):
+                strict_ready_observations += 1
+
+            conditions = _readiness_conditions(
+                record,
+                minimum_execution_score,
+                minimum_execution_rr,
+            )
+            blocker_counts.update(
+                name
+                for name, passed in conditions.items()
+                if not passed
+            )
+
+            setup = record.get("execution_setup") or {}
+            if isinstance(setup, dict):
+                checks = setup.get("checks") or {}
+                if isinstance(checks, dict):
+                    execution_check_failures.update(
+                        str(name).upper()
+                        for name, passed in checks.items()
+                        if passed is False
+                    )
+
+            reasons = record.get("rejection_reasons") or []
+            if isinstance(reasons, (list, tuple, set)):
+                quality_rejections.update(
+                    str(reason).upper()
+                    for reason in reasons
+                    if str(reason).strip()
+                )
+
+    def ranked(counter: Counter[str]) -> list[dict[str, Any]]:
+        return [
+            {
+                "reason": reason,
+                "observations": count,
+                "observation_pct": (
+                    round(count / evaluated_observations * 100.0, 2)
+                    if evaluated_observations
+                    else 0.0
+                ),
+            }
+            for reason, count in sorted(
+                counter.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ]
+
+    closest: list[dict[str, Any]] = []
+    for record in latest_records:
+        if "error" in record:
+            continue
+        if strict_production_ready(record):
+            continue
+        symbol = str(record.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        setup = record.get("execution_setup") or {}
+        if not isinstance(setup, dict):
+            setup = {}
+        conditions = _readiness_conditions(
+            record,
+            minimum_execution_score,
+            minimum_execution_rr,
+        )
+        checks = setup.get("checks") or {}
+        if not isinstance(checks, dict):
+            checks = {}
+        reasons = record.get("rejection_reasons") or []
+        if not isinstance(reasons, (list, tuple, set)):
+            reasons = []
+        closest.append(
+            {
+                "symbol": symbol,
+                "direction": record_direction(record),
+                "conditions_passed": sum(conditions.values()),
+                "conditions_total": len(conditions),
+                "failed_conditions": [
+                    name
+                    for name, passed in conditions.items()
+                    if not passed
+                ],
+                "execution_check_failures": [
+                    str(name).upper()
+                    for name, passed in checks.items()
+                    if passed is False
+                ],
+                "quality_rejections": [
+                    str(reason).upper()
+                    for reason in reasons
+                    if str(reason).strip()
+                ],
+                "behaviour_score": _float(record.get("behaviour_score")),
+                "reward_risk": _float(setup.get("rr")),
+                "market_phase": record.get("market_phase"),
+                "opportunity_timing": record.get("opportunity_timing"),
+                "trade_permission": record.get("trade_permission") is True,
+                "v7_trade_ready": record.get("v7_trade_ready") is True,
+                "audit_only": True,
+            }
+        )
+
+    closest.sort(
+        key=lambda item: (
+            -item["conditions_passed"],
+            -(
+                item["behaviour_score"]
+                if item["behaviour_score"] is not None
+                else float("-inf")
+            ),
+            -(
+                item["reward_risk"]
+                if item["reward_risk"] is not None
+                else float("-inf")
+            ),
+            item["symbol"],
+        )
+    )
+
+    return {
+        "classification": "AUDIT_ONLY_DOES_NOT_GRANT_PERMISSION",
+        "evaluated_candidate_observations": evaluated_observations,
+        "data_error_observations": data_error_observations,
+        "strict_ready_observations": strict_ready_observations,
+        "minimum_execution_score": minimum_execution_score,
+        "minimum_execution_reward_risk": minimum_execution_rr,
+        "ranked_gate_blockers": ranked(blocker_counts),
+        "ranked_execution_check_failures": ranked(execution_check_failures),
+        "ranked_quality_rejections": ranked(quality_rejections),
+        "current_closest_candidates": closest[:max(0, closest_limit)],
     }
