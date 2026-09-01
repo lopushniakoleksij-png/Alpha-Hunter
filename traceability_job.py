@@ -257,18 +257,81 @@ def print_report(
         print(
             "Evaluated candidate observations:",
             diagnostic.get("evaluated_candidate_observations", 0),
+            "across",
+            diagnostic.get("snapshots_evaluated", 0),
+            "snapshots",
             "| Data-error observations:",
             diagnostic.get("data_error_observations", 0),
         )
-        blockers = diagnostic.get("ranked_gate_blockers") or []
+        print()
+        print("ROOT-CAUSE GATE BLOCKERS — CONDITIONAL DENOMINATORS")
+        blockers = diagnostic.get("ranked_root_gate_blockers") or []
         if blockers:
             for row in blockers[:8]:
                 print(
-                    f"- {row['reason']}: {row['observations']} observations "
-                    f"({row['observation_pct']:.2f}%)"
+                    f"- {row['reason']}: "
+                    f"{row['failed_observations']}/"
+                    f"{row['eligible_observations']} eligible failed "
+                    f"({row['failure_pct_when_eligible']:.2f}%); "
+                    f"{row['observation_pct']:.2f}% of all observations"
                 )
         else:
-            print("- No evaluated candidate observations were available.")
+            print("- No independent gate failures were observed.")
+
+        composite = diagnostic.get("composite_trade_permission_gate") or {}
+        if composite:
+            print()
+            print("COMPOSITE GATE — OUTCOME, NOT INDEPENDENT ROOT CAUSE")
+            print(
+                f"- {composite.get('gate', 'TRADE_PERMISSION')}: "
+                f"{composite.get('failed_observations', 0)} failed "
+                f"({composite.get('observation_pct', 0.0):.2f}%); "
+                "depends on execution setup checks"
+            )
+
+        score_distribution = (
+            diagnostic.get("behaviour_score_distribution") or {}
+        )
+        rr_distribution = (
+            diagnostic.get("reward_risk_distribution_directional") or {}
+        )
+        print()
+        print("GATE REACHABILITY — OBSERVED DATA / THRESHOLDS UNCHANGED")
+        print(
+            "- EXECUTION_SCORE: "
+            f"median={score_distribution.get('median')} "
+            f"p90={score_distribution.get('p90')} "
+            f"max={score_distribution.get('maximum_observed')} | "
+            f"met={score_distribution.get('meeting_minimum_observations', 0)}/"
+            f"{score_distribution.get('eligible_observations', 0)} "
+            f"(required >= {score_distribution.get('required_minimum')})"
+        )
+        print(
+            "- EXECUTION_RR (directional cohort): "
+            f"median={rr_distribution.get('median')} "
+            f"p90={rr_distribution.get('p90')} "
+            f"max={rr_distribution.get('maximum_observed')} | "
+            f"met={rr_distribution.get('meeting_minimum_observations', 0)}/"
+            f"{rr_distribution.get('eligible_observations', 0)} "
+            f"(required >= {rr_distribution.get('required_minimum')})"
+        )
+
+        execution_failures = (
+            diagnostic.get(
+                "ranked_execution_check_failures_when_evaluated"
+            )
+            or []
+        )
+        if execution_failures:
+            print()
+            print("EXECUTION CHECK FAILURES — WHEN CHECK WAS EVALUATED")
+            for row in execution_failures[:8]:
+                print(
+                    f"- {row['reason']}: "
+                    f"{row['failed_observations']}/"
+                    f"{row['eligible_observations']} failed "
+                    f"({row['failure_pct_when_eligible']:.2f}%)"
+                )
 
         closest = diagnostic.get("current_closest_candidates") or []
         if closest:
@@ -276,16 +339,37 @@ def print_report(
             print("CURRENT CLOSEST CANDIDATES — NOT TRADE READY")
             for row in closest:
                 direction = row.get("direction") or "NONE"
-                failed = ", ".join(row.get("failed_conditions") or []) or "NONE"
+                failed = ", ".join(
+                    row.get("failed_independent_conditions") or []
+                ) or "NONE"
                 details = (
                     (row.get("execution_check_failures") or [])
                     + (row.get("quality_rejections") or [])
                 )
                 detail_text = ", ".join(details) or "NONE"
+                reward_risk = row.get("reward_risk")
+                required_rr = row.get("minimum_reward_risk")
+                rr_text = (
+                    "N/A"
+                    if reward_risk is None
+                    else f"{reward_risk:.2f}/{required_rr:.2f} required"
+                )
+                geometry = row.get("execution_geometry") or {}
+                risk_pct = geometry.get("risk_pct_of_entry")
+                reward_pct = geometry.get("reward_pct_of_entry")
+                geometry_text = (
+                    "N/A"
+                    if risk_pct is None or reward_pct is None
+                    else f"risk={risk_pct:.2f}% reward={reward_pct:.2f}%"
+                )
                 print(
                     f"- {row['symbol']} {direction}: "
-                    f"{row['conditions_passed']}/{row['conditions_total']} conditions; "
-                    f"failed={failed}; detail={detail_text}"
+                    f"{row['independent_conditions_passed']}/"
+                    f"{row['independent_conditions_total']} independent conditions; "
+                    f"RR={rr_text}; {geometry_text}; "
+                    f"failed_independent={failed}; "
+                    f"trade_permission={row.get('trade_permission')}; "
+                    f"detail={detail_text}"
                 )
     print("=" * 96)
 
