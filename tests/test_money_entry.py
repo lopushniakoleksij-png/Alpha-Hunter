@@ -1,3 +1,5 @@
+import pytest
+
 from alpha_hunter.money_entry import (
     build_money_entry_shadow,
     compare_entry_outcomes,
@@ -115,7 +117,7 @@ def test_confirmation_tax_can_be_negative_when_waiting_improves_rr():
 
 def test_outcome_comparison_never_claims_expectancy():
     result = compare_entry_outcomes(1.4, 0.3)
-    assert result["delta_net_r"] == 1.1
+    assert result["delta_net_r"] == pytest.approx(1.1)
     assert result["expectancy_claim_permitted"] is False
 
 
