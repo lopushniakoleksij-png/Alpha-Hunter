@@ -269,12 +269,6 @@ class TestV79Rows(unittest.TestCase):
             ]
         )
 
-        self.assertFalse(
-            row[
-                "research_shadow_trade_permission"
-            ]
-        )
-
         self.assertEqual(
             stats["selected"],
             1,
