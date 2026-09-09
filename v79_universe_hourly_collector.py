@@ -485,9 +485,6 @@ def build_rows(
             "trade_permission":
                 False,
 
-            "research_shadow_trade_permission":
-                False,
-
             "updated_at":
                 observed_at.isoformat(),
         }
