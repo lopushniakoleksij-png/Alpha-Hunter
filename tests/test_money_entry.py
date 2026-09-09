@@ -69,6 +69,29 @@ def test_t2_requires_expansion_and_remaining_r():
     assert result["stage"] == "T2_EXPANSION_CONFIRMED"
 
 
+def test_t2_uses_its_own_remaining_r_threshold():
+    row = base_record()
+    row.update({
+        "participation_confirmed": True,
+        "acceptance_confirmed": True,
+        "trigger_confirmed": True,
+        "expansion_confirmed": True,
+        "remaining_r": 1.75,
+    })
+    result = build_money_entry_shadow(row, CFG)
+    assert result["stage"] == "T2_EXPANSION_CONFIRMED"
+    assert result["shadow_trade_permission"] is False
+
+
+def test_unconfirmed_record_still_must_clear_t0_remaining_r():
+    row = base_record()
+    row["remaining_r"] = 2.5
+    result = build_money_entry_shadow(row, CFG)
+    assert result["stage"] == "NO_T0"
+    assert "T0_REMAINING_R_TOO_LOW" in result["blockers"]
+    assert result["shadow_trade_permission"] is False
+
+
 def test_wide_stop_blocks_t0():
     row = base_record()
     row["stop_distance_pct"] = 3.01
