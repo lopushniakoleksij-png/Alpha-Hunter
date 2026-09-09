@@ -134,8 +134,6 @@ def build_money_entry_shadow(record: dict[str, Any], config: dict[str, Any]) -> 
 
     if stop_distance is not None and stop_distance > thresholds["max_t0_stop_distance_pct"]:
         blockers.append("T0_STOP_GEOMETRY_TOO_WIDE")
-    if remaining_r is not None and remaining_r < thresholds["min_t0_remaining_r"]:
-        blockers.append("T0_REMAINING_R_TOO_LOW")
 
     if blockers:
         return EntryDecision(
@@ -147,26 +145,48 @@ def build_money_entry_shadow(record: dict[str, Any], config: dict[str, Any]) -> 
             evidence,
         ).to_dict()
 
-    stage = "T0_CONTROLLED_ENTRY"
-
-    t1_ready = (
+    t1_evidence = (
         evidence["acceptance_confirmed"] is True
         and evidence["trigger_confirmed"] is True
         and evidence["participation_confirmed"] is True
-        and remaining_r is not None
-        and remaining_r >= thresholds["min_t1_remaining_r"]
     )
-    if t1_ready:
-        stage = "T1_ACCEPTANCE_CONFIRMED"
-
-    t2_ready = (
-        t1_ready
+    t2_evidence = (
+        t1_evidence
         and evidence["expansion_confirmed"] is True
+    )
+
+    if (
+        t2_evidence
         and remaining_r is not None
         and remaining_r >= thresholds["min_t2_remaining_r"]
-    )
-    if t2_ready:
+    ):
         stage = "T2_EXPANSION_CONFIRMED"
+    elif (
+        t1_evidence
+        and remaining_r is not None
+        and remaining_r >= thresholds["min_t1_remaining_r"]
+    ):
+        stage = "T1_ACCEPTANCE_CONFIRMED"
+    elif (
+        remaining_r is not None
+        and remaining_r >= thresholds["min_t0_remaining_r"]
+    ):
+        stage = "T0_CONTROLLED_ENTRY"
+    else:
+        if t2_evidence:
+            blockers.append("T2_REMAINING_R_TOO_LOW")
+        elif t1_evidence:
+            blockers.append("T1_REMAINING_R_TOO_LOW")
+        else:
+            blockers.append("T0_REMAINING_R_TOO_LOW")
+        return EntryDecision(
+            ENGINE_VERSION,
+            "NO_T0",
+            direction,
+            False,
+            blockers,
+            evidence,
+        ).to_dict()
 
     return EntryDecision(
         ENGINE_VERSION,
