@@ -26,10 +26,9 @@ jobs:
       ALPHA_HUNTER_RESEARCH_SHADOW_TRADE_PERMISSION: "false"
 
     steps:
-      - name: Checkout current main without push credentials
+      - name: Checkout validation ref without push credentials
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 1
           persist-credentials: false
 
@@ -225,7 +224,8 @@ jobs:
 
           {
             echo "run_id=$RUN_ID"
-            echo "validated_ref=main"
+            echo "validated_ref=$GITHUB_SHA"
+            echo "base_ref=main"
             echo "validation_mode=evidence_only"
             echo "trade_permission=false"
             echo "research_shadow_trade_permission=false"
