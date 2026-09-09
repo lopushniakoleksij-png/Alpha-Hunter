@@ -56,6 +56,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -u
+          set +e
 
           RUN_ID="current-main-evidence-$(date -u +%Y%m%dT%H%M%SZ)"
           BASE="data/current-main-evidence/$RUN_ID"
@@ -73,6 +74,12 @@ jobs:
             LABEL="$1"
             SCRIPT="$2"
             LIMIT="${3:-12m}"
+
+            if [ ! -f "$SCRIPT" ]; then
+              printf "%s\tMISSING_FILE_%s\n" "$LABEL" "$SCRIPT" >> "$STATUS"
+              echo "Missing required script: $SCRIPT"
+              return 127
+            fi
 
             timeout "$LIMIT" python "$SCRIPT" > >(tee "$LOGDIR/$LABEL.log") 2>&1
             CODE=$?
