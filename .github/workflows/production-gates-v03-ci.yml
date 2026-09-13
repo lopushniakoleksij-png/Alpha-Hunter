@@ -1,0 +1,47 @@
+name: Production Gates v0.3 CI
+
+on:
+  pull_request:
+    paths:
+      - 'money_entry_stage_single_writer.sql'
+      - 'production_cost_risk_gates.sql'
+      - 'production_gates_v03_control_plane.sql'
+      - 'tests/test_production_gates_v03.py'
+      - '.github/workflows/production-gates-v03-ci.yml'
+      - 'PRODUCTION_GATES_V03.md'
+  push:
+    branches:
+      - 'feature/production-gates-v03-*'
+    paths:
+      - 'money_entry_stage_single_writer.sql'
+      - 'production_cost_risk_gates.sql'
+      - 'production_gates_v03_control_plane.sql'
+      - 'tests/test_production_gates_v03.py'
+      - '.github/workflows/production-gates-v03-ci.yml'
+      - 'PRODUCTION_GATES_V03.md'
+
+permissions:
+  contents: read
+
+jobs:
+  production-gates-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+      - name: Run production gate contract tests
+        run: python -m pytest -q tests/test_production_gates_v03.py
+      - name: Assert no live order route or seeded policy values
+        run: |
+          set -euo pipefail
+          files='money_entry_stage_single_writer.sql production_cost_risk_gates.sql production_gates_v03_control_plane.sql'
+          grep -F 'NO_ACTIVE_VALIDATED_THRESHOLD_SET' money_entry_stage_single_writer.sql
+          grep -F 'NO_ACTIVE_VALIDATED_COST_MODEL' production_cost_risk_gates.sql
+          grep -F 'NO_ACTIVE_VALIDATED_RISK_POLICY' production_cost_risk_gates.sql
+          grep -F "'execution_authorized',false" production_cost_risk_gates.sql
+          grep -F "alpha-hunter-portfolio-risk-veto-hourly','16 * * * *'" production_gates_v03_control_plane.sql
+          ! grep -qiE 'trade_permission[[:space:]]*=[[:space:]]*true|automatic_trade_execution[[:space:]]*=[[:space:]]*true|place[_-]order|/api/v[23]/(mix/)?(order|trade)/' $files
