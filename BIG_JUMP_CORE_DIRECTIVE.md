@@ -162,11 +162,48 @@ PR #12 implements the first production-evidence shadow path:
 - fail-closed CI tests and database constraints
 - database-native Supabase hourly runtime committed as `big_mover_supabase_runtime.sql`
 
-The hourly production-evidence loop is **ACTIVE in Supabase** at 10 minutes past every hour. It fetches the public Bitget USDT-M all-ticker universe, persists mover ground truth, refreshes the shadow ranking, and runs without a notebook, laptop, Bitget private credential, or GitHub Actions scheduler.
+PR #13 connects Big-Mover discovery to Money Entry research without granting execution:
+- explicit raw versus direction-normalized 24h movement
+- isolated public-Bitget 12H/1D parent-direction shadow collection
+- parent-direction alignment without changing the legacy 15m/1H/4H state machine
+- fail-closed scanner-direction and execution-geometry blockers
+- deterministic model-version handling
+- Supabase production-evidence sequence at :10 → :11 → :12
 
-The live end-to-end validation returned Bitget code `00000`, observed 787 USDT-M tickers, persisted fresh answer-key events, refreshed shadow rankings, and retained `shadow_only=true` / `trade_permission=false`. The current evidence mode is `HISTORICAL_BOOTSTRAP_COLLECTING_FORWARD_HORIZON`; automatic forward labels begin only after a complete 24-hour answer-key horizon is available.
+The hourly production-evidence loop is **ACTIVE in Supabase**. It fetches public Bitget data and runs without a notebook, laptop, Bitget private credential, or GitHub Actions production scheduler.
 
-No execution permission is promoted by this milestone. The next gate is forward evidence: mover recall, early-candidate precision, MAE/MFE, confirmation tax, remaining-R and false-positive cost.
+No execution permission is promoted by these milestones.
+
+## Forward Money Scorecard milestone — 2026-09-13
+
+The production-evidence shadow runtime now includes a forward Money Scorecard at **14 minutes past every hour**, after the :10 Big-Mover cycle, :11 parent-direction cycle and :12 Money Entry bridge.
+
+For every PRE-MOVER/IGNITION `SHADOW_QUEUE` bridge candidate, the scorecard freezes an append-only candidate snapshot and creates four forward horizons: **1H, 4H, 12H and 24H**.
+
+Forward path measurement uses public Bitget **3-minute market candles**, allowing up to 480 path observations over 24 hours. The scorecard measures:
+- frozen entry, stop, target and structural geometry
+- stop survival
+- MAE and MFE
+- +3%, +5% and +10% favorable-move hits
+- direction-adjusted horizon return
+- stop-first / target-first / open-at-horizon path resolution
+- explicit ambiguous handling when stop and target occur in the same 3-minute candle
+- path R before execution costs
+- remaining structural R
+- legacy DETECTION → EMERGING → CONFIRMED confirmation-tax linkage only when symbol, direction and episode timing match
+- explicit placeholders for T0/T1/T2 path outcomes
+- explicit placeholder for cost-adjusted realistic net R
+
+The first live seed persisted **34 candidates and 136 horizon records**. Fourteen candidates had direction-valid entry/stop/target geometry and twenty did not; invalid geometry is retained as false-positive evidence rather than silently discarded. Candidate and outcome safety violations were zero.
+
+The scorecard must not manufacture evidence:
+- Exact `T0/T1/T2` results stay `NOT_EVALUABLE` until exact stage snapshots exist.
+- `realistic_net_r` stays withheld until a verified execution-cost model exists; `path_r_pre_cost` is recorded separately.
+- Same-candle stop/target conflicts are marked ambiguous rather than choosing a favorable ordering.
+- Candidate snapshots are append-only.
+- `shadow_only=true` and `trade_permission=false` remain mandatory.
+
+The next evidence gate is to let the 1H/4H/12H/24H cohorts mature, then compare early-candidate precision, stop survival, MAE/MFE, remaining-R, confirmation tax, false-positive cost and path R before deciding exactly one measured strategy change.
 
 ## Continuous scope rule
 
