@@ -1,6 +1,7 @@
 from pathlib import Path
 
 SQL = Path('money_entry_stage_single_writer.sql').read_text()
+COMPACT = ''.join(SQL.split())
 
 
 def test_no_threshold_values_are_activated_or_invented():
@@ -49,7 +50,7 @@ def test_control_plane_has_single_writer_between_bridge_and_scorecard():
     assert "when 4 then 'MONEY_ENTRY_BRIDGE'" in SQL
     assert "when 5 then 'MONEY_ENTRY_STAGE'" in SQL
     assert "alpha-hunter-money-entry-stage-hourly','13 * * * *'" in SQL
-    assert 'expected_stage_count,5' in SQL
+    assert 'expected_stage_count,5' in COMPACT
 
 
 def test_future_scorecard_candidates_link_exact_stage_snapshot():
