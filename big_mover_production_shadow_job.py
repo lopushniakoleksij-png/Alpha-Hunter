@@ -13,6 +13,10 @@ from alpha_hunter.big_mover_evidence import (
     load_shadow_inputs,
     summarize_evidence,
 )
+from alpha_hunter.big_mover_priority import (
+    is_early_entry_candidate,
+    prioritize_early_money,
+)
 from alpha_hunter.big_mover_signature import (
     ENGINE_VERSION,
     build_directional_signature,
@@ -149,13 +153,20 @@ def run(
         signatures,
         universe_scan_config=universe_scan,
     )
+    ranked = prioritize_early_money(ranked)
 
     evidence_summary = summarize_evidence(evidence)
+    evidence_health = (
+        "CURRENT"
+        if window.audit_staleness_hours <= 48.0
+        else "DEGRADED_STALE_OUTCOME_LEDGER"
+    )
     payload = {
         "mode": "PRODUCTION_EVIDENCE_SHADOW_ONLY",
         "shadow_only": True,
         "trade_permission": False,
         "engine_version": ENGINE_VERSION,
+        "evidence_health": evidence_health,
         "evidence_window": window.to_dict(),
         "evidence_summary": evidence_summary,
         "source_context": context,
@@ -167,7 +178,7 @@ def run(
                 item.to_dict()
                 for item in ranked
                 if item.direction == "LONG"
-                and item.lifecycle in {"PRE_MOVER", "IGNITION"}
+                and is_early_entry_candidate(item)
             ),
             None,
         ),
@@ -176,7 +187,7 @@ def run(
                 item.to_dict()
                 for item in ranked
                 if item.direction == "SHORT"
-                and item.lifecycle in {"PRE_MOVER", "IGNITION"}
+                and is_early_entry_candidate(item)
             ),
             None,
         ),
@@ -244,6 +255,7 @@ def main() -> int:
                 "mode": payload["mode"],
                 "shadow_only": payload["shadow_only"],
                 "trade_permission": payload["trade_permission"],
+                "evidence_health": payload["evidence_health"],
                 "evidence_rows": payload["evidence_summary"]["rows"],
                 "ranked_candidates": len(payload["ranked_candidates"]),
                 "persisted_rows": payload["persisted_rows"],
