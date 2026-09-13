@@ -14,16 +14,20 @@ on:
       - "big_mover_answer_key_job.py"
       - "big_mover_shadow_schema.sql"
       - "big_mover_answer_key_schema.sql"
+      - "big_mover_parent_direction_shadow.sql"
+      - "big_mover_money_entry_bridge.sql"
       - "tests/test_big_mover_signature.py"
       - "tests/test_big_mover_evidence.py"
       - "tests/test_big_mover_priority.py"
       - "tests/test_big_mover_answer_key.py"
       - "tests/test_big_mover_forward_source.py"
+      - "tests/test_big_mover_money_entry_bridge.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
   push:
     branches:
       - "feature/big-mover-signature-engine-20260913"
+      - "feature/big-mover-money-entry-bridge-20260913"
     paths:
       - "alpha_hunter/big_mover_signature.py"
       - "alpha_hunter/big_mover_evidence.py"
@@ -35,11 +39,14 @@ on:
       - "big_mover_answer_key_job.py"
       - "big_mover_shadow_schema.sql"
       - "big_mover_answer_key_schema.sql"
+      - "big_mover_parent_direction_shadow.sql"
+      - "big_mover_money_entry_bridge.sql"
       - "tests/test_big_mover_signature.py"
       - "tests/test_big_mover_evidence.py"
       - "tests/test_big_mover_priority.py"
       - "tests/test_big_mover_answer_key.py"
       - "tests/test_big_mover_forward_source.py"
+      - "tests/test_big_mover_money_entry_bridge.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
 
@@ -64,6 +71,7 @@ jobs:
           tests/test_big_mover_priority.py
           tests/test_big_mover_answer_key.py
           tests/test_big_mover_forward_source.py
+          tests/test_big_mover_money_entry_bridge.py
       - name: Assert no trade-permission path
         run: |
           python - <<'PY'
@@ -76,7 +84,12 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          for name in ("big_mover_shadow_schema.sql", "big_mover_answer_key_schema.sql"):
+          for name in (
+              "big_mover_shadow_schema.sql",
+              "big_mover_answer_key_schema.sql",
+              "big_mover_parent_direction_shadow.sql",
+              "big_mover_money_entry_bridge.sql",
+          ):
               schema = Path(name).read_text(encoding="utf-8")
               assert "check (shadow_only = true)" in schema
               assert "check (trade_permission = false)" in schema
