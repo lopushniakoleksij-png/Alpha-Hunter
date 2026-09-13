@@ -7,6 +7,7 @@ on:
       - "alpha_hunter/big_mover_evidence.py"
       - "alpha_hunter/big_mover_priority.py"
       - "alpha_hunter/big_mover_answer_key.py"
+      - "alpha_hunter/big_mover_forward_source.py"
       - "big_mover_signature_job.py"
       - "big_mover_production_shadow_job.py"
       - "big_mover_answer_key_job.py"
@@ -16,6 +17,7 @@ on:
       - "tests/test_big_mover_evidence.py"
       - "tests/test_big_mover_priority.py"
       - "tests/test_big_mover_answer_key.py"
+      - "tests/test_big_mover_forward_source.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
   push:
@@ -26,6 +28,7 @@ on:
       - "alpha_hunter/big_mover_evidence.py"
       - "alpha_hunter/big_mover_priority.py"
       - "alpha_hunter/big_mover_answer_key.py"
+      - "alpha_hunter/big_mover_forward_source.py"
       - "big_mover_signature_job.py"
       - "big_mover_production_shadow_job.py"
       - "big_mover_answer_key_job.py"
@@ -35,6 +38,7 @@ on:
       - "tests/test_big_mover_evidence.py"
       - "tests/test_big_mover_priority.py"
       - "tests/test_big_mover_answer_key.py"
+      - "tests/test_big_mover_forward_source.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
 
@@ -58,6 +62,7 @@ jobs:
           tests/test_big_mover_evidence.py
           tests/test_big_mover_priority.py
           tests/test_big_mover_answer_key.py
+          tests/test_big_mover_forward_source.py
       - name: Assert no trade-permission path
         run: |
           python - <<'PY'
