@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from alpha_hunter.traceability import (
     ReadyEpisode,
@@ -9,6 +9,38 @@ from alpha_hunter.traceability import (
     strict_production_ready,
     update_ready_ledger,
 )
+from traceability_job import (
+    FILL_HISTORY_ENDPOINT,
+    FILL_PAGE_LIMIT,
+    load_fill_history,
+)
+
+
+class StubFillClient:
+    private_api_configured = True
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def _get(self, path, params, *, private=False):
+        self.calls.append((path, params, private))
+        return self.responses.pop(0)
+
+
+def fill_record(trade_id: str, timestamp: datetime, **overrides):
+    record = {
+        "tradeId": trade_id,
+        "orderId": f"order-{trade_id}",
+        "symbol": "TESTUSDT",
+        "price": "1.0",
+        "side": "buy",
+        "tradeSide": "close",
+        "profit": "1.0",
+        "cTime": str(int(timestamp.timestamp() * 1000)),
+    }
+    record.update(overrides)
+    return record
 
 
 def test_strict_production_ready_requires_both_gates():
@@ -95,6 +127,152 @@ def test_fill_match_is_heuristic_not_verified():
     assert episodes[0].execution_trade_ids == ["t1"]
 
 
+def test_fill_history_uses_current_endpoint_and_reports_verified_coverage():
+    start = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
+    end = start + timedelta(hours=168)
+    client = StubFillClient(
+        [
+            {
+                "fillList": [fill_record("trade-1", end - timedelta(hours=1))],
+                "endId": "trade-1",
+            }
+        ]
+    )
+
+    result = load_fill_history(client, "usdt-futures", start, end)
+
+    assert result.status == "CONNECTED"
+    assert len(result.fills) == 1
+    assert result.coverage["endpoint"] == FILL_HISTORY_ENDPOINT
+    assert result.coverage["fill_count"] == 1
+    assert result.coverage["pages_fetched"] == 1
+    assert result.coverage["complete"] is True
+    assert result.coverage["schema_validated"] is True
+    path, params, private = client.calls[0]
+    assert path == "/api/v2/mix/order/fills"
+    assert params["productType"] == "usdt-futures"
+    assert params["startTime"] == str(int(start.timestamp() * 1000))
+    assert params["endTime"] == str(int(end.timestamp() * 1000))
+    assert params["limit"] == "100"
+    assert "idLessThan" not in params
+    assert private is True
+
+
+def test_zero_fills_are_valid_schema_but_never_traceability_pass():
+    start = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
+    end = start + timedelta(hours=168)
+    result = load_fill_history(
+        StubFillClient([{"fillList": [], "endId": ""}]),
+        "usdt-futures",
+        start,
+        end,
+    )
+
+    assert result.status == "ZERO_FILLS"
+    assert result.coverage["complete"] is True
+    assert result.coverage["schema_validated"] is True
+    assert result.coverage["fill_count"] == 0
+    summary = rolling_summary(
+        [],
+        fills=result.fills,
+        now_utc=end,
+        fill_history_coverage=result.coverage,
+    )
+    assert summary["fill_history_pass_eligible"] is False
+    assert summary["traceability_status"] == "INCOMPLETE"
+
+
+def test_malformed_fill_response_is_incomplete_not_pass():
+    start = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
+    end = start + timedelta(hours=168)
+    result = load_fill_history(
+        StubFillClient([{"unexpected": []}]),
+        "usdt-futures",
+        start,
+        end,
+    )
+
+    assert result.status == "INVALID_SCHEMA"
+    assert result.coverage["complete"] is False
+    assert result.coverage["schema_validated"] is False
+    summary = rolling_summary(
+        [],
+        fills=result.fills,
+        now_utc=end,
+        fill_history_coverage=result.coverage,
+    )
+    assert summary["traceability_status"] == "INCOMPLETE"
+
+
+def test_fill_history_paginates_with_end_id_and_reports_all_pages():
+    start = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
+    end = start + timedelta(hours=168)
+    first_page = [
+        fill_record(f"trade-{index:03d}", end - timedelta(minutes=index + 1))
+        for index in range(FILL_PAGE_LIMIT)
+    ]
+    final_fill = fill_record("trade-older", start + timedelta(hours=1))
+    client = StubFillClient(
+        [
+            {"fillList": first_page, "endId": "trade-099"},
+            {"fillList": [final_fill], "endId": "trade-older"},
+        ]
+    )
+
+    result = load_fill_history(client, "usdt-futures", start, end)
+
+    assert result.status == "CONNECTED"
+    assert result.coverage["fill_count"] == FILL_PAGE_LIMIT + 1
+    assert result.coverage["pages_fetched"] == 2
+    assert result.coverage["complete"] is True
+    assert "idLessThan" not in client.calls[0][1]
+    assert client.calls[1][1]["idLessThan"] == "trade-099"
+
+
+def test_traceability_pass_requires_positive_complete_fill_coverage():
+    start = datetime(2026, 8, 23, 12, tzinfo=timezone.utc)
+    end = start + timedelta(hours=168)
+    result = load_fill_history(
+        StubFillClient(
+            [
+                {
+                    "fillList": [fill_record("trade-1", end - timedelta(hours=1))],
+                    "endId": "trade-1",
+                }
+            ]
+        ),
+        "usdt-futures",
+        start,
+        end,
+    )
+    summary = rolling_summary(
+        [],
+        fills=result.fills,
+        now_utc=end,
+        fill_history_coverage=result.coverage,
+    )
+    assert summary["fill_history_pass_eligible"] is True
+    assert summary["traceability_status"] == "PASS"
+
+    opening_fill = fill_record(
+        "trade-open",
+        end - timedelta(minutes=30),
+        tradeSide="open",
+        profit="0",
+    )
+    failed = rolling_summary(
+        [],
+        fills=[opening_fill],
+        now_utc=end,
+        fill_history_coverage={
+            **result.coverage,
+            "fill_count": 1,
+        },
+    )
+    assert failed["unlinked_open_like_fill_count"] == 1
+    assert failed["traceability_status"] == "FAIL"
+
+
 def test_rolling_summary_separates_symbols_from_episodes():
     episodes = [
         ReadyEpisode(
@@ -128,6 +306,8 @@ def test_rolling_summary_separates_symbols_from_episodes():
     assert summary["distinct_trade_ready_episodes"] == 3
     assert summary["trade_ready_long"] == 2
     assert summary["trade_ready_short"] == 1
+    assert summary["fill_history_status"] == "NOT_EVALUATED"
+    assert summary["traceability_status"] == "INCOMPLETE"
 
 
 def test_readiness_diagnostic_ranks_blockers_and_closest_candidates():
