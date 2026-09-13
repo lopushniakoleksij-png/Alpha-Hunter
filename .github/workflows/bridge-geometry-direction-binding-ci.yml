@@ -1,0 +1,35 @@
+name: Bridge Geometry Direction Binding CI
+
+on:
+  pull_request:
+    paths:
+      - 'bridge_geometry_direction_binding_v01.sql'
+      - 'tests/test_bridge_geometry_direction_binding_v01.py'
+      - '.github/workflows/bridge-geometry-direction-binding-ci.yml'
+  push:
+    paths:
+      - 'bridge_geometry_direction_binding_v01.sql'
+      - 'tests/test_bridge_geometry_direction_binding_v01.py'
+      - '.github/workflows/bridge-geometry-direction-binding-ci.yml'
+
+jobs:
+  bridge-geometry-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test runner
+        run: python -m pip install pytest
+      - name: Run bridge direction-binding contract tests
+        run: python -m pytest -q tests/test_bridge_geometry_direction_binding_v01.py
+      - name: Independent safety assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "new.trade_permission := false" bridge_geometry_direction_binding_v01.sql
+          grep -Fq "new.shadow_only := true" bridge_geometry_direction_binding_v01.sql
+          grep -Fq "EXECUTION_GEOMETRY_DIRECTION_MISMATCH" bridge_geometry_direction_binding_v01.sql
+          grep -Fq "research_geometry_promoted', false" bridge_geometry_direction_binding_v01.sql
+          ! grep -Eiq 'trade_permission[[:space:]]*:=[[:space:]]*true|place[-_]order|cancel[-_]order' bridge_geometry_direction_binding_v01.sql
