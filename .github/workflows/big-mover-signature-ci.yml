@@ -1,0 +1,26 @@
+name: Big Mover Signature CI
+
+on:
+  pull_request:
+    paths:
+      - "alpha_hunter/big_mover_signature.py"
+      - "tests/test_big_mover_signature.py"
+      - "BIG_MOVER_FIRST_ARCHITECTURE.md"
+      - ".github/workflows/big-mover-signature-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile shadow engine
+        run: python -m py_compile alpha_hunter/big_mover_signature.py
+      - name: Run Big Mover Signature tests
+        run: python -m unittest -v tests.test_big_mover_signature
