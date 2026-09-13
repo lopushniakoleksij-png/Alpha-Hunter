@@ -1,0 +1,43 @@
+name: Big-Mover Signature Shadow CI
+
+on:
+  pull_request:
+    paths:
+      - "alpha_hunter/big_mover_signature.py"
+      - "big_mover_signature_job.py"
+      - "tests/test_big_mover_signature.py"
+      - "BIG_JUMP_CORE_DIRECTIVE.md"
+      - ".github/workflows/big-mover-signature-ci.yml"
+  push:
+    branches:
+      - "feature/big-mover-signature-engine-20260913"
+    paths:
+      - "alpha_hunter/big_mover_signature.py"
+      - "big_mover_signature_job.py"
+      - "tests/test_big_mover_signature.py"
+      - "BIG_JUMP_CORE_DIRECTIVE.md"
+      - ".github/workflows/big-mover-signature-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-shadow-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Run Big-Mover Signature tests
+        run: python -m pytest -q tests/test_big_mover_signature.py
+      - name: Assert no trade-permission path
+        run: |
+          python - <<'PY'
+          from alpha_hunter.big_mover_signature import SHADOW_ONLY, TRADE_PERMISSION
+          assert SHADOW_ONLY is True
+          assert TRADE_PERMISSION is False
+          print("shadow_only=true trade_permission=false")
+          PY
