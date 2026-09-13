@@ -1,24 +1,49 @@
-# Alpha Hunter — Big Jump Money Strategy Core Directive
+# Alpha Hunter — Bitget Futures Big-Mover-First Core Directive
 
 Status: **CORE / PERMANENT RESEARCH & PRODUCTION-DEVELOPMENT DIRECTIVE**
 
 ## Mission
 
-Alpha Hunter must continuously investigate materially large crypto price moves across the full Bitget USDT-M futures universe and convert that evidence into a validated, executable strategy for entering major expansions early enough to make money with controlled downside.
+Alpha Hunter must be built backward from the actual biggest LONG and SHORT moves in the full Bitget USDT-M futures universe.
 
-The first reconstruction batch (4USDT, SUSHIUSDT, 1000CATUSDT, BUSDT, XANUSDT) is only the starting sample. It is **not** a fixed watchlist. Every future materially informative large mover, LONG or SHORT, must be eligible for investigation and addition to the dataset — including coins never previously surfaced by Alpha Hunter.
+The system must continuously identify materially large movers, reconstruct what was objectively visible before expansion, extract repeatable pre-move signatures, and compare the live universe against those signatures so future movers can be surfaced while they are still early enough for controlled-risk execution.
 
-## Core question
+The first reconstruction batch (4USDT, SUSHIUSDT, 1000CATUSDT, BUSDT, XANUSDT) is only a starting sample. It is **not** a fixed watchlist.
 
-> At the earliest objectively identifiable point before a major expansion, could Alpha Hunter have entered LONG or SHORT with controlled downside and positive expectancy — and if not, exactly what prevented it?
+## Primary question
 
-## Required classification
+> What did the actual Bitget Futures big movers look like before they became obvious movers, which of those features repeat out of sample, and which live coins look like that now while controlled downside and realistic remaining R still exist?
 
-Every significant mover must be classified as:
+## Big-Mover-First learning loop
 
-- FOUND & TRADED
-- FOUND BUT MISSED
-- NOT FOUND
+**ACTUAL BITGET MOVERS → RECONSTRUCT PRE-MOVE STATE → LEARN LONG/SHORT SIGNATURES → COMPARE LIVE UNIVERSE → RANK EARLY CANDIDATES → SHADOW OUTCOME → FEED VERIFIED EVIDENCE BACK**
+
+Every protected universe cycle should preserve the distinction between:
+
+1. **Ground truth:** actual current/recent Bitget USDT-M Futures biggest gainers and losers.
+2. **Historical reconstruction:** what was visible at T−24h, T−12h, T−6h, T−3h, T−1h, ignition, breakout and expansion.
+3. **Live prediction:** which not-yet-obvious coins most resemble validated pre-move signatures now.
+
+Historical explanation must never be presented as forward predictive evidence unless it survives control samples and out-of-sample testing.
+
+## Required mover classification
+
+Every material mover must be classified as exactly one of:
+
+- **FOUND & TRADED**
+- **FOUND BUT MISSED**
+- **LATE DETECTED**
+- **NOT FOUND**
+- **NOT AUDITABLE**
+
+A miss must also identify the primary failure class where evidence allows:
+
+- discovery
+- direction
+- readiness gate
+- entry timing
+- stop / management
+- data quality
 
 ## Required reconstruction record
 
@@ -26,22 +51,65 @@ For each material mover, persist and analyze:
 
 - symbol and direction
 - first Alpha Hunter detection timestamp
-- earliest objectively identifiable entry window
-- entry price / zone
+- T−24h / T−12h / T−6h / T−3h / T−1h snapshots where evidence exists
+- earliest objectively detectable anomaly
+- earliest evidence-backed LONG / SHORT bias
+- earliest objectively identifiable controlled-risk entry window
+- entry price / zone and structural invalidation
 - lifecycle state
-- 1H / 4H / 12H / 1D directional context where available
+- 1H / 12H / 1D / 1W directional context where available
 - participation acceleration: turnover/volume, OI, persistence, relative strength/weakness
 - liquidity/executability: spread, depth, slippage risk, mark/index alignment, venue anomalies
 - price acceptance: breakout hold, retest quality, HL/LH structure, continuation participation
+- taker/order-flow imbalance when available
+- funding and funding change
+- spot-perp confirmation when available
+- volatility compression → expansion behaviour
+- sweep / reclaim / acceptance evidence
+- liquidation / squeeze conditions when available
+- catalyst / narrative context when available
 - exact gate, score, threshold, or rule that blocked or delayed execution
 - maximum adverse excursion (MAE) before expansion
 - maximum favorable excursion (MFE)
 - realistic stop / invalidation
-- leverage survivability under normal pullback behavior
+- leverage survivability under normal pullback behaviour
 - remaining realistic R at each decision point
 - confirmation tax: price/R lost while waiting for extra confirmation
 - theoretical PnL versus realistically achievable PnL after fees, slippage and survivability constraints
-- final lesson for the Money Entry Engine
+- final lesson for the Money Entry Engine and live scanner
+
+## Lifecycle
+
+Use the common mover lifecycle:
+
+**PRE-MOVER → IGNITION → EXPANSION → EXTENDED**
+
+- **PRE-MOVER:** abnormal behaviour exists before an obvious directional repricing.
+- **IGNITION:** direction is becoming measurable and a controlled-risk entry may still exist.
+- **EXPANSION:** the move is underway; new entry is retest-only and must still pass remaining-R / no-chase checks.
+- **EXTENDED:** research/management state; do not create a fresh chase entry.
+
+The primary new-entry research zone is PRE-MOVER / IGNITION plus a controlled first retest when evidence supports it.
+
+## Separate LONG and SHORT models
+
+LONG and SHORT expansions must be learned and ranked separately. Do not assume a downside liquidation cascade has the same precursor structure as an upside squeeze or accumulation-driven breakout.
+
+## Signature engine
+
+The Big-Mover Signature Engine is the bridge between missed-mover research and live discovery.
+
+Its first shadow implementation must:
+
+1. learn directional feature profiles only from **pre-expansion** mover snapshots;
+2. require **false-positive / non-mover controls** so hindsight winners cannot define the model alone;
+3. derive feature importance from observed mover-vs-control separation rather than adding new hand-written weights;
+4. compare live LONG and SHORT candidates with the corresponding learned signature;
+5. expose similarity, feature coverage, lifecycle, evidence contributions and blockers;
+6. keep `shadow_only=true` and `trade_permission=false`;
+7. never turn an EXTENDED candidate into a new-entry queue item.
+
+The signature score is a research-ranking signal, **not** a trade authorization and not a claimed probability of profit.
 
 ## Dataset design
 
@@ -66,6 +134,7 @@ Track at minimum:
 
 - detection recall of major movers
 - precision of early-entry candidates
+- LONG and SHORT signature performance separately
 - MAE distribution before expansion
 - MFE distribution
 - confirmation tax by gate
@@ -74,22 +143,24 @@ Track at minimum:
 - realized/shadow expectancy after fees and slippage
 - false-positive rate
 - opportunity cost
+- feature coverage and signature stability over time
 
 ## Relationship to Money Entry Engine
 
-This is a core evidence stream for the Money Entry Engine. The engine must ultimately answer both:
+This is a core evidence stream for the Money Entry Engine. The system must ultimately answer both:
 
-1. Which coin is showing a repeatable pre-expansion signature?
-2. Where can we enter with a stop/leverage combination that survives normal pullbacks while preserving positive expectancy?
+1. Which live coin is showing a repeatable pre-expansion signature?
+2. Where can Alpha Hunter enter with a stop/leverage combination that survives normal pullbacks while preserving positive expectancy?
 
 The objective is to identify and queue opportunities before most of the move is consumed by confirmation.
 
 ## Production safety boundary
 
-- Keep this work research/shadow-only until validated.
+- Keep signature learning/ranking research/shadow-only until validated.
 - Do not weaken live execution safeguards to increase signal count.
 - Do not use leverage to compensate for weak edge or poor entry quality.
 - Do not modify live trade permission from retrospective evidence alone.
+- Do not allow signature similarity to bypass liquidity, direction, structural invalidation, remaining-R, no-chase or position-conflict gates.
 - Production promotion requires explicit forward evidence, regression checks and safety review.
 
 ## Continuous scope rule
