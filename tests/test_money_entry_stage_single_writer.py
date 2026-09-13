@@ -50,7 +50,8 @@ def test_control_plane_has_single_writer_between_bridge_and_scorecard():
     assert "when 4 then 'MONEY_ENTRY_BRIDGE'" in SQL
     assert "when 5 then 'MONEY_ENTRY_STAGE'" in SQL
     assert "alpha-hunter-money-entry-stage-hourly','13 * * * *'" in SQL
-    assert 'expected_stage_count,5' in COMPACT
+    assert 'altercolumnexpected_stage_countsetdefault5' in COMPACT.lower()
+    assert "'cloud-control-plane-v0.2-money-entry-stage'" in SQL
 
 
 def test_future_scorecard_candidates_link_exact_stage_snapshot():
