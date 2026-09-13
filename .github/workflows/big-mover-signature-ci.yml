@@ -6,12 +6,16 @@ on:
       - "alpha_hunter/big_mover_signature.py"
       - "alpha_hunter/big_mover_evidence.py"
       - "alpha_hunter/big_mover_priority.py"
+      - "alpha_hunter/big_mover_answer_key.py"
       - "big_mover_signature_job.py"
       - "big_mover_production_shadow_job.py"
+      - "big_mover_answer_key_job.py"
       - "big_mover_shadow_schema.sql"
+      - "big_mover_answer_key_schema.sql"
       - "tests/test_big_mover_signature.py"
       - "tests/test_big_mover_evidence.py"
       - "tests/test_big_mover_priority.py"
+      - "tests/test_big_mover_answer_key.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
   push:
@@ -21,12 +25,16 @@ on:
       - "alpha_hunter/big_mover_signature.py"
       - "alpha_hunter/big_mover_evidence.py"
       - "alpha_hunter/big_mover_priority.py"
+      - "alpha_hunter/big_mover_answer_key.py"
       - "big_mover_signature_job.py"
       - "big_mover_production_shadow_job.py"
+      - "big_mover_answer_key_job.py"
       - "big_mover_shadow_schema.sql"
+      - "big_mover_answer_key_schema.sql"
       - "tests/test_big_mover_signature.py"
       - "tests/test_big_mover_evidence.py"
       - "tests/test_big_mover_priority.py"
+      - "tests/test_big_mover_answer_key.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
 
@@ -49,6 +57,7 @@ jobs:
           tests/test_big_mover_signature.py
           tests/test_big_mover_evidence.py
           tests/test_big_mover_priority.py
+          tests/test_big_mover_answer_key.py
       - name: Assert no trade-permission path
         run: |
           python - <<'PY'
@@ -57,13 +66,14 @@ jobs:
           assert TRADE_PERMISSION is False
           print("shadow_only=true trade_permission=false")
           PY
-      - name: Assert persistent schema is fail-closed
+      - name: Assert persistent schemas are fail-closed
         run: |
           python - <<'PY'
           from pathlib import Path
-          schema = Path("big_mover_shadow_schema.sql").read_text(encoding="utf-8")
-          assert "check (shadow_only = true)" in schema
-          assert "check (trade_permission = false)" in schema
-          assert "revoke all" in schema
-          print("persistent shadow schema fail-closed")
+          for name in ("big_mover_shadow_schema.sql", "big_mover_answer_key_schema.sql"):
+              schema = Path(name).read_text(encoding="utf-8")
+              assert "check (shadow_only = true)" in schema
+              assert "check (trade_permission = false)" in schema
+              assert "revoke all" in schema
+          print("persistent big-mover schemas fail-closed")
           PY
