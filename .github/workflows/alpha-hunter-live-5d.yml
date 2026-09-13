@@ -1,107 +1,87 @@
-name: Alpha Hunter 5-Day Cloud Live
+name: Alpha Hunter Current-Main Evidence Validation
 
 on:
-  schedule:
-    - cron: "0 * * * *"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/alpha-hunter-live-5d.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: alpha-hunter-5d-cloud-live
+  group: alpha-hunter-current-main-evidence-validation
   cancel-in-progress: false
 
 jobs:
-  live-cycle:
+  evidence-validation:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
+    env:
+      PYTHONPATH: .
+      ALPHA_HUNTER_VALIDATION_MODE: evidence_only
+      ALPHA_HUNTER_TRADE_PERMISSION: "false"
+      ALPHA_HUNTER_RESEARCH_SHADOW_TRADE_PERMISSION: "false"
 
     steps:
-      - name: Five-day window guard
-        id: window
-        shell: bash
-        run: |
-          NOW=$(date -u +%s)
-          START=$(date -u -d '2026-08-16T21:45:00Z' +%s)
-          END=$(date -u -d '2026-08-21T21:45:00Z' +%s)
-
-          if [ "$NOW" -ge "$START" ] && [ "$NOW" -lt "$END" ]; then
-            echo "active=true" >> "$GITHUB_OUTPUT"
-            echo "Alpha Hunter 5-day cloud window ACTIVE"
-          else
-            echo "active=false" >> "$GITHUB_OUTPUT"
-            echo "Outside Alpha Hunter 5-day cloud window"
-          fi
-
-      - name: Checkout frozen live branch
-        if: steps.window.outputs.active == 'true'
+      - name: Checkout validation ref without push credentials
         uses: actions/checkout@v4
         with:
-          ref: live/alpha-hunter-5d-20260816
-          fetch-depth: 0
-          persist-credentials: true
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Set up Python
-        if: steps.window.outputs.active == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.9"
           cache: pip
 
       - name: Install dependencies
-        if: steps.window.outputs.active == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest
 
-      - name: Run safe Alpha Hunter cloud chain
-        if: steps.window.outputs.active == 'true'
+      - name: Verify tests on current main
+        run: python -m pytest -q tests
+
+      - name: Run evidence-only current-main chain
+        id: evidence
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          set -uo pipefail
+          set -u
+          set +e
 
-          RUN_ID="cloud5d-$(date -u +%Y%m%dT%H%M%SZ)"
+          RUN_ID="current-main-evidence-$(date -u +%Y%m%dT%H%M%SZ)"
+          BASE="data/current-main-evidence/$RUN_ID"
+          LOGDIR="$BASE/logs"
+          STATUS="$BASE/status.tsv"
+          SUMMARY="$BASE/summary.txt"
 
-          echo "ALPHA_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          mkdir -p "$LOGDIR" "$BASE/raw" "$BASE/deep-snapshots"
+          printf "step\tstatus\n" > "$STATUS"
 
           export ALPHA_HUNTER_PRODUCTION_RUN_ID="$RUN_ID"
-          export ALPHA_HUNTER_PRODUCTION_VERSION="cloud-5d-safe-v1"
-
-          BASE="data/cloud-live-5d"
-          LOGDIR="$BASE/logs/$RUN_ID"
-          STATUSDIR="$BASE/status"
-          RAWDIR="$BASE/raw"
-          DEEPDIR="$BASE/deep-snapshots"
-
-          mkdir -p \
-            "$LOGDIR" \
-            "$STATUSDIR" \
-            "$RAWDIR" \
-            "$DEEPDIR"
-
-          STATUS="$STATUSDIR/$RUN_ID.tsv"
-
-          printf "step\tstatus\n" > "$STATUS"
+          export ALPHA_HUNTER_PRODUCTION_VERSION="current-main-evidence-v1"
 
           run_one () {
             LABEL="$1"
             SCRIPT="$2"
             LIMIT="${3:-12m}"
 
-            echo
-            echo "============================================================"
-            echo "$LABEL"
-            echo "============================================================"
+            if [ ! -f "$SCRIPT" ]; then
+              printf "%s\tMISSING_FILE_%s\n" "$LABEL" "$SCRIPT" >> "$STATUS"
+              echo "Missing required script: $SCRIPT"
+              return 127
+            fi
 
-            timeout "$LIMIT" \
-              python "$SCRIPT" \
-              2>&1 | tee "$LOGDIR/$LABEL.log"
-
-            CODE=${PIPESTATUS[0]}
+            timeout "$LIMIT" python "$SCRIPT" > >(tee "$LOGDIR/$LABEL.log") 2>&1
+            CODE=$?
 
             if [ "$CODE" -eq 0 ]; then
               printf "%s\tPASS\n" "$LABEL" >> "$STATUS"
@@ -113,17 +93,10 @@ jobs:
           }
 
           skip_one () {
-            LABEL="$1"
-            REASON="$2"
-
-            printf "%s\tSKIPPED_%s\n" \
-              "$LABEL" "$REASON" >> "$STATUS"
+            printf "%s\tSKIPPED_%s\n" "$1" "$2" >> "$STATUS"
           }
 
-          echo "=== IMMUTABLE RAW BITGET BACKUP ==="
-
-          python - <<'PY' \
-            2>&1 | tee "$LOGDIR/raw_universe.log"
+          python - <<'PY' > >(tee "$LOGDIR/raw_universe.log") 2>&1
           import gzip
           import json
           import os
@@ -134,120 +107,44 @@ jobs:
           from alpha_hunter.collector import load_config
 
           config = load_config(Path("config.json"))
-
+          product_type = str(config.get("product_type", "usdt-futures"))
           client = BitgetClient.from_environment(
-              timeout=int(
-                  config.get(
-                      "request_timeout_seconds",
-                      12,
-                  )
-              ),
-              max_retries=int(
-                  config.get(
-                      "max_retries",
-                      3,
-                  )
-              ),
+              timeout=int(config.get("request_timeout_seconds", 12)),
+              max_retries=int(config.get("max_retries", 3)),
           )
-
-          product_type = str(
-              config.get(
-                  "product_type",
-                  "usdt-futures",
-              )
-          )
-
           payload = {
-              "run_id": os.environ[
-                  "ALPHA_HUNTER_PRODUCTION_RUN_ID"
-              ],
-              "captured_at_utc":
-                  datetime.now(
-                      timezone.utc
-                  ).isoformat(),
+              "run_id": os.environ["ALPHA_HUNTER_PRODUCTION_RUN_ID"],
+              "captured_at_utc": datetime.now(timezone.utc).isoformat(),
               "product_type": product_type,
-              "contracts":
-                  client.contracts(
-                      product_type
-                  ) or [],
-              "instruments":
-                  client.instruments(
-                      product_type
-                  ) or [],
-              "tickers":
-                  client.tickers(
-                      product_type
-                  ) or [],
+              "contracts": client.contracts(product_type) or [],
+              "instruments": client.instruments(product_type) or [],
+              "tickers": client.tickers(product_type) or [],
               "trade_permission": False,
-              "source":
-                  "BITGET_PUBLIC_API",
+              "research_shadow_trade_permission": False,
+              "source": "BITGET_PUBLIC_API",
           }
-
-          path = (
-              Path("data/cloud-live-5d/raw")
-              / (
-                  payload["run_id"]
-                  + ".json.gz"
-              )
-          )
-
-          path.parent.mkdir(
-              parents=True,
-              exist_ok=True,
-          )
-
-          with gzip.open(
-              path,
-              "wt",
-              encoding="utf-8",
-          ) as handle:
-              json.dump(
-                  payload,
-                  handle,
-                  separators=(",", ":"),
-              )
-
-          print(
-              "Raw universe saved:",
-              path,
-          )
+          path = Path("data/current-main-evidence") / payload["run_id"] / "raw" / "universe.json.gz"
+          path.parent.mkdir(parents=True, exist_ok=True)
+          with gzip.open(path, "wt", encoding="utf-8") as handle:
+              json.dump(payload, handle, separators=(",", ":"))
+          print(f"raw_universe_path={path}")
+          print(f"contracts={len(payload['contracts'])}")
+          print(f"instruments={len(payload['instruments'])}")
+          print(f"tickers={len(payload['tickers'])}")
           PY
-
-          RAW_CODE=${PIPESTATUS[0]}
+          RAW_CODE=$?
 
           if [ "$RAW_CODE" -eq 0 ]; then
             printf "raw_universe\tPASS\n" >> "$STATUS"
           else
-            printf "raw_universe\tFAIL_%s\n" \
-              "$RAW_CODE" >> "$STATUS"
+            printf "raw_universe\tFAIL_%s\n" "$RAW_CODE" >> "$STATUS"
           fi
 
-          echo "=== STEP 1 — LIVE SCAN ==="
-
-          run_one \
-            live_scan \
-            run.py \
-            15m
-
+          run_one live_scan run.py 15m
           LIVE_CODE=$?
 
           if [ -f data/snapshots/latest.json ]; then
-            gzip -9 -c \
-              data/snapshots/latest.json \
-              > "$DEEPDIR/$RUN_ID.json.gz"
-          fi
-
-          DB_READY=0
-
-          if \
-            [ -n "${SUPABASE_URL:-}" ] \
-            && \
-            [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]
-          then
-            DB_READY=1
-            echo "Supabase cloud persistence: CONFIGURED"
-          else
-            echo "Supabase cloud persistence: NOT CONFIGURED"
+            gzip -9 -c data/snapshots/latest.json > "$BASE/deep-snapshots/latest.json.gz"
           fi
 
           if [ "$LIVE_CODE" -ne 0 ]; then
@@ -261,8 +158,7 @@ jobs:
             skip_one v76_post_confirmation LIVE_SCAN_FAILED
             skip_one v77_execution LIVE_SCAN_FAILED
             skip_one v79_missed_mover LIVE_SCAN_FAILED
-
-          elif [ "$DB_READY" -ne 1 ]; then
+          elif [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
             skip_one v79_universe SUPABASE_NOT_CONFIGURED
             skip_one guardrails SUPABASE_NOT_CONFIGURED
             skip_one v74_tracking SUPABASE_NOT_CONFIGURED
@@ -273,13 +169,8 @@ jobs:
             skip_one v76_post_confirmation SUPABASE_NOT_CONFIGURED
             skip_one v77_execution SUPABASE_NOT_CONFIGURED
             skip_one v79_missed_mover SUPABASE_NOT_CONFIGURED
-
           else
-            run_one \
-              v79_universe \
-              v79_universe_hourly_collector.py \
-              8m
-
+            run_one v79_universe v79_universe_hourly_collector.py 8m
             LEDGER_CODE=$?
 
             if [ "$LEDGER_CODE" -ne 0 ]; then
@@ -291,14 +182,8 @@ jobs:
               skip_one v76_direction DATA_GATE_FAILED
               skip_one v76_post_confirmation DATA_GATE_FAILED
               skip_one v77_execution DATA_GATE_FAILED
-              skip_one v79_missed_mover DATA_GATE_FAILED
-
             else
-              run_one \
-                guardrails \
-                production_guardrails.py \
-                8m
-
+              run_one guardrails production_guardrails.py 8m
               GUARD_CODE=$?
 
               if [ "$GUARD_CODE" -ne 0 ]; then
@@ -309,11 +194,8 @@ jobs:
                 skip_one v76_direction GUARDRAIL_FAILED
                 skip_one v76_post_confirmation GUARDRAIL_FAILED
                 skip_one v77_execution GUARDRAIL_FAILED
-                skip_one v79_missed_mover GUARDRAIL_FAILED
-
               else
                 CHAIN_OK=1
-
                 for ENTRY in \
                   "v74_tracking:v74_tracking_job.py:8m" \
                   "v75_lifecycle:v75_lifecycle_job.py:8m" \
@@ -323,90 +205,75 @@ jobs:
                   "v76_post_confirmation:v76_post_confirmation_tracker.py:10m" \
                   "v77_execution:v77_execution_feasibility_shadow.py:10m"
                 do
-                  IFS=: read -r \
-                    LABEL SCRIPT LIMIT \
-                    <<< "$ENTRY"
-
+                  IFS=: read -r LABEL SCRIPT LIMIT <<< "$ENTRY"
                   if [ "$CHAIN_OK" -eq 1 ]; then
-                    run_one \
-                      "$LABEL" \
-                      "$SCRIPT" \
-                      "$LIMIT"
-
+                    run_one "$LABEL" "$SCRIPT" "$LIMIT"
                     CODE=$?
-
                     if [ "$CODE" -ne 0 ]; then
                       CHAIN_OK=0
                     fi
                   else
-                    skip_one \
-                      "$LABEL" \
-                      UPSTREAM_MODEL_FAILED
+                    skip_one "$LABEL" UPSTREAM_MODEL_FAILED
                   fi
                 done
-
-                # Independent recall audit.
-                run_one \
-                  v79_missed_mover \
-                  v79_missed_mover_recall_auditor.py \
-                  10m
               fi
             fi
-          fi
 
-          echo
-          echo "=== SAFETY ASSERTIONS ==="
-          echo "production_runner.py: BLOCKED"
-          echo "v78_timing_rr_decay_shadow.py: BLOCKED"
-          echo "v710_early_execution_rr_shadow.py: BLOCKED"
-          echo "automatic trading: DISABLED"
-          echo "trade permission: FALSE"
+            run_one v79_missed_mover v79_missed_mover_recall_auditor.py 10m
+          fi
 
           {
+            echo "run_id=$RUN_ID"
+            echo "validated_ref=$GITHUB_SHA"
+            echo "base_ref=main"
+            echo "validation_mode=evidence_only"
+            echo "trade_permission=false"
+            echo "research_shadow_trade_permission=false"
+            echo "repository_push=disabled"
+            echo "production_runner=not_invoked"
             echo
-            echo "Run: $RUN_ID"
-            echo "UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "Supabase configured: $DB_READY"
-            echo "Blocked: production_runner.py"
-            echo "Blocked: v78_timing_rr_decay_shadow.py"
-            echo "Blocked: v710_early_execution_rr_shadow.py"
-          } >> "$BASE/cloud-run-ledger.txt"
+            cat "$STATUS"
+          } | tee "$SUMMARY"
 
-          exit 0
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Commit hourly evidence to live branch
-        if: always() && steps.window.outputs.active == 'true'
+      - name: Upload append-only validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-hunter-current-main-evidence-${{ steps.evidence.outputs.run_id }}
+          path: data/current-main-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce evidence gate
+        if: always()
         shell: bash
         run: |
-          git config \
-            user.name \
-            "alpha-hunter-cloud"
+          python - <<'PY'
+          from pathlib import Path
 
-          git config \
-            user.email \
-            "alpha-hunter-cloud@users.noreply.github.com"
+          status_files = list(Path("data/current-main-evidence").glob("*/status.tsv"))
+          if len(status_files) != 1:
+              raise SystemExit(f"expected one status ledger, found {len(status_files)}")
 
-          git add -f \
-            data/cloud-live-5d
+          rows = {}
+          for line in status_files[0].read_text(encoding="utf-8").splitlines()[1:]:
+              if not line.strip():
+                  continue
+              step, status = line.split("\t", 1)
+              rows[step] = status
 
-          if [ -f data/state-history.jsonl ]; then
-            git add -f \
-              data/state-history.jsonl
-          fi
+          required = ("raw_universe", "live_scan", "v79_universe", "guardrails")
+          failures = {step: rows.get(step, "MISSING") for step in required if rows.get(step) != "PASS"}
+          chain_failures = {step: status for step, status in rows.items() if status.startswith("FAIL_")}
 
-          if [ -f data/snapshots/latest.json ]; then
-            git add -f \
-              data/snapshots/latest.json
-          fi
+          if failures or chain_failures:
+              print(f"required_gate_failures={failures}")
+              print(f"chain_failures={chain_failures}")
+              raise SystemExit(1)
 
-          if git diff --cached --quiet; then
-            echo "No cloud evidence changes to commit."
-            exit 0
-          fi
-
-          git commit \
-            -m "Cloud live evidence ${ALPHA_RUN_ID:-unknown}"
-
-          git push \
-            origin \
-            HEAD:live/alpha-hunter-5d-20260816
+          print("CURRENT_MAIN_EVIDENCE_GATE=PASS")
+          print("trade_permission=false")
+          print("research_shadow_trade_permission=false")
+          PY
