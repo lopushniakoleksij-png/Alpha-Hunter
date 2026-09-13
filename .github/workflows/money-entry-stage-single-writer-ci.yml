@@ -1,0 +1,38 @@
+name: Money Entry Stage Single Writer CI
+
+on:
+  pull_request:
+    paths:
+      - 'money_entry_stage_single_writer.sql'
+      - 'tests/test_money_entry_stage_single_writer.py'
+      - '.github/workflows/money-entry-stage-single-writer-ci.yml'
+  push:
+    branches:
+      - 'feature/money-entry-single-writer-*'
+    paths:
+      - 'money_entry_stage_single_writer.sql'
+      - 'tests/test_money_entry_stage_single_writer.py'
+      - '.github/workflows/money-entry-stage-single-writer-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  money-entry-stage-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+      - name: Run Money Entry stage contract tests
+        run: python -m pytest -q tests/test_money_entry_stage_single_writer.py
+      - name: Assert no production threshold or order-path activation
+        run: |
+          set -euo pipefail
+          grep -F "NO_ACTIVE_VALIDATED_THRESHOLD_SET" money_entry_stage_single_writer.sql
+          grep -F "alpha-hunter-money-entry-stage-hourly','13 * * * *'" money_entry_stage_single_writer.sql
+          grep -F "check (trade_permission=false)" money_entry_stage_single_writer.sql
+          ! grep -qiE 'trade_permission[[:space:]]*=[[:space:]]*true|shadow_only[[:space:]]*=[[:space:]]*false|place[-_]order' money_entry_stage_single_writer.sql
