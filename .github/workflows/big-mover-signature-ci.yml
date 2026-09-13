@@ -1,0 +1,85 @@
+name: Big-Mover Signature Shadow CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "alpha_hunter/big_mover_signature.py"
+      - "alpha_hunter/big_mover_evidence.py"
+      - "alpha_hunter/big_mover_priority.py"
+      - "alpha_hunter/big_mover_answer_key.py"
+      - "alpha_hunter/big_mover_forward_source.py"
+      - "big_mover_signature_job.py"
+      - "big_mover_production_shadow_job.py"
+      - "big_mover_answer_key_job.py"
+      - "big_mover_shadow_schema.sql"
+      - "big_mover_answer_key_schema.sql"
+      - "tests/test_big_mover_signature.py"
+      - "tests/test_big_mover_evidence.py"
+      - "tests/test_big_mover_priority.py"
+      - "tests/test_big_mover_answer_key.py"
+      - "tests/test_big_mover_forward_source.py"
+      - "BIG_JUMP_CORE_DIRECTIVE.md"
+      - ".github/workflows/big-mover-signature-ci.yml"
+  push:
+    branches:
+      - "feature/big-mover-signature-engine-20260913"
+    paths:
+      - "alpha_hunter/big_mover_signature.py"
+      - "alpha_hunter/big_mover_evidence.py"
+      - "alpha_hunter/big_mover_priority.py"
+      - "alpha_hunter/big_mover_answer_key.py"
+      - "alpha_hunter/big_mover_forward_source.py"
+      - "big_mover_signature_job.py"
+      - "big_mover_production_shadow_job.py"
+      - "big_mover_answer_key_job.py"
+      - "big_mover_shadow_schema.sql"
+      - "big_mover_answer_key_schema.sql"
+      - "tests/test_big_mover_signature.py"
+      - "tests/test_big_mover_evidence.py"
+      - "tests/test_big_mover_priority.py"
+      - "tests/test_big_mover_answer_key.py"
+      - "tests/test_big_mover_forward_source.py"
+      - "BIG_JUMP_CORE_DIRECTIVE.md"
+      - ".github/workflows/big-mover-signature-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test-shadow-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt pytest
+      - name: Run Big-Mover Signature tests
+        run: >-
+          python -m pytest -q
+          tests/test_big_mover_signature.py
+          tests/test_big_mover_evidence.py
+          tests/test_big_mover_priority.py
+          tests/test_big_mover_answer_key.py
+          tests/test_big_mover_forward_source.py
+      - name: Assert no trade-permission path
+        run: |
+          python - <<'PY'
+          from alpha_hunter.big_mover_signature import SHADOW_ONLY, TRADE_PERMISSION
+          assert SHADOW_ONLY is True
+          assert TRADE_PERMISSION is False
+          print("shadow_only=true trade_permission=false")
+          PY
+      - name: Assert persistent schemas are fail-closed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          for name in ("big_mover_shadow_schema.sql", "big_mover_answer_key_schema.sql"):
+              schema = Path(name).read_text(encoding="utf-8")
+              assert "check (shadow_only = true)" in schema
+              assert "check (trade_permission = false)" in schema
+              assert "revoke all" in schema
+          print("persistent big-mover schemas fail-closed")
+          PY

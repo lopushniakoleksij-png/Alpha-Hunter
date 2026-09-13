@@ -12,13 +12,61 @@ The first reconstruction batch (4USDT, SUSHIUSDT, 1000CATUSDT, BUSDT, XANUSDT) i
 
 > At the earliest objectively identifiable point before a major expansion, could Alpha Hunter have entered LONG or SHORT with controlled downside and positive expectancy — and if not, exactly what prevented it?
 
+## Big-Mover-First production-development architecture
+
+The core learning loop is:
+
+**ACTUAL BITGET MOVERS → PRE-MOVE RECONSTRUCTION → LONG/SHORT SIGNATURE LEARNING → LIVE UNIVERSE SIMILARITY RANKING → CONTROLLED ENTRY RESEARCH → FORWARD OUTCOME → LEARN**
+
+The system must not treat mover research as a side report disconnected from discovery. The mover outcome stream is the empirical answer key for improving the scanner.
+
+### Ground truth
+
+Every hourly shadow evidence cycle records the full Bitget USDT-M mover answer key at canonical ±5%, ±10% and ±20% 24h thresholds. This ground truth is independent of whether Alpha Hunter surfaced the symbol.
+
+### Pre-expansion training only
+
+A feature snapshot may train the Big-Mover Signature Engine only while the symbol remains below the canonical 5% mover boundary in absolute 24h movement. Post-expansion snapshots must never be used to explain a move after it happened.
+
+### Mover versus false-positive controls
+
+For the first forward horizon:
+- **MOVER:** same-direction ≥10% outcome inside the following 24h.
+- **CONTROL:** no same-direction ≥5% outcome inside the following 24h.
+- **GREY:** 5–10% outcomes are excluded from binary training rather than forced into either class.
+
+False-positive/non-mover controls are mandatory. Winners alone are invalid training evidence.
+
+### Direction
+
+LONG and SHORT signatures are learned independently. The Big-Mover research layer scores every captured symbol in both directions. A legacy scanner direction may be retained as context but cannot prevent the research layer from evaluating the opposite direction.
+
+### Lifecycle and money priority
+
+Operational lifecycle:
+
+**PRE-MOVER → IGNITION → EXPANSION → EXTENDED**
+
+New-entry research must prioritize:
+1. genuine early 1–5% ignition,
+2. PRE-MOVER states below 1%,
+3. only then later 5–15% ignition when remaining-R still exists.
+
+EXPANSION is retest-only research. EXTENDED is no-chase / research-management only.
+
+### Learned feature weighting
+
+Feature importance must be derived from observed separation between real movers and controls plus feature coverage. Do not add arbitrary feature weights merely to increase signal count. Learned similarity is a research ranking, not a probability of profit and never grants trade permission.
+
 ## Required classification
 
 Every significant mover must be classified as:
 
 - FOUND & TRADED
 - FOUND BUT MISSED
+- LATE DETECTED
 - NOT FOUND
+- NOT AUDITABLE
 
 ## Required reconstruction record
 
@@ -87,10 +135,38 @@ The objective is to identify and queue opportunities before most of the move is 
 ## Production safety boundary
 
 - Keep this work research/shadow-only until validated.
+- `shadow_only=true` is mandatory for this development path.
+- `trade_permission=false` is mandatory and is enforced in both code and database constraints.
 - Do not weaken live execution safeguards to increase signal count.
 - Do not use leverage to compensate for weak edge or poor entry quality.
 - Do not modify live trade permission from retrospective evidence alone.
 - Production promotion requires explicit forward evidence, regression checks and safety review.
+- The protected P0 Primary Hourly execution cycle remains independent and must not be paused or replaced by this shadow research loop.
+
+## Forward evidence transition
+
+Historical missed-mover audit data may bootstrap the model. Fresh Bitget all-ticker mover answer-key observations are the canonical forward source going forward.
+
+During the first 24 hours of answer-key collection, absence of a mover event must **not** be interpreted as a control. Only snapshots whose complete forward horizon is covered may receive answer-key mover/control labels. Once coverage exists, the fresh answer-key stream becomes authoritative for overlapping timestamps.
+
+## Current implementation milestone — 2026-09-13
+
+PR #12 implements the first production-evidence shadow path:
+- mover/control signature learner
+- real Supabase evidence adapter
+- LONG/SHORT live similarity ranking
+- early-mover priority
+- append-only Bitget full-universe mover answer key
+- persistent shadow ranking table
+- automatic forward-source cutover logic
+- fail-closed CI tests and database constraints
+- database-native Supabase hourly runtime committed as `big_mover_supabase_runtime.sql`
+
+The hourly production-evidence loop is **ACTIVE in Supabase** at 10 minutes past every hour. It fetches the public Bitget USDT-M all-ticker universe, persists mover ground truth, refreshes the shadow ranking, and runs without a notebook, laptop, Bitget private credential, or GitHub Actions scheduler.
+
+The live end-to-end validation returned Bitget code `00000`, observed 787 USDT-M tickers, persisted fresh answer-key events, refreshed shadow rankings, and retained `shadow_only=true` / `trade_permission=false`. The current evidence mode is `HISTORICAL_BOOTSTRAP_COLLECTING_FORWARD_HORIZON`; automatic forward labels begin only after a complete 24-hour answer-key horizon is available.
+
+No execution permission is promoted by this milestone. The next gate is forward evidence: mover recall, early-candidate precision, MAE/MFE, confirmation tax, remaining-R and false-positive cost.
 
 ## Continuous scope rule
 
