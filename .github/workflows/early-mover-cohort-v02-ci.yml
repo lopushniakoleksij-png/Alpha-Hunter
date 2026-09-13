@@ -1,0 +1,35 @@
+name: Early Mover Cohort v0.2 Safety
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter_early_mover_cohort_v02.sql'
+      - '.github/workflows/early-mover-cohort-v02-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify prospective direction-evidence contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=alpha_hunter_early_mover_cohort_v02.sql
+          test -f "$f"
+          grep -F "abs(new.raw_change_24h_pct) between 0.0 and 5.0" "$f"
+          grep -F "upper(coalesce(new.opportunity_timing, '')) = 'EARLY'" "$f"
+          grep -F "new.scanner_direction is not null" "$f"
+          grep -F "upper(new.scanner_direction) = upper(new.direction)" "$f"
+          grep -F "prospective-early-mover-cohort-v0.2" "$f"
+          grep -F "SCANNER_DIRECTION_MISSING" "$f"
+          grep -F "security_invoker = true" "$f"
+          if grep -Eiq 'production_execution_enabled[[:space:]]*=[[:space:]]*true|trade_permission[[:space:]]*=[[:space:]]*true|place_order|submit_order|cancel_order' "$f"; then
+            echo 'Unsafe execution marker detected'
+            exit 1
+          fi
+          if grep -Eiq 'insert[[:space:]]+into[[:space:]]+public\.alpha_hunter_early_mover_cohort[[:space:]]+select' "$f"; then
+            echo 'Historical cohort backfill pattern detected'
+            exit 1
+          fi
