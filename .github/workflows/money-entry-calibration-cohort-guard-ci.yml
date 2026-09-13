@@ -1,0 +1,29 @@
+name: Money Entry Calibration Cohort Guard CI
+
+on:
+  pull_request:
+    paths:
+      - 'money_entry_calibration_cohort_guard_v01.sql'
+      - 'tests/test_money_entry_calibration_cohort_guard_v01.py'
+      - '.github/workflows/money-entry-calibration-cohort-guard-ci.yml'
+
+jobs:
+  calibration-cohort-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: Run contract tests
+        run: pytest -q tests/test_money_entry_calibration_cohort_guard_v01.py
+      - name: Independent safety assertions
+        run: |
+          grep -q "c.scanner_direction = c.direction" money_entry_calibration_cohort_guard_v01.sql
+          grep -q "SCANNER_EXECUTION_SETUP" money_entry_calibration_cohort_guard_v01.sql
+          grep -q "research_geometry_promoted" money_entry_calibration_cohort_guard_v01.sql
+          grep -q "c.trade_permission is false" money_entry_calibration_cohort_guard_v01.sql
+          grep -q "o.trade_permission is false" money_entry_calibration_cohort_guard_v01.sql
+          grep -q "security_invoker = true" money_entry_calibration_cohort_guard_v01.sql
