@@ -197,9 +197,14 @@ def score_candidate(
     candidate: dict[str, Any],
     model: dict[str, Any],
     *,
-    upstream_eligible: bool,
+    safety_eligible: bool,
 ) -> dict[str, Any]:
-    """Score similarity without granting or changing trade permission."""
+    """Score similarity after hard safety eligibility, never legacy readiness.
+
+    safety_eligible is reserved for verified-futures/data/liquidity/risk blocks.
+    Do not pass legacy READY/pre-move strategy eligibility here: this layer is
+    meant to independently measure whether those older gates missed movers.
+    """
     result = {
         "version": ENGINE_VERSION,
         "mode": "SHADOW",
@@ -211,8 +216,8 @@ def score_candidate(
         "feature_coverage": 0.0,
     }
 
-    if not upstream_eligible:
-        return {**result, "status": "UPSTREAM_BLOCKED"}
+    if not safety_eligible:
+        return {**result, "status": "SAFETY_BLOCKED"}
 
     if model.get("status") != "READY_FOR_SHADOW_SCORING":
         return {**result, "status": "MODEL_NOT_READY"}
@@ -269,15 +274,15 @@ def rank_candidates(
     *,
     long_model: dict[str, Any],
     short_model: dict[str, Any],
-    upstream_eligibility_field: str = "upstream_eligible",
+    safety_eligibility_field: str = "safety_eligible",
 ) -> list[dict[str, Any]]:
-    """Rank LONG/SHORT signature similarity while respecting upstream blocks."""
+    """Rank LONG/SHORT similarity after hard data/liquidity/safety gates only."""
     ranked: list[dict[str, Any]] = []
 
     for candidate in candidates:
-        eligible = bool(candidate.get(upstream_eligibility_field))
-        long_score = score_candidate(candidate, long_model, upstream_eligible=eligible)
-        short_score = score_candidate(candidate, short_model, upstream_eligible=eligible)
+        eligible = bool(candidate.get(safety_eligibility_field))
+        long_score = score_candidate(candidate, long_model, safety_eligible=eligible)
+        short_score = score_candidate(candidate, short_model, safety_eligible=eligible)
 
         scores = [
             result for result in (long_score, short_score)
@@ -292,13 +297,13 @@ def rank_candidates(
             "shadow_only": SHADOW_ONLY,
             "trade_permission": TRADE_PERMISSION,
             "symbol": candidate.get("symbol"),
-            "upstream_eligible": eligible,
+            "safety_eligible": eligible,
             "long_signature_score": long_score.get("score"),
             "short_signature_score": short_score.get("score"),
             "best_direction": best.get("direction") if best else None,
             "best_score": best.get("score") if best else None,
             "status": best.get("status") if best else (
-                "UPSTREAM_BLOCKED" if not eligible else "NOT_SCORABLE"
+                "SAFETY_BLOCKED" if not eligible else "NOT_SCORABLE"
             ),
         })
 
