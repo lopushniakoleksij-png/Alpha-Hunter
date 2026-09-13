@@ -34,5 +34,5 @@ jobs:
           set -euo pipefail
           grep -F "production_execution_enabled boolean not null default false check (production_execution_enabled = false)" alpha_hunter_cloud_control_plane.sql
           grep -F "research_trade_permission boolean not null default false check (research_trade_permission = false)" alpha_hunter_cloud_control_plane.sql
-          grep -F "alpha_hunter-control-plane-finalize-hourly" alpha_hunter_cloud_control_plane.sql
+          grep -F "alpha-hunter-control-plane-finalize-hourly" alpha_hunter_cloud_control_plane.sql
           ! grep -qiE 'trade_permission[[:space:]]*=[[:space:]]*true|automatic_trade_execution[[:space:]]*=[[:space:]]*true|place[-_]order' alpha_hunter_cloud_control_plane.sql
