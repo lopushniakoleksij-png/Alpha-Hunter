@@ -1,0 +1,27 @@
+name: V8.0 Entry Engine Shadow CI
+
+on:
+  pull_request:
+    paths:
+      - "alpha_hunter/entry_engine.py"
+      - "tests/test_entry_engine.py"
+      - ".github/workflows/v80-entry-engine-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  shadow-entry-engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test runner
+        run: python -m pip install pytest
+      - name: Compile V8.0 shadow engine
+        run: python -m py_compile alpha_hunter/entry_engine.py tests/test_entry_engine.py
+      - name: Run V8.0 shadow regression tests
+        run: python -m pytest -q tests/test_entry_engine.py
