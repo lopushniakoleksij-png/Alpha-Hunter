@@ -158,11 +158,15 @@ PR #12 implements the first production-evidence shadow path:
 - early-mover priority
 - append-only Bitget full-universe mover answer key
 - persistent shadow ranking table
-- forward-source cutover logic
+- automatic forward-source cutover logic
 - fail-closed CI tests and database constraints
-- hourly cloud collection path under validation
+- database-native Supabase hourly runtime committed as `big_mover_supabase_runtime.sql`
 
-The code/test/database milestone is complete, but production merge remains gated on successful cloud execution of the answer-key + shadow persistence job. No execution permission is promoted by this milestone.
+The hourly production-evidence loop is **ACTIVE in Supabase** at 10 minutes past every hour. It fetches the public Bitget USDT-M all-ticker universe, persists mover ground truth, refreshes the shadow ranking, and runs without a notebook, laptop, Bitget private credential, or GitHub Actions scheduler.
+
+The live end-to-end validation returned Bitget code `00000`, observed 787 USDT-M tickers, persisted fresh answer-key events, refreshed shadow rankings, and retained `shadow_only=true` / `trade_permission=false`. The current evidence mode is `HISTORICAL_BOOTSTRAP_COLLECTING_FORWARD_HORIZON`; automatic forward labels begin only after a complete 24-hour answer-key horizon is available.
+
+No execution permission is promoted by this milestone. The next gate is forward evidence: mover recall, early-candidate precision, MAE/MFE, confirmation tax, remaining-R and false-positive cost.
 
 ## Continuous scope rule
 
