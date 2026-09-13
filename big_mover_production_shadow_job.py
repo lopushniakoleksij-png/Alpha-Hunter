@@ -10,9 +10,9 @@ from typing import Any
 
 from alpha_hunter.big_mover_evidence import (
     SupabaseRestReader,
-    load_shadow_inputs,
     summarize_evidence,
 )
+from alpha_hunter.big_mover_forward_source import load_shadow_inputs_forward
 from alpha_hunter.big_mover_priority import (
     is_early_entry_candidate,
     prioritize_early_money,
@@ -118,7 +118,7 @@ def run(
         raise RuntimeError("config.universe_scan must be an object")
 
     reader = SupabaseRestReader(url, key)
-    evidence, live_candidates, window, context = load_shadow_inputs(
+    evidence, live_candidates, window, context = load_shadow_inputs_forward(
         reader,
         now=datetime.now(timezone.utc),
         training_days=training_days,
@@ -156,11 +156,18 @@ def run(
     ranked = prioritize_early_money(ranked)
 
     evidence_summary = summarize_evidence(evidence)
-    evidence_health = (
-        "CURRENT"
-        if window.audit_staleness_hours <= 48.0
-        else "DEGRADED_STALE_OUTCOME_LEDGER"
-    )
+    answer_key_staleness = context.get("answer_key_staleness_hours")
+    if answer_key_staleness is not None and float(answer_key_staleness) <= 2.0:
+        evidence_health = (
+            "CURRENT_FORWARD_COLLECTION"
+            if context.get("answer_key_status") == "MATURE_FORWARD_LABELS_AVAILABLE"
+            else "CURRENT_COLLECTING_FIRST_FORWARD_HORIZON"
+        )
+    elif window.audit_staleness_hours <= 48.0:
+        evidence_health = "CURRENT_HISTORICAL_AUDIT_BOOTSTRAP"
+    else:
+        evidence_health = "DEGRADED_STALE_OUTCOME_LEDGER"
+
     payload = {
         "mode": "PRODUCTION_EVIDENCE_SHADOW_ONLY",
         "shadow_only": True,
