@@ -1,0 +1,43 @@
+name: Scientific Validation CI
+
+on:
+  pull_request:
+    paths:
+      - "alpha_hunter/scientific_validation.py"
+      - "scientific_validation_job.py"
+      - "tests/test_scientific_validation.py"
+      - "SCIENTIFIC_VALIDATION_ENGINE.md"
+      - ".github/workflows/scientific-validation-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  scientific-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Compile scientific validation engine
+        run: |
+          python -m py_compile alpha_hunter/scientific_validation.py
+          python -m py_compile scientific_validation_job.py
+      - name: Run scientific validation tests
+        run: python -m pytest -q tests/test_scientific_validation.py
+      - name: Assert shadow-only production boundary
+        run: |
+          python - <<'PY'
+          from alpha_hunter.scientific_validation import (
+              SHADOW_ONLY,
+              TRADE_PERMISSION,
+              PRODUCTION_PROMOTION_PERMITTED,
+          )
+          assert SHADOW_ONLY is True
+          assert TRADE_PERMISSION is False
+          assert PRODUCTION_PROMOTION_PERMITTED is False
+          PY
