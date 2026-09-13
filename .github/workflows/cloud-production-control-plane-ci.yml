@@ -1,0 +1,38 @@
+name: Cloud Production Control Plane CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter_cloud_control_plane.sql'
+      - 'tests/test_cloud_production_control_plane.py'
+      - '.github/workflows/cloud-production-control-plane-ci.yml'
+  push:
+    branches:
+      - 'feature/cloud-production-control-plane-*'
+    paths:
+      - 'alpha_hunter_cloud_control_plane.sql'
+      - 'tests/test_cloud_production_control_plane.py'
+      - '.github/workflows/cloud-production-control-plane-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  control-plane-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+      - name: Run control-plane contract tests
+        run: python -m pytest -q tests/test_cloud_production_control_plane.py
+      - name: Assert fail-closed runtime markers
+        run: |
+          set -euo pipefail
+          grep -F "production_execution_enabled boolean not null default false check (production_execution_enabled = false)" alpha_hunter_cloud_control_plane.sql
+          grep -F "research_trade_permission boolean not null default false check (research_trade_permission = false)" alpha_hunter_cloud_control_plane.sql
+          grep -F "alpha-hunter-control-plane-finalize-hourly" alpha_hunter_cloud_control_plane.sql
+          ! grep -qiE 'trade_permission[[:space:]]*=[[:space:]]*true|automatic_trade_execution[[:space:]]*=[[:space:]]*true|place[-_]order' alpha_hunter_cloud_control_plane.sql
