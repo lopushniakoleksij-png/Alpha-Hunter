@@ -1,0 +1,35 @@
+name: Early Mover Cohort Safety
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter_early_mover_cohort_v01.sql'
+      - '.github/workflows/early-mover-cohort-ci.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify prospective fail-closed contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=alpha_hunter_early_mover_cohort_v01.sql
+          test -f "$f"
+          grep -F "after insert on public.alpha_hunter_big_mover_money_scorecard_candidates" "$f"
+          grep -F "abs(new.raw_change_24h_pct) between 0.0 and 5.0" "$f"
+          grep -F "It intentionally performs no historical backfill" "$f"
+          grep -F "check (shadow_only = true)" "$f"
+          grep -F "check (trade_permission = false)" "$f"
+          grep -F "before update or delete" "$f"
+          grep -F "security_invoker = true" "$f"
+          if grep -Eiq 'production_execution_enabled[[:space:]]*=[[:space:]]*true|trade_permission[[:space:]]*=[[:space:]]*true|insert[[:space:]]+into[[:space:]]+.*order|place_order|submit_order' "$f"; then
+            echo 'Unsafe execution marker detected'
+            exit 1
+          fi
+          if grep -Eiq 'insert[[:space:]]+into[[:space:]]+public\.alpha_hunter_early_mover_cohort[[:space:]]+select' "$f"; then
+            echo 'Historical cohort backfill pattern detected'
+            exit 1
+          fi
