@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - "alpha_hunter/big_mover_signature.py"
+      - "alpha_hunter/big_mover_evidence.py"
       - "big_mover_signature_job.py"
+      - "big_mover_production_shadow_job.py"
+      - "big_mover_shadow_schema.sql"
       - "tests/test_big_mover_signature.py"
+      - "tests/test_big_mover_evidence.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
   push:
@@ -13,8 +17,12 @@ on:
       - "feature/big-mover-signature-engine-20260913"
     paths:
       - "alpha_hunter/big_mover_signature.py"
+      - "alpha_hunter/big_mover_evidence.py"
       - "big_mover_signature_job.py"
+      - "big_mover_production_shadow_job.py"
+      - "big_mover_shadow_schema.sql"
       - "tests/test_big_mover_signature.py"
+      - "tests/test_big_mover_evidence.py"
       - "BIG_JUMP_CORE_DIRECTIVE.md"
       - ".github/workflows/big-mover-signature-ci.yml"
 
@@ -29,10 +37,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install test dependency
-        run: python -m pip install pytest
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt pytest
       - name: Run Big-Mover Signature tests
-        run: python -m pytest -q tests/test_big_mover_signature.py
+        run: >-
+          python -m pytest -q
+          tests/test_big_mover_signature.py
+          tests/test_big_mover_evidence.py
       - name: Assert no trade-permission path
         run: |
           python - <<'PY'
@@ -40,4 +51,14 @@ jobs:
           assert SHADOW_ONLY is True
           assert TRADE_PERMISSION is False
           print("shadow_only=true trade_permission=false")
+          PY
+      - name: Assert persistent schema is fail-closed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          schema = Path("big_mover_shadow_schema.sql").read_text(encoding="utf-8")
+          assert "check (shadow_only = true)" in schema
+          assert "check (trade_permission = false)" in schema
+          assert "revoke all" in schema
+          print("persistent shadow schema fail-closed")
           PY
