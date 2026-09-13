@@ -1,0 +1,50 @@
+name: Big-Mover Money Scorecard CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "big_mover_money_scorecard_runtime.sql"
+      - "tests/test_big_mover_money_scorecard_contract.py"
+      - ".github/workflows/big-mover-money-scorecard-ci.yml"
+      - "BIG_JUMP_CORE_DIRECTIVE.md"
+  push:
+    branches:
+      - "feature/big-mover-forward-money-scorecard-20260913"
+    paths:
+      - "big_mover_money_scorecard_runtime.sql"
+      - "tests/test_big_mover_money_scorecard_contract.py"
+      - ".github/workflows/big-mover-money-scorecard-ci.yml"
+      - "BIG_JUMP_CORE_DIRECTIVE.md"
+
+permissions:
+  contents: read
+
+jobs:
+  forward-money-scorecard-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependency
+        run: python -m pip install pytest
+      - name: Run Money Scorecard contract tests
+        run: python -m pytest -q tests/test_big_mover_money_scorecard_contract.py
+      - name: Assert runtime remains research-only
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          sql = Path("big_mover_money_scorecard_runtime.sql").read_text(encoding="utf-8")
+          lower = sql.lower()
+          assert "check (shadow_only = true)" in sql
+          assert "check (trade_permission = false)" in sql
+          assert "realistic_net_r=null" in lower
+          assert "exact_t0_t1_t2_snapshots_not_available" in lower
+          assert "private.alpha_hunter_run_big_mover_money_scorecard" in lower
+          assert "'14 * * * *'" in sql
+          for token in ("place_order", "create_order", "submit_order"):
+              assert token not in lower
+          print("Money Scorecard remains shadow-only and fail-closed")
+          PY
