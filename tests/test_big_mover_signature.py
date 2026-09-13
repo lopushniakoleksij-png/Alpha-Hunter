@@ -118,8 +118,8 @@ class BigMoverSignatureTests(unittest.TestCase):
             "relative_strength_btc": 0.2,
         }
 
-        high = score_candidate(mover_like, long_model, upstream_eligible=True)
-        low = score_candidate(control_like, long_model, upstream_eligible=True)
+        high = score_candidate(mover_like, long_model, safety_eligible=True)
+        low = score_candidate(control_like, long_model, safety_eligible=True)
 
         self.assertEqual(high["status"], "SCORED")
         self.assertGreater(high["score"], low["score"])
@@ -127,7 +127,7 @@ class BigMoverSignatureTests(unittest.TestCase):
         self.assertLess(low["score"], 20)
         self.assertFalse(high["trade_permission"])
 
-    def test_upstream_gate_cannot_be_bypassed(self) -> None:
+    def test_hard_safety_gate_cannot_be_bypassed(self) -> None:
         long_model, _ = self._models()
         candidate = {
             "symbol": "BLOCKEDUSDT",
@@ -139,10 +139,10 @@ class BigMoverSignatureTests(unittest.TestCase):
         result = score_candidate(
             candidate,
             long_model,
-            upstream_eligible=False,
+            safety_eligible=False,
         )
 
-        self.assertEqual(result["status"], "UPSTREAM_BLOCKED")
+        self.assertEqual(result["status"], "SAFETY_BLOCKED")
         self.assertIsNone(result["score"])
         self.assertFalse(result["trade_permission"])
 
@@ -159,7 +159,7 @@ class BigMoverSignatureTests(unittest.TestCase):
         result = score_candidate(
             {"symbol": "X", "volume_ratio": 10},
             model,
-            upstream_eligible=True,
+            safety_eligible=True,
         )
         self.assertEqual(result["status"], "MODEL_NOT_READY")
         self.assertIsNone(result["score"])
@@ -170,21 +170,21 @@ class BigMoverSignatureTests(unittest.TestCase):
             [
                 {
                     "symbol": "LONGUSDT",
-                    "upstream_eligible": True,
+                    "safety_eligible": True,
                     "volume_ratio": 3.1,
                     "open_interest_change_pct": 13.0,
                     "relative_strength_btc": 5.4,
                 },
                 {
                     "symbol": "SHORTUSDT",
-                    "upstream_eligible": True,
+                    "safety_eligible": True,
                     "volume_ratio": 3.1,
                     "open_interest_change_pct": 12.0,
                     "relative_strength_btc": -6.3,
                 },
                 {
                     "symbol": "RISKFAILUSDT",
-                    "upstream_eligible": False,
+                    "safety_eligible": False,
                     "volume_ratio": 10.0,
                     "open_interest_change_pct": 50.0,
                     "relative_strength_btc": 20.0,
@@ -197,7 +197,7 @@ class BigMoverSignatureTests(unittest.TestCase):
         by_symbol = {row["symbol"]: row for row in ranked}
         self.assertEqual(by_symbol["LONGUSDT"]["best_direction"], "LONG")
         self.assertEqual(by_symbol["SHORTUSDT"]["best_direction"], "SHORT")
-        self.assertEqual(by_symbol["RISKFAILUSDT"]["status"], "UPSTREAM_BLOCKED")
+        self.assertEqual(by_symbol["RISKFAILUSDT"]["status"], "SAFETY_BLOCKED")
         self.assertFalse(any(row["trade_permission"] for row in ranked))
 
     def test_lifecycle_thresholds_are_caller_owned(self) -> None:
