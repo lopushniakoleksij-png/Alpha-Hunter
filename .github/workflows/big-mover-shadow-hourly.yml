@@ -1,18 +1,6 @@
-name: Big-Mover Shadow Hourly
-
-on:
-  push:
-    branches:
-      - "feature/big-mover-signature-engine-20260913"
-    paths:
-      - ".github/workflows/big-mover-shadow-hourly.yml"
-
-permissions:
-  contents: read
-
-jobs:
-  runner-probe:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Confirm hosted runner starts
-        run: echo BIG_MOVER_SHADOW_RUNNER_OK
+# Big-Mover hourly shadow execution now lives in
+# .github/workflows/big-mover-signature-ci.yml so CI and scheduled
+# shadow collection use one proven workflow registration path.
+#
+# This file is intentionally inert and can be removed after PR #12
+# deployment validation is complete.
