@@ -1,6 +1,0 @@
-# Big-Mover hourly shadow execution now lives in
-# .github/workflows/big-mover-signature-ci.yml so CI and scheduled
-# shadow collection use one proven workflow registration path.
-#
-# This file is intentionally inert and can be removed after PR #12
-# deployment validation is complete.
