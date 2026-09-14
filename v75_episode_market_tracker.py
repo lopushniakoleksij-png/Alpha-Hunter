@@ -209,6 +209,32 @@ def inspect_candle(
         )
 
 
+def active_contract_symbols(
+    contracts: list[dict[str, Any]],
+) -> set[str]:
+    return {
+        str(row.get("symbol") or "").upper()
+        for row in contracts
+        if isinstance(row, dict)
+        and str(row.get("symbol") or "").strip()
+    }
+
+
+def finalize_venue_ineligible_episode(
+    episode: Any,
+    observed_at: datetime,
+) -> None:
+    episode.previous_state = episode.lifecycle_state
+    episode.lifecycle_state = "VENUE_INELIGIBLE"
+    episode.final_classification = "VENUE_INELIGIBLE_UNOBSERVABLE"
+    episode.measurement_quality = "VENUE_INELIGIBLE_UNOBSERVABLE"
+    episode.last_market_check_at_utc = observed_at.isoformat()
+    episode.finalized_at_utc = observed_at.isoformat()
+    episode.is_finalized = True
+    episode.trade_permission = False
+    episode.v7_trade_ready = False
+
+
 def main() -> int:
     load_env_file(
         ROOT / ".env"
@@ -262,10 +288,23 @@ def main() -> int:
         ),
     )
 
+    contracts = client.contracts(
+        product_type
+    ) or []
+    active_symbols = active_contract_symbols(
+        contracts
+    )
+
+    if not active_symbols:
+        raise RuntimeError(
+            "Active Bitget futures universe is empty"
+        )
+
     now = utc_now()
 
     checked = 0
     failed = 0
+    venue_ineligible = 0
 
     print()
     print("=" * 110)
@@ -289,6 +328,18 @@ def main() -> int:
 
     for episode in active:
         try:
+            if episode.symbol.upper() not in active_symbols:
+                finalize_venue_ineligible_episode(
+                    episode,
+                    now,
+                )
+                venue_ineligible += 1
+                print(
+                    f"{episode.symbol:<15}"
+                    "VENUE_INELIGIBLE: finalized without fabricated price"
+                )
+                continue
+
             if (
                 episode.market_tracking_started_at_utc
                 is None
@@ -437,6 +488,7 @@ def main() -> int:
     print("=" * 110)
 
     print("Checked:", checked)
+    print("Venue ineligible finalized:", venue_ineligible)
     print("Failed:", failed)
     print(
         "Supabase rows upserted:",

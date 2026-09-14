@@ -78,6 +78,51 @@ def f(
         return None
 
 
+def active_contract_symbols(
+    contracts: list[dict[str, Any]],
+) -> set[str]:
+    return {
+        str(row.get("symbol") or "").upper()
+        for row in contracts
+        if isinstance(row, dict)
+        and str(row.get("symbol") or "").strip()
+    }
+
+
+def venue_ineligible_outcome(
+    signal: dict[str, Any],
+    horizon_hours: int,
+    evaluated_at: str,
+) -> dict[str, Any]:
+    reference_price = f(
+        signal.get("reference_price")
+    )
+
+    if reference_price is None or reference_price <= 0:
+        raise ValueError(
+            "Venue-ineligible signal has no valid reference price"
+        )
+
+    return {
+        "signal_id": signal["signal_id"],
+        "horizon_hours": horizon_hours,
+        "evaluated_at_utc": evaluated_at,
+        "evaluation_price": reference_price,
+        "return_pct": None,
+        "direction_adjusted_return_pct": None,
+        "target_hit": None,
+        "stop_hit": None,
+        "outcome_class": "VENUE_INELIGIBLE_UNOBSERVABLE",
+        "payload": {
+            "measurement_scope": "V7.4_PRE_MOVE",
+            "venue_eligibility": "INACTIVE_OR_DELISTED",
+            "evaluation_price_source": "REFERENCE_PRICE_PLACEHOLDER",
+            "excluded_from_performance": True,
+            "trade_permission": False,
+        },
+    }
+
+
 def save_latest_signal_cohort(
     snapshot: dict[str, Any],
     settings: SupabaseConfig,
@@ -265,6 +310,7 @@ def evaluate_v74_horizon(
     url: str,
     key: str,
     horizon_hours: int,
+    active_symbols: set[str],
 ) -> tuple[int, int]:
     pending = pending_v74_signals(
         url,
@@ -296,6 +342,21 @@ def evaluate_v74_horizon(
         )
 
         try:
+            if symbol.upper() not in active_symbols:
+                rows.append(
+                    venue_ineligible_outcome(
+                        signal,
+                        horizon_hours,
+                        evaluated_at,
+                    )
+                )
+                print(
+                    "V7.4 outcome excluded for "
+                    f"inactive/delisted contract {symbol} "
+                    f"at {horizon_hours}H"
+                )
+                continue
+
             if symbol not in price_cache:
                 ticker = evaluator.bitget.ticker(
                     symbol,
@@ -472,6 +533,18 @@ def evaluate_outcomes(
         config["product_type"],
     )
 
+    contracts = evaluator.bitget.contracts(
+        evaluator.product_type
+    ) or []
+    active_symbols = active_contract_symbols(
+        contracts
+    )
+
+    if not active_symbols:
+        raise RuntimeError(
+            "Active Bitget futures universe is empty"
+        )
+
     total_saved = 0
     total_failed = 0
 
@@ -482,6 +555,7 @@ def evaluate_outcomes(
                 settings.url,
                 settings.key,
                 horizon,
+                active_symbols,
             )
         )
 
