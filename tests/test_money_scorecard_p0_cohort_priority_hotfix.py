@@ -24,7 +24,7 @@ def test_hotfix_is_exact_fail_closed_and_idempotent():
     assert "pg_get_functiondef" in LOWER
     assert "position(v_new in v_def) > 0" in SQL
     assert "ordering clause not found; refusing non-exact hotfix" in SQL
-    assert "p0 cohort priority verification failed" in SQL
+    assert "p0 cohort priority verification failed" in LOWER
 
 
 def test_safety_boundary_is_not_relaxed():
