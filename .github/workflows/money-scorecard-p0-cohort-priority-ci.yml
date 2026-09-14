@@ -1,0 +1,29 @@
+name: Money Scorecard P0 Cohort Priority CI
+
+on:
+  pull_request:
+    paths:
+      - 'money_scorecard_p0_cohort_priority_hotfix.sql'
+      - 'tests/test_money_scorecard_p0_cohort_priority_hotfix.py'
+      - '.github/workflows/money-scorecard-p0-cohort-priority-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'money_scorecard_p0_cohort_priority_hotfix.sql'
+      - 'tests/test_money_scorecard_p0_cohort_priority_hotfix.py'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Verify priority and safety contract
+        run: python -m pytest -q tests/test_money_scorecard_p0_cohort_priority_hotfix.py
