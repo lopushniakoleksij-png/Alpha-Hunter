@@ -26,8 +26,10 @@ def test_missing_and_false_states_are_explicit_blockers():
 
 def test_guard_preserves_shadow_only_no_trade_permission_boundary():
     lowered = SQL.lower()
-    assert 'new.shadow_only := true' in lowered
-    assert 'new.trade_permission := false' in lowered
+    assert 'new.shadow_only is not true or new.trade_permission is not false' in lowered
+    assert "raise exception 'money entry signal-quality safety boundary violation'" in lowered
+    assert 'new.shadow_only := true' not in lowered
+    assert 'new.trade_permission := false' not in lowered
     assert 'trade_permission=true' not in lowered
     assert 'trade_permission = true' not in lowered
     for forbidden in ['place_order', 'place-order', '/api/v2/mix/order/', '/api/v3/trade/']:
