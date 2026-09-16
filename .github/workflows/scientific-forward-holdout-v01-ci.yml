@@ -1,0 +1,42 @@
+name: Scientific Forward Holdout v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'evidence_acl_quarantine_v01.sql'
+      - 'scientific_forward_holdout_v01.sql'
+      - 'SCIENTIFIC_FORWARD_HOLDOUT_V01.md'
+      - 'tests/test_evidence_acl_quarantine_v01.py'
+      - 'tests/test_scientific_forward_holdout_v01.py'
+      - '.github/workflows/scientific-forward-holdout-v01-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prospective-holdout-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test runner
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+      - name: Run holdout boundary contract tests
+        run: >-
+          python -m pytest -q
+          tests/test_evidence_acl_quarantine_v01.py
+          tests/test_scientific_forward_holdout_v01.py
+      - name: Independent no-order and no-backfill scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          files='evidence_acl_quarantine_v01.sql scientific_forward_holdout_v01.sql'
+          ! grep -Eiq 'trade_permission[[:space:]]*=[[:space:]]*true|shadow_only[[:space:]]*=[[:space:]]*false|production_promotion_permitted[[:space:]]*=[[:space:]]*true|place[_-]order|create[_-]order|submit[_-]order|/api/v[23]/(mix/)?(order|trade)/' $files
+          ! grep -Eiq 'insert[[:space:]]+into[[:space:]]+public\.alpha_hunter_scientific_holdout_bindings[[:space:]]+select' scientific_forward_holdout_v01.sql
+          grep -Fq "check (shadow_only = true)" scientific_forward_holdout_v01.sql
+          grep -Fq "check (trade_permission = false)" scientific_forward_holdout_v01.sql
+          grep -Fq "check (production_promotion_permitted = false)" scientific_forward_holdout_v01.sql
+          grep -Fq "check (order_path = 'NONE')" scientific_forward_holdout_v01.sql
