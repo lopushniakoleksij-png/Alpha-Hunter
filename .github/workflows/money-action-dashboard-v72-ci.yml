@@ -1,0 +1,32 @@
+name: Money Action Dashboard V7.2 CI
+
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'tests/test_money_action_dashboard_v72.py'
+      - '.github/workflows/money-action-dashboard-v72-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'app.py'
+      - 'tests/test_money_action_dashboard_v72.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+      - name: Run dashboard action tests and production safety gates
+        run: python -m pytest -q tests/test_money_action_dashboard_v72.py tests/test_production_gates_v03.py
