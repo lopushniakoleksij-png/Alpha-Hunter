@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from math import sqrt
-from statistics import mean, pstdev
+from statistics import mean, median, pstdev
+from time import time
 from typing import Any
 
 
@@ -116,11 +117,59 @@ def atr(candles: list[dict[str, float | int]], period: int = 14) -> float | None
     return value
 
 
-def volume_anomaly(candles: list[dict[str, float | int]], lookback: int = 20) -> dict[str, float | str | None]:
-    if len(candles) < lookback + 1:
-        return {"ratio": None, "z_score": None, "state": "DATA_UNAVAILABLE"}
-    historical = [float(c["quote_volume"]) for c in candles[-(lookback + 1):-1]]
-    current = float(candles[-1]["quote_volume"])
+def _infer_candle_interval_ms(candles: list[dict[str, float | int]]) -> int | None:
+    """Infer the bar interval from recent exchange timestamps."""
+    if len(candles) < 2:
+        return None
+    timestamps = [int(c["timestamp"]) for c in candles[-8:]]
+    diffs = [later - earlier for earlier, later in zip(timestamps, timestamps[1:]) if later > earlier]
+    if not diffs:
+        return None
+    return int(median(diffs))
+
+
+def volume_anomaly(
+    candles: list[dict[str, float | int]],
+    lookback: int = 20,
+    now_ms: int | None = None,
+) -> dict[str, Any]:
+    """Compare like-for-like completed bar volume.
+
+    Bitget includes the currently forming candle. Alpha Hunter normally scans just
+    after the top of the hour, so comparing two minutes of a fresh 1H candle with
+    twenty completed 1H candles artificially drives the participation ratio near
+    zero. That can make every otherwise-valid setup fail the participation gate.
+
+    If the latest bar is still open, use the most recent completed bar for the
+    execution participation comparison. Live price/momentum calculations remain
+    untouched, preserving early detection while removing this timing bias.
+    """
+    interval_ms = _infer_candle_interval_ms(candles)
+    current_ms = int(time() * 1000) if now_ms is None else int(now_ms)
+    ignored_incomplete = False
+    current_index = len(candles) - 1
+
+    if candles and interval_ms is not None:
+        latest_start = int(candles[-1]["timestamp"])
+        if current_ms < latest_start + interval_ms:
+            ignored_incomplete = True
+            current_index -= 1
+
+    if current_index < lookback:
+        return {
+            "ratio": None,
+            "z_score": None,
+            "state": "DATA_UNAVAILABLE",
+            "source": "LAST_CLOSED" if ignored_incomplete else "LATEST",
+            "ignored_incomplete_candle": ignored_incomplete,
+            "candle_interval_ms": interval_ms,
+        }
+
+    historical = [
+        float(c["quote_volume"])
+        for c in candles[current_index - lookback:current_index]
+    ]
+    current = float(candles[current_index]["quote_volume"])
     baseline = mean(historical)
     deviation = pstdev(historical)
     ratio = current / baseline if baseline else None
@@ -131,7 +180,14 @@ def volume_anomaly(candles: list[dict[str, float | int]], lookback: int = 20) ->
         state = "ELEVATED"
     else:
         state = "NORMAL"
-    return {"ratio": ratio, "z_score": z_score, "state": state}
+    return {
+        "ratio": ratio,
+        "z_score": z_score,
+        "state": state,
+        "source": "LAST_CLOSED" if ignored_incomplete else "LATEST",
+        "ignored_incomplete_candle": ignored_incomplete,
+        "candle_interval_ms": interval_ms,
+    }
 
 
 def calculate_indicators(candles: list[dict[str, float | int]]) -> dict[str, Any]:
