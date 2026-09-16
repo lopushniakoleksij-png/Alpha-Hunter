@@ -17,6 +17,12 @@ as $$
 declare
   v_reasons jsonb := '[]'::jsonb;
 begin
+  -- Never silently repair an unsafe caller. Make any attempt to cross the
+  -- research-only boundary observable and fail the insert.
+  if new.shadow_only is not true or new.trade_permission is not false then
+    raise exception 'money entry signal-quality safety boundary violation';
+  end if;
+
   -- Only an otherwise-eligible T0/T1/T2 snapshot needs downgrading here.
   -- DATA_INSUFFICIENT / NO_T0 rows remain evidence records as written.
   if new.stage_eligible is true then
@@ -59,9 +65,6 @@ begin
     end if;
   end if;
 
-  -- Preserve the permanent research-only safety boundary regardless of caller.
-  new.shadow_only := true;
-  new.trade_permission := false;
   return new;
 end;
 $$;
