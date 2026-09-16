@@ -17,6 +17,14 @@ Bitget public-data collector and conservative execution gate for five frozen USD
 - Automatic top-of-hour runner
 - Local-first failure isolation: cloud failure does not discard a scan
 
+## Permanent core execution contract
+
+The canonical execution-quality rule is defined in `CORE_EXECUTION_SIGNAL_QUALITY_CONTRACT.md`.
+
+**READY = EXECUTABLE CONFLUENCE, NOT CONFIDENCE.** Direction alignment, momentum confirmation, minimum data integrity, participation, structure / entry location, remaining realistic R, and portfolio risk must work together. Missing or false required evidence fails closed rather than becoming READY.
+
+The current Money Entry development path remains `shadow_only=true` and `trade_permission=false`. The hourly signal-quality forward audit verifies that this invariant remains intact while forward evidence accumulates.
+
 ## 1. Install
 
 ```bash
