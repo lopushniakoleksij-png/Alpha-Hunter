@@ -1,0 +1,28 @@
+name: Money Entry Signal Quality Fail-Closed CI
+
+on:
+  pull_request:
+    paths:
+      - 'money_entry_signal_quality_fail_closed_v01.sql'
+      - 'tests/test_money_entry_signal_quality_fail_closed_v01.py'
+      - '.github/workflows/money-entry-signal-quality-fail-closed-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'money_entry_signal_quality_fail_closed_v01.sql'
+      - 'tests/test_money_entry_signal_quality_fail_closed_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run focused fail-closed tests
+        run: python -m pytest -q tests/test_money_entry_signal_quality_fail_closed_v01.py tests/test_production_gates_v03.py
