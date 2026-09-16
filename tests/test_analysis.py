@@ -59,6 +59,22 @@ def make_candles(count=120, start=100.0, step=0.5, volume=1000.0):
     return rows
 
 
+def make_hourly_candles(count=22, start_ms=1_800_000_000_000, volume=1000.0):
+    rows = []
+    for i in range(count):
+        close = 100.0 + i * 0.1
+        rows.append({
+            "timestamp": start_ms + i * 3_600_000,
+            "open": close - 0.1,
+            "high": close + 0.2,
+            "low": close - 0.2,
+            "close": close,
+            "base_volume": volume / close,
+            "quote_volume": volume,
+        })
+    return rows
+
+
 def test_indicator_package_is_populated():
     indicators = calculate_indicators(make_candles())
     assert indicators["ema_9"] is not None
@@ -76,6 +92,29 @@ def test_volume_anomaly_detects_spike():
     result = volume_anomaly(candles)
     assert result["state"] == "HIGH"
     assert result["ratio"] == 4.0
+
+
+def test_volume_anomaly_ignores_incomplete_hourly_candle():
+    candles = make_hourly_candles()
+    candles[-2]["quote_volume"] = 3000.0
+    candles[-1]["quote_volume"] = 25.0
+    latest_start = int(candles[-1]["timestamp"])
+    result = volume_anomaly(candles, now_ms=latest_start + 120_000)
+    assert result["ignored_incomplete_candle"] is True
+    assert result["source"] == "LAST_CLOSED"
+    assert result["state"] == "HIGH"
+    assert result["ratio"] == 3.0
+
+
+def test_volume_anomaly_uses_latest_when_candle_is_closed():
+    candles = make_hourly_candles(count=21)
+    candles[-1]["quote_volume"] = 2500.0
+    latest_start = int(candles[-1]["timestamp"])
+    result = volume_anomaly(candles, now_ms=latest_start + 3_600_001)
+    assert result["ignored_incomplete_candle"] is False
+    assert result["source"] == "LATEST"
+    assert result["state"] == "HIGH"
+    assert result["ratio"] == 2.5
 
 
 def test_funding_summary():
