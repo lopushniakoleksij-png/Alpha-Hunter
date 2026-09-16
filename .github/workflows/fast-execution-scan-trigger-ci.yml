@@ -1,0 +1,30 @@
+name: Fast Execution Scan Trigger CI
+
+on:
+  pull_request:
+    paths:
+      - 'fast_execution_scan_trigger_v01.sql'
+      - 'tests/test_fast_execution_scan_trigger_v01.py'
+      - '.github/workflows/fast-execution-scan-trigger-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'fast_execution_scan_trigger_v01.sql'
+      - 'tests/test_fast_execution_scan_trigger_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test runner
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run fast-scan trigger and production safety tests
+        run: python -m pytest -q tests/test_fast_execution_scan_trigger_v01.py tests/test_production_gates_v03.py
