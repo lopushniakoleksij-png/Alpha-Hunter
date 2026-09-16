@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install test runner
-        run: python -m pip install --disable-pip-version-check pytest
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
       - name: Run universe-ledger and production safety tests
         run: python -m pytest -q tests/test_universe_ledger_single_scanner.py tests/test_production_gates_v03.py
