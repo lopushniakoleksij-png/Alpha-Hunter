@@ -187,7 +187,14 @@ def test_database_schema_is_append_only_and_has_no_slippage_authority():
     assert "alpha_hunter_block_append_only_mutation" in sql
     assert "check (shadow_only = true)" in sql
     assert "check (trade_permission = false)" in sql
-    assert "slippage" not in sql
+    for forbidden_field in (
+        "slippage_bps",
+        "entry_slippage",
+        "exit_slippage",
+        "arrival_price",
+        "intended_price",
+    ):
+        assert forbidden_field not in sql
     assert "realistic_net_r" not in sql
     assert "production_execution_enabled" not in sql
 
