@@ -110,10 +110,10 @@ begin
   end if;
   if v_trigger_fn_def is null
      or position('u.selection_run_id=new.source_run_id' in v_trigger_fn_def)=0
-     or position("u.hour_bucket_utc=date_trunc('hour',new.captured_at_utc)" in v_trigger_fn_def)=0
-     or position("u.fee_rate_source='BITGET_V3_INSTRUMENT_PUBLIC'" in v_trigger_fn_def)=0
-     or position("'fee_evidence_is_not_cost_model',true" in v_trigger_fn_def)=0
-     or position("'fee_evidence_does_not_permit_realistic_net_r',true" in v_trigger_fn_def)=0 then
+     or position($needle$u.hour_bucket_utc=date_trunc('hour',new.captured_at_utc)$needle$ in v_trigger_fn_def)=0
+     or position($needle$u.fee_rate_source='BITGET_V3_INSTRUMENT_PUBLIC'$needle$ in v_trigger_fn_def)=0
+     or position($needle$'fee_evidence_is_not_cost_model',true$needle$ in v_trigger_fn_def)=0
+     or position($needle$'fee_evidence_does_not_permit_realistic_net_r',true$needle$ in v_trigger_fn_def)=0 then
     raise exception 'canonical public fee trigger contract drifted; refusing single-writer consolidation';
   end if;
   if position(v_new_base in v_def)=0
