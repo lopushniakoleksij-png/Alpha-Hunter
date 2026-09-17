@@ -1,0 +1,30 @@
+name: Scorecard Science Priority v0.2 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run science queue and safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_scorecard_science_priority_participation_v02.py
+          tests/test_participation_forward_science_view_v01.py
+          tests/test_participation_diagnostics_v01.py
+          tests/test_geometry_forward_science_view_v02.py
+          tests/test_geometry_scope_alignment_v022.py
+          tests/test_production_gates_v03.py
