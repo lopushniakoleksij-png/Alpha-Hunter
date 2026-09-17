@@ -56,6 +56,8 @@ create table if not exists public.alpha_hunter_fill_evidence (
 
 create index if not exists idx_ah_fill_traceability_source_run
   on public.alpha_hunter_fill_traceability_runs(source_run_id, observed_at_utc desc);
+create index if not exists idx_ah_fill_evidence_traceability_run
+  on public.alpha_hunter_fill_evidence(traceability_run_id);
 create index if not exists idx_ah_fill_evidence_symbol_time
   on public.alpha_hunter_fill_evidence(symbol, fill_time_utc desc);
 create index if not exists idx_ah_fill_evidence_order
