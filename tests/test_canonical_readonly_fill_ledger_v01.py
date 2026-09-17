@@ -187,6 +187,8 @@ def test_database_schema_is_append_only_and_has_no_slippage_authority():
     assert "alpha_hunter_block_append_only_mutation" in sql
     assert "check (shadow_only = true)" in sql
     assert "check (trade_permission = false)" in sql
+    assert "idx_ah_fill_evidence_traceability_run" in sql
+    assert "on public.alpha_hunter_fill_evidence(traceability_run_id)" in sql
     for forbidden_field in (
         "slippage_bps",
         "entry_slippage",
