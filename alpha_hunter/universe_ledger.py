@@ -15,6 +15,7 @@ from .storage import SupabaseConfig
 
 TABLE = "alpha_hunter_universe_hourly"
 MODEL_VERSION = "7.9-universe-ledger-v1"
+FEE_RATE_SOURCE = "BITGET_V3_INSTRUMENT_PUBLIC"
 
 
 def _bucket(value: datetime) -> datetime:
@@ -24,6 +25,14 @@ def _bucket(value: datetime) -> datetime:
 def _observation_id(symbol: str, bucket: datetime) -> str:
     raw = f"{symbol.upper()}|{MODEL_VERSION}|{bucket.isoformat()}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:24]
+
+
+def _fee_bps(value: Any) -> float | None:
+    """Convert Bitget decimal fee rate to basis points without inventing missing values."""
+    parsed = to_float(value)
+    if parsed is None or parsed < 0:
+        return None
+    return parsed * 10000.0
 
 
 @contextmanager
@@ -102,6 +111,13 @@ def build_rows_from_existing_scan(
         )
         eligible = bool(crypto_allowed and liquidity_pass and extension_pass)
         selected = symbol in selected_symbols
+        maker_fee_bps = _fee_bps(metadata.get("makerFeeRate"))
+        taker_fee_bps = _fee_bps(metadata.get("takerFeeRate"))
+        fee_rate_source = (
+            FEE_RATE_SOURCE
+            if maker_fee_bps is not None and taker_fee_bps is not None
+            else None
+        )
         if not crypto_allowed:
             reason = "NON_CRYPTO"
         elif not liquidity_pass:
@@ -131,6 +147,9 @@ def build_rows_from_existing_scan(
             "prefilter_eligible": eligible,
             "deep_scan_selected": selected,
             "rejection_reason": reason,
+            "public_maker_fee_bps": maker_fee_bps,
+            "public_taker_fee_bps": taker_fee_bps,
+            "fee_rate_source": fee_rate_source,
             "source": "PRIMARY_SCANNER_CACHED_TICKERS",
             "measurement_quality": "HOURLY_TICKER_SNAPSHOT",
             "trade_permission": False,
