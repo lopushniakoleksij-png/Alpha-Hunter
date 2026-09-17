@@ -9,6 +9,11 @@ from alpha_hunter.account_ledger import (
     persist_account_ledger,
 )
 from alpha_hunter.collector import load_config, main
+from alpha_hunter.fill_client import ReadOnlyFillClient
+from alpha_hunter.fill_ledger import (
+    collect_fill_traceability,
+    persist_fill_traceability,
+)
 from alpha_hunter.storage import SupabaseConfig
 from alpha_hunter.universe_ledger import (
     build_rows_from_existing_scan,
@@ -95,6 +100,37 @@ def run() -> int:
         f"status={account_row['connection_status']} "
         f"schema_validated={account_row['schema_validated']} "
         f"complete={account_row['complete']}"
+    )
+
+    try:
+        fill_client = ReadOnlyFillClient.from_environment(
+            timeout=int(config.get("request_timeout_seconds", 12)),
+            max_retries=int(config.get("max_retries", 3)),
+        )
+        private_account = snapshot.get("private_account")
+        if not isinstance(private_account, dict):
+            private_account = {}
+        fill_result = collect_fill_traceability(
+            fill_client,
+            product_type=str(config.get("product_type", "usdt-futures")),
+            source_run_id=run_id,
+            observed_at_utc=collected_at,
+            private_account=private_account,
+        )
+        fill_run_attempted, fills_attempted = persist_fill_traceability(
+            settings, fill_result
+        )
+    except Exception as exc:
+        print(f"Fill ledger: FAILED evidence persistence: {exc}")
+        return 2
+
+    print(
+        "Fill ledger: SAVED_OR_ALREADY_PRESENT "
+        f"run={fill_run_attempted} fills={fills_attempted} "
+        f"status={fill_result.run_row['status']} "
+        f"complete={fill_result.run_row['complete']} "
+        f"schema_validated={fill_result.run_row['schema_validated']} "
+        "trade_permission=false"
     )
     return 0
 
