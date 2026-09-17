@@ -1,0 +1,59 @@
+name: Canonical Read-Only Fill Ledger v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/fill_ledger.py'
+      - 'alpha_hunter/fill_client.py'
+      - 'canonical_readonly_fill_ledger_v01.sql'
+      - 'run.py'
+      - 'tests/test_canonical_readonly_fill_ledger_v01.py'
+      - '.github/workflows/canonical-readonly-fill-ledger-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/fill_ledger.py'
+      - 'alpha_hunter/fill_client.py'
+      - 'canonical_readonly_fill_ledger_v01.sql'
+      - 'run.py'
+      - 'tests/test_canonical_readonly_fill_ledger_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Compile fill evidence path
+        run: python -m py_compile run.py alpha_hunter/fill_ledger.py alpha_hunter/fill_client.py
+      - name: Run fill, account and production safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_canonical_readonly_fill_ledger_v01.py
+          tests/test_private_account_mode_probe_v01.py
+          tests/test_canonical_account_ledger_materialization_v01.py
+          tests/test_money_entry_stage_position_conflict_binding_v01.py
+          tests/test_production_gates_v03.py
+      - name: Reject private order/write methods in fill path
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          paths = [Path('alpha_hunter/fill_client.py'), Path('alpha_hunter/fill_ledger.py'), Path('run.py')]
+          text = '\n'.join(p.read_text().lower() for p in paths)
+          forbidden = [
+              'place_order', 'place-order', 'cancel_order', 'cancel-order',
+              'modify-order', 'batch-orders', 'set-leverage',
+              'trade_permission=true', 'production_execution_enabled=true'
+          ]
+          hits = [item for item in forbidden if item in text]
+          if hits:
+              raise SystemExit(f'forbidden fill-ledger authority path(s): {hits}')
+          PY
