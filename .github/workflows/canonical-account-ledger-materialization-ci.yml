@@ -1,0 +1,37 @@
+name: Canonical Account Ledger Materialization CI
+
+on:
+  pull_request:
+    paths:
+      - 'canonical_account_ledger_materialization_v01.sql'
+      - 'tests/test_canonical_account_ledger_materialization_v01.py'
+      - 'tests/test_canonical_account_ledger.py'
+      - 'tests/test_production_gates_v03.py'
+      - '.github/workflows/canonical-account-ledger-materialization-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'canonical_account_ledger_materialization_v01.sql'
+      - 'tests/test_canonical_account_ledger_materialization_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run materialization and safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_canonical_account_ledger_materialization_v01.py
+          tests/test_canonical_account_ledger.py
+          tests/test_money_entry_stage_position_conflict_binding_v01.py
+          tests/test_production_gates_v03.py
