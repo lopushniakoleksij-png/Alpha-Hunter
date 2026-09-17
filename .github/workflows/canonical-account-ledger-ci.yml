@@ -1,0 +1,36 @@
+name: Canonical Account Ledger CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/account_ledger.py'
+      - 'run.py'
+      - 'tests/test_canonical_account_ledger.py'
+      - '.github/workflows/canonical-account-ledger-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/account_ledger.py'
+      - 'run.py'
+      - 'tests/test_canonical_account_ledger.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run account-ledger and production safety tests
+        run: >-
+          python -m pytest -q
+          tests/test_canonical_account_ledger.py
+          tests/test_universe_ledger_single_scanner.py
+          tests/test_production_gates_v03.py

@@ -4,6 +4,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from alpha_hunter.account_ledger import (
+    build_account_ledger_rows,
+    persist_account_ledger,
+)
 from alpha_hunter.collector import load_config, main
 from alpha_hunter.storage import SupabaseConfig
 from alpha_hunter.universe_ledger import (
@@ -14,7 +18,7 @@ from alpha_hunter.universe_ledger import (
 
 
 def run() -> int:
-    """Run the canonical scanner once, then persist its already-fetched universe evidence."""
+    """Run the canonical scanner once, then persist its already-fetched evidence."""
     with capture_existing_universe_calls() as captured:
         code = main()
 
@@ -37,13 +41,13 @@ def run() -> int:
     try:
         snapshot = json.loads(latest_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"Universe ledger: FAILED unable to bind scanner snapshot: {exc}")
+        print(f"Evidence persistence: FAILED unable to bind scanner snapshot: {exc}")
         return 2
 
     run_id = str(snapshot.get("run_id") or "")
     collected_at = str(snapshot.get("collected_at_utc") or "")
     if not run_id or not collected_at:
-        print("Universe ledger: FAILED scanner snapshot lacks immutable run identity")
+        print("Evidence persistence: FAILED scanner snapshot lacks immutable run identity")
         return 2
 
     selected_symbols = {
@@ -71,7 +75,27 @@ def run() -> int:
         print(f"Universe ledger: FAILED {exc}")
         return 2
 
-    print(f"Universe ledger: SAVED_OR_ALREADY_PRESENT {attempted} rows from canonical scanner payload")
+    print(
+        f"Universe ledger: SAVED_OR_ALREADY_PRESENT {attempted} rows "
+        "from canonical scanner payload"
+    )
+
+    try:
+        account_row, position_rows = build_account_ledger_rows(snapshot)
+        account_attempted, positions_attempted = persist_account_ledger(
+            settings, account_row, position_rows
+        )
+    except Exception as exc:
+        print(f"Account ledger: FAILED {exc}")
+        return 2
+
+    print(
+        "Account ledger: SAVED_OR_ALREADY_PRESENT "
+        f"account={account_attempted} positions={positions_attempted} "
+        f"status={account_row['connection_status']} "
+        f"schema_validated={account_row['schema_validated']} "
+        f"complete={account_row['complete']}"
+    )
     return 0
 
 
