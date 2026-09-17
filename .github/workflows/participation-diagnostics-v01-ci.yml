@@ -1,0 +1,37 @@
+name: Participation Diagnostics v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'participation_diagnostics_v01.sql'
+      - 'tests/test_participation_diagnostics_v01.py'
+      - '.github/workflows/participation-diagnostics-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'participation_diagnostics_v01.sql'
+      - 'tests/test_participation_diagnostics_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run participation and production safety tests
+        run: >-
+          python -m pytest -q
+          tests/test_participation_diagnostics_v01.py
+          tests/test_parent_direction_full_coverage_v02.py
+          tests/test_money_entry_parent_direction_null_failclosed_v01.py
+          tests/test_money_entry_stage_position_conflict_binding_v01.py
+          tests/test_money_entry_stage_writer_universe_liquidity_integration_v01.py
+          tests/test_production_gates_v03.py
