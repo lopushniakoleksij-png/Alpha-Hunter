@@ -94,6 +94,9 @@ begin
   if position(v_old_evidence in v_def)=0 then
     raise exception 'execution cost evidence payload contract drifted; refusing patch';
   end if;
+  if position('WITHHELD_NO_ACTIVE_VALIDATED_COST_MODEL' in v_def)=0 then
+    raise exception 'execution cost net-R fail-closed contract drifted; refusing patch';
+  end if;
 
   v_def := replace(v_def,v_old_base,v_new_base);
   v_def := replace(v_def,v_old_fee_values,v_new_fee_values);
