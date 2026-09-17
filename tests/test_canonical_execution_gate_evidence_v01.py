@@ -1,6 +1,13 @@
 from pathlib import Path
 
+from pglast import parse_sql
+
 SQL = Path("canonical_execution_gate_evidence_v01.sql").read_text()
+
+
+def test_postgres_sql_parses():
+    statements = parse_sql(SQL)
+    assert statements
 
 
 def test_contract_binds_canonical_evidence_ids_and_runs():
