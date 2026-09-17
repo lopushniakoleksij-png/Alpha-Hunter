@@ -20,6 +20,12 @@ def test_trigger_contract_is_exact_run_hour_public_fee_evidence():
     assert "'fee_evidence_does_not_permit_realistic_net_r',true" in LOWER
 
 
+def test_trigger_contract_needles_use_sql_string_literals_not_identifiers():
+    assert 'position("' not in LOWER
+    assert "$needle$u.hour_bucket_utc=date_trunc('hour',new.captured_at_utc)$needle$" in LOWER
+    assert "$needle$u.fee_rate_source='bitget_v3_instrument_public'$needle$" in LOWER
+
+
 def test_redundant_function_binding_is_reverted_not_trigger():
     assert "v_def := replace(v_def,v_new_base,v_old_base)" in LOWER
     assert "v_def := replace(v_def,v_new_fee_values,v_old_fee_values)" in LOWER
