@@ -418,8 +418,23 @@ class BitgetClient:
         )
 
     # -------------------------------------------------
-    # PRIVATE ACCOUNT
+    # PRIVATE ACCOUNT (READ ONLY)
     # -------------------------------------------------
+
+    def account_settings_v3(
+        self,
+    ) -> dict[str, Any]:
+        """Read Bitget v3 account mode/settings. No write or order capability."""
+        data = self._get(
+            "/api/v3/account/settings",
+            {},
+            private=True,
+        )
+        if not isinstance(data, dict):
+            raise BitgetAPIError(
+                "Bitget v3 account settings returned invalid schema"
+            )
+        return data
 
     def futures_accounts(
         self,
