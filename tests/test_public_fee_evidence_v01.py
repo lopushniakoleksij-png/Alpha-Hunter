@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
+
 from alpha_hunter.universe_ledger import build_rows_from_existing_scan
 
 SQL = Path('public_fee_evidence_v01.sql').read_text()
@@ -31,8 +33,8 @@ def test_universe_rows_capture_public_fee_rates_from_existing_instruments():
     )
     assert len(rows) == 1
     row = rows[0]
-    assert row["public_maker_fee_bps"] == 2.0
-    assert row["public_taker_fee_bps"] == 6.0
+    assert row["public_maker_fee_bps"] == pytest.approx(2.0)
+    assert row["public_taker_fee_bps"] == pytest.approx(6.0)
     assert row["fee_rate_source"] == "BITGET_V3_INSTRUMENT_PUBLIC"
     assert row["trade_permission"] is False
 
