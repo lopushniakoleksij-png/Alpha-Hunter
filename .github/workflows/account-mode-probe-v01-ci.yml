@@ -1,0 +1,50 @@
+name: Account Mode Probe v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/bitget.py'
+      - 'alpha_hunter/private_account.py'
+      - 'tests/test_private_account_mode_probe_v01.py'
+      - '.github/workflows/account-mode-probe-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/bitget.py'
+      - 'alpha_hunter/private_account.py'
+      - 'tests/test_private_account_mode_probe_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run account mode and safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_private_account_mode_probe_v01.py
+          tests/test_canonical_account_ledger.py
+          tests/test_canonical_account_ledger_materialization_v01.py
+          tests/test_money_entry_stage_position_conflict_binding_v01.py
+          tests/test_production_gates_v03.py
+      - name: Enforce GET-only private client surface
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('alpha_hunter/bitget.py').read_text().lower()
+          assert '/api/v3/account/settings' in text
+          assert 'place-order' not in text
+          assert 'place_order' not in text
+          assert 'cancel-order' not in text
+          assert 'cancel_order' not in text
+          print('GET-only private account probe boundary intact')
+          PY
