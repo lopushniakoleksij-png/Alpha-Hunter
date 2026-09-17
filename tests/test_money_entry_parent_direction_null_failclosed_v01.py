@@ -4,12 +4,14 @@ SQL = Path('money_entry_parent_direction_null_failclosed_v01.sql').read_text()
 
 
 def test_null_parent_direction_is_explicitly_fail_closed():
-    assert "n.parent_12h_aligned is not true" in SQL
-    assert "n.parent_1d_aligned is not true" in SQL
+    assert "v_old_12h text := 'case when not n.parent_12h_aligned" in SQL
+    assert "v_new_12h text := 'case when n.parent_12h_aligned is not true" in SQL
+    assert "v_old_1d text := 'case when not n.parent_1d_aligned" in SQL
+    assert "v_new_1d text := 'case when n.parent_1d_aligned is not true" in SQL
+    assert "replace(v_def,v_old_12h,v_new_12h)" in SQL
+    assert "replace(v_def,v_old_1d,v_new_1d)" in SQL
     assert "PARENT_12H_DATA_UNAVAILABLE" in SQL
     assert "PARENT_1D_DATA_UNAVAILABLE" in SQL
-    assert "case when not n.parent_12h_aligned" not in SQL
-    assert "case when not n.parent_1d_aligned" not in SQL
 
 
 def test_patch_refuses_unexpected_function_shape():
