@@ -41,6 +41,14 @@ def test_not_configured_is_explicitly_disconnected_and_not_verified():
     assert "PRIVATE_API_NOT_CONFIGURED" in SQL
 
 
+def test_materializer_persists_permission_metadata_without_granting_authority():
+    assert "'api_permission_probe_status',v_private->>'api_permission_probe_status'" in SQL
+    assert "'api_permission_probe_error',v_private->>'api_permission_probe_error'" in SQL
+    assert "'api_permission_type',v_private->>'api_permission_type'" in SQL
+    assert "'api_permissions',case when jsonb_typeof(v_private->'api_permissions')='array'" in SQL
+    assert "'permission_metadata_is_trade_authority',false" in SQL
+
+
 def test_position_rows_do_not_invent_risk_or_structural_stop():
     assert "structural_stop_inferred_from_exchange_stop',false" in SQL
     assert "planned_risk_invented',false" in SQL
