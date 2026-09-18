@@ -421,6 +421,21 @@ class BitgetClient:
     # PRIVATE ACCOUNT (READ ONLY)
     # -------------------------------------------------
 
+    def account_info_v3(
+        self,
+    ) -> dict[str, Any]:
+        """Read Bitget API-key permission metadata. No trade permission required."""
+        data = self._get(
+            "/api/v3/account/info",
+            {},
+            private=True,
+        )
+        if not isinstance(data, dict):
+            raise BitgetAPIError(
+                "Bitget v3 account info returned invalid schema"
+            )
+        return data
+
     def account_settings_v3(
         self,
     ) -> dict[str, Any]:
