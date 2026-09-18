@@ -16,6 +16,10 @@ class BitgetAPIError(RuntimeError):
     pass
 
 
+class _BitgetDeterministicAPIError(BitgetAPIError):
+    """Internal marker for deterministic client errors that must not be retried."""
+
+
 @dataclass
 class BitgetClient:
     base_url: str = "https://api.bitget.com"
@@ -60,6 +64,7 @@ class BitgetClient:
         params: dict[str, Any] | None = None,
         *,
         private: bool = False,
+        retry_deterministic_4xx: bool = True,
     ) -> Any:
 
         params = params or {}
@@ -152,7 +157,34 @@ class BitgetClient:
                     )
                 )
 
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError as exc:
+                    status = response.status_code
+                    if (
+                        not retry_deterministic_4xx
+                        and 400 <= status < 500
+                        and status not in {408, 429}
+                    ):
+                        try:
+                            error_payload = response.json()
+                        except ValueError:
+                            error_payload = None
+
+                        if isinstance(error_payload, dict):
+                            code = error_payload.get("code")
+                            msg = error_payload.get("msg")
+                            if code is not None or msg is not None:
+                                raise _BitgetDeterministicAPIError(
+                                    f"Bitget HTTP {status} error "
+                                    f"{code}: {msg}"
+                                ) from exc
+
+                        raise _BitgetDeterministicAPIError(
+                            f"Bitget HTTP {status}: "
+                            f"{response.text[:500]}"
+                        ) from exc
+                    raise
 
                 payload = response.json()
 
@@ -169,6 +201,9 @@ class BitgetClient:
                 return payload.get(
                     "data"
                 )
+
+            except _BitgetDeterministicAPIError:
+                raise
 
             except (
                 requests.RequestException,
@@ -206,6 +241,7 @@ class BitgetClient:
         params: dict[str, Any],
         *,
         private: bool = False,
+        retry_deterministic_4xx: bool = True,
     ) -> Any:
 
         return self._request(
@@ -213,6 +249,7 @@ class BitgetClient:
             path,
             params,
             private=private,
+            retry_deterministic_4xx=retry_deterministic_4xx,
         )
 
     # -------------------------------------------------
@@ -429,6 +466,7 @@ class BitgetClient:
             "/api/v3/account/info",
             {},
             private=True,
+            retry_deterministic_4xx=False,
         )
         if not isinstance(data, dict):
             raise BitgetAPIError(
@@ -444,6 +482,7 @@ class BitgetClient:
             "/api/v3/account/settings",
             {},
             private=True,
+            retry_deterministic_4xx=False,
         )
         if not isinstance(data, dict):
             raise BitgetAPIError(

@@ -1,4 +1,6 @@
-from alpha_hunter.bitget import BitgetAPIError
+import requests
+
+from alpha_hunter.bitget import BitgetAPIError, BitgetClient
 from alpha_hunter.private_account import collect_private_account_snapshot
 
 
@@ -205,3 +207,147 @@ def test_classic_position_normalization_is_preserved_after_probe_fallback():
     assert position["symbol"] == "BTCUSDT"
     assert position["hold_side"] == "long"
     assert position["liquidation_price"] == "62000"
+
+
+class _HTTPResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = str(payload)
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise requests.HTTPError(
+                f"HTTP {self.status_code}",
+                response=self,
+            )
+
+    def json(self):
+        return self._payload
+
+
+def test_v3_readonly_probe_does_not_retry_deterministic_400(monkeypatch):
+    calls = []
+    sleeps = []
+
+    def fake_request(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _HTTPResponse(
+            400,
+            {
+                "code": "40014",
+                "msg": "Incorrect permissions",
+            },
+        )
+
+    monkeypatch.setattr(
+        "alpha_hunter.bitget.requests.request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "alpha_hunter.bitget.time.sleep",
+        lambda seconds: sleeps.append(seconds),
+    )
+
+    client = BitgetClient(
+        api_key="test-key",
+        secret_key="test-secret",
+        passphrase="test-passphrase",
+        max_retries=3,
+    )
+
+    try:
+        client.account_info_v3()
+    except BitgetAPIError as exc:
+        error = str(exc)
+    else:
+        raise AssertionError("expected deterministic BitgetAPIError")
+
+    assert len(calls) == 1
+    assert sleeps == []
+    assert "Bitget HTTP 400 error 40014" in error
+    assert "Incorrect permissions" in error
+
+
+def test_v3_readonly_probe_still_retries_transient_500(monkeypatch):
+    calls = []
+    sleeps = []
+
+    def fake_request(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _HTTPResponse(
+            500,
+            {
+                "code": "50000",
+                "msg": "temporary server error",
+            },
+        )
+
+    monkeypatch.setattr(
+        "alpha_hunter.bitget.requests.request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "alpha_hunter.bitget.time.sleep",
+        lambda seconds: sleeps.append(seconds),
+    )
+
+    client = BitgetClient(
+        api_key="test-key",
+        secret_key="test-secret",
+        passphrase="test-passphrase",
+        max_retries=3,
+    )
+
+    try:
+        client.account_info_v3()
+    except BitgetAPIError as exc:
+        error = str(exc)
+    else:
+        raise AssertionError("expected retry exhaustion")
+
+    assert len(calls) == 3
+    assert sleeps == [0.5, 1.0]
+    assert "Request failed after 3 attempts" in error
+
+
+def test_v3_settings_uses_same_deterministic_4xx_fail_fast_path(monkeypatch):
+    calls = []
+
+    def fake_request(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _HTTPResponse(
+            400,
+            {
+                "code": "40001",
+                "msg": "settings unavailable",
+            },
+        )
+
+    monkeypatch.setattr(
+        "alpha_hunter.bitget.requests.request",
+        fake_request,
+    )
+    monkeypatch.setattr(
+        "alpha_hunter.bitget.time.sleep",
+        lambda _seconds: (_ for _ in ()).throw(
+            AssertionError("deterministic 4xx must not sleep")
+        ),
+    )
+
+    client = BitgetClient(
+        api_key="test-key",
+        secret_key="test-secret",
+        passphrase="test-passphrase",
+        max_retries=3,
+    )
+
+    try:
+        client.account_settings_v3()
+    except BitgetAPIError as exc:
+        error = str(exc)
+    else:
+        raise AssertionError("expected deterministic BitgetAPIError")
+
+    assert len(calls) == 1
+    assert "Bitget HTTP 400 error 40001" in error
