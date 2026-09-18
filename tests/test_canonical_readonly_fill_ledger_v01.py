@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from alpha_hunter.fill_client import BitgetFillPermissionError
 from alpha_hunter.fill_ledger import collect_fill_traceability
 
 
@@ -30,6 +31,31 @@ class FakeFillClient:
             }
         )
         return self.pages.pop(0) if self.pages else {"fillList": [], "endId": ""}
+
+
+class PermissionBlockedFillClient(FakeFillClient):
+    def futures_fills(
+        self,
+        product_type,
+        *,
+        start_time_ms,
+        end_time_ms,
+        limit=100,
+        id_less_than=None,
+    ):
+        self.calls.append(
+            {
+                "product_type": product_type,
+                "start_time_ms": start_time_ms,
+                "end_time_ms": end_time_ms,
+                "limit": limit,
+                "id_less_than": id_less_than,
+            }
+        )
+        raise BitgetFillPermissionError(
+            "Bitget HTTP 400 error 40014: Incorrect permissions; "
+            "required_permission=FUTURES_ORDER_READ"
+        )
 
 
 def connected_classic_account():
@@ -90,6 +116,30 @@ def test_uta_or_unverified_account_family_blocks_classic_fill_endpoint():
     assert result.run_row["status"] == "BLOCKED_ACCOUNT_API_FAMILY_UNVERIFIED"
     assert result.fill_rows == []
     assert client.calls == []
+
+
+def test_bitget_40014_is_named_permission_blocker_and_fail_closed():
+    client = PermissionBlockedFillClient(configured=True)
+    result = collect_fill_traceability(
+        client,
+        product_type="usdt-futures",
+        source_run_id="run-permission-blocked",
+        observed_at_utc="2026-09-18T12:00:00+00:00",
+        private_account=connected_classic_account(),
+    )
+
+    assert result.run_row["status"] == "BLOCKED_BITGET_FUTURES_ORDER_PERMISSION"
+    assert result.run_row["complete"] is False
+    assert result.run_row["schema_validated"] is False
+    assert result.run_row["fill_count"] == 0
+    assert result.run_row["trade_permission"] is False
+    assert result.fill_rows == []
+    assert len(client.calls) == 1
+    evidence = result.run_row["evidence"]
+    assert evidence["blocker_code"] == "BITGET_FUTURES_ORDER_READ_PERMISSION_REQUIRED"
+    assert evidence["required_permission"] == "FUTURES_ORDER_READ"
+    assert evidence["bitget_error_code"] == "40014"
+    assert evidence["no_order_write_path"] is True
 
 
 def test_valid_fill_is_append_only_evidence_not_slippage_claim():
@@ -165,7 +215,10 @@ def test_invalid_fill_schema_fails_closed_without_partial_valid_claim():
 def test_get_only_adapter_and_no_order_route():
     source = Path("alpha_hunter/fill_client.py").read_text().lower()
     assert '"/api/v2/mix/order/fills"' in source
-    assert "self._get(" in source
+    assert "requests.get(" in source
+    assert "self._get(" not in source
+    assert "40014" in source
+    assert "futures_order_read" in source
     for forbidden in (
         "self._post(",
         "self._delete(",
