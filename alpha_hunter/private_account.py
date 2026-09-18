@@ -7,6 +7,43 @@ from .bitget import BitgetAPIError, BitgetClient
 UTA_ACCOUNT_MODES = {"unified", "hybrid", "upgrading", "switching"}
 
 
+def _permission_probe(client: BitgetClient) -> dict[str, Any]:
+    """Collect API-key permission metadata without using it as trade authority."""
+    result: dict[str, Any] = {
+        "api_permission_probe_status": "UNAVAILABLE",
+        "api_permission_probe_error": None,
+        "api_permission_type": None,
+        "api_permissions": [],
+    }
+    try:
+        info = client.account_info_v3()
+    except BitgetAPIError as exc:
+        result["api_permission_probe_error"] = str(exc)
+        return result
+
+    permission_type = str(info.get("permType") or "").strip().lower() or None
+    raw_permissions = info.get("permissions")
+    permissions = (
+        sorted(
+            {
+                str(value).strip().lower()
+                for value in raw_permissions
+                if str(value).strip()
+            }
+        )
+        if isinstance(raw_permissions, list)
+        else []
+    )
+    result.update(
+        {
+            "api_permission_probe_status": "CONNECTED",
+            "api_permission_type": permission_type,
+            "api_permissions": permissions,
+        }
+    )
+    return result
+
+
 def collect_private_account_snapshot(
     client: BitgetClient,
     product_type: str,
@@ -19,7 +56,13 @@ def collect_private_account_snapshot(
             "open_positions": [],
             "open_position_count": 0,
             "account_mode_probe_status": "NOT_CONFIGURED",
+            "api_permission_probe_status": "NOT_CONFIGURED",
+            "api_permission_probe_error": None,
+            "api_permission_type": None,
+            "api_permissions": [],
         }
+
+    permission_evidence = _permission_probe(client)
 
     account_mode_probe_status = "UNAVAILABLE_CLASSIC_FALLBACK"
     account_mode_probe_error: str | None = None
@@ -57,6 +100,7 @@ def collect_private_account_snapshot(
                 "asset_mode": asset_mode,
                 "hold_mode": hold_mode,
                 "classic_v2_risk_evidence_accepted": False,
+                **permission_evidence,
             }
 
         # The v3 settings contract currently documents only UTA/Hybrid and
@@ -72,6 +116,7 @@ def collect_private_account_snapshot(
             "asset_mode": asset_mode,
             "hold_mode": hold_mode,
             "classic_v2_risk_evidence_accepted": False,
+            **permission_evidence,
         }
 
     try:
@@ -87,6 +132,7 @@ def collect_private_account_snapshot(
             "account_mode_probe_status": account_mode_probe_status,
             "account_mode_probe_error": account_mode_probe_error,
             "account_source": "BITGET_V2_CLASSIC",
+            **permission_evidence,
         }
 
     open_positions = []
@@ -97,29 +143,34 @@ def collect_private_account_snapshot(
             total = 0.0
         if total == 0:
             continue
-        open_positions.append({
-            "symbol": p.get("symbol"),
-            "hold_side": p.get("holdSide"),
-            "total": p.get("total"),
-            "available": p.get("available"),
-            "leverage": p.get("leverage"),
-            "margin_mode": p.get("marginMode"),
-            "open_price_avg": p.get("openPriceAvg"),
-            "mark_price": p.get("markPrice"),
-            "unrealized_pl": p.get("unrealizedPL"),
-            "break_even_price": p.get("breakEvenPrice"),
-            "liquidation_price": p.get("liquidationPrice"),
-            "take_profit": p.get("takeProfit"),
-            "stop_loss": p.get("stopLoss"),
-        })
+        open_positions.append(
+            {
+                "symbol": p.get("symbol"),
+                "hold_side": p.get("holdSide"),
+                "total": p.get("total"),
+                "available": p.get("available"),
+                "leverage": p.get("leverage"),
+                "margin_mode": p.get("marginMode"),
+                "open_price_avg": p.get("openPriceAvg"),
+                "mark_price": p.get("markPrice"),
+                "unrealized_pl": p.get("unrealizedPL"),
+                "break_even_price": p.get("breakEvenPrice"),
+                "liquidation_price": p.get("liquidationPrice"),
+                "take_profit": p.get("takeProfit"),
+                "stop_loss": p.get("stopLoss"),
+            }
+        )
 
-    safe_accounts = [{
-        "margin_coin": a.get("marginCoin"),
-        "available": a.get("available"),
-        "locked": a.get("locked"),
-        "account_equity": a.get("accountEquity"),
-        "unrealized_pl": a.get("unrealizedPL"),
-    } for a in accounts]
+    safe_accounts = [
+        {
+            "margin_coin": a.get("marginCoin"),
+            "available": a.get("available"),
+            "locked": a.get("locked"),
+            "account_equity": a.get("accountEquity"),
+            "unrealized_pl": a.get("unrealizedPL"),
+        }
+        for a in accounts
+    ]
 
     return {
         "status": "CONNECTED",
@@ -130,4 +181,5 @@ def collect_private_account_snapshot(
         "account_mode_probe_error": account_mode_probe_error,
         "account_source": "BITGET_V2_CLASSIC",
         "classic_v2_risk_evidence_accepted": True,
+        **permission_evidence,
     }
