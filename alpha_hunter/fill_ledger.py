@@ -9,11 +9,12 @@ from typing import Any
 import requests
 
 from .bitget import BitgetAPIError, BitgetClient
+from .fill_client import BitgetFillPermissionError
 from .storage import SupabaseConfig
 
 TRACEABILITY_TABLE = "alpha_hunter_fill_traceability_runs"
 FILL_TABLE = "alpha_hunter_fill_evidence"
-MODEL_VERSION = "canonical-readonly-fill-ledger-v0.1"
+MODEL_VERSION = "canonical-readonly-fill-ledger-v0.2-permission-blocker"
 ENDPOINT = "/api/v2/mix/order/fills"
 WINDOW_HOURS = 168
 PAGE_LIMIT = 100
@@ -178,6 +179,9 @@ def _run_row(
     newest_fill_at_utc: str | None,
     detail: str | None,
     account_probe_status: str | None,
+    blocker_code: str | None = None,
+    required_permission: str | None = None,
+    bitget_error_code: str | None = None,
 ) -> dict[str, Any]:
     return {
         "traceability_run_id": traceability_run_id,
@@ -203,6 +207,9 @@ def _run_row(
             "window_hours": WINDOW_HOURS,
             "no_order_write_path": True,
             "zero_fills_do_not_pass_traceability": True,
+            "blocker_code": blocker_code,
+            "required_permission": required_permission,
+            "bitget_error_code": bitget_error_code,
         },
         "model_version": MODEL_VERSION,
         "shadow_only": True,
@@ -299,6 +306,29 @@ def collect_fill_traceability(
                 end_time_ms=int(end.timestamp() * 1000),
                 limit=PAGE_LIMIT,
                 id_less_than=cursor,
+            )
+        except BitgetFillPermissionError as exc:
+            return FillTraceabilityResult(
+                _run_row(
+                    traceability_run_id=trace_id,
+                    source_run_id=source_run_id,
+                    observed_at_utc=observed_at_utc,
+                    start=start,
+                    end=end,
+                    status="BLOCKED_BITGET_FUTURES_ORDER_PERMISSION",
+                    complete=False,
+                    schema_validated=False,
+                    pages_fetched=pages_fetched,
+                    fill_count=len(fills),
+                    oldest_fill_at_utc=min((row["fill_time_utc"] for row in fills), default=None),
+                    newest_fill_at_utc=max((row["fill_time_utc"] for row in fills), default=None),
+                    detail=str(exc),
+                    account_probe_status=account_probe_status,
+                    blocker_code="BITGET_FUTURES_ORDER_READ_PERMISSION_REQUIRED",
+                    required_permission=exc.required_permission,
+                    bitget_error_code=exc.bitget_code,
+                ),
+                fills,
             )
         except BitgetAPIError as exc:
             return FillTraceabilityResult(

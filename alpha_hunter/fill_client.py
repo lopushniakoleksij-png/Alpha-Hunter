@@ -12,23 +12,34 @@ import requests
 from .bitget import BitgetAPIError, BitgetClient
 
 
+FILL_ENDPOINT = "/api/v2/mix/order/fills"
+FUTURES_ORDER_PERMISSION_ERROR_CODE = "40014"
+FUTURES_ORDER_READ_PERMISSION = "FUTURES_ORDER_READ"
+
+
+class BitgetFillPermissionError(BitgetAPIError):
+    """Deterministic Bitget fill-history permission blocker."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.bitget_code = FUTURES_ORDER_PERMISSION_ERROR_CODE
+        self.required_permission = FUTURES_ORDER_READ_PERMISSION
+        self.retryable = False
+
+
 class ReadOnlyFillClient(BitgetClient):
     """Bitget client extension exposing only the documented GET fill-history route."""
 
-    def _diagnostic_fill_get(
+    def _signed_fill_get_once(
         self,
         path: str,
         params: dict[str, Any],
-        original_error: BitgetAPIError,
-    ) -> dict[str, Any]:
-        """Repeat a failed fill GET once so Bitget's JSON code/msg is preserved.
-
-        The shared client currently raises on HTTP status before parsing Bitget's
-        JSON error body. This scoped read-only retry is diagnostic only and never
-        introduces an order/write route.
-        """
+    ) -> requests.Response:
+        """Issue exactly one signed read-only fill-history GET."""
         if not self.private_api_configured:
-            raise original_error
+            raise BitgetAPIError(
+                "Bitget private API credentials are not configured"
+            )
 
         timestamp = str(int(time.time() * 1000))
         query = urlencode(params)
@@ -50,36 +61,50 @@ class ReadOnlyFillClient(BitgetClient):
             "Content-Type": "application/json",
         }
 
+        return requests.get(
+            self.base_url + path,
+            params=params,
+            headers=headers,
+            timeout=self.timeout,
+        )
+
+    def _parse_fill_response(
+        self,
+        response: requests.Response,
+    ) -> dict[str, Any]:
+        """Parse Bitget's JSON before HTTP raising so deterministic codes survive."""
         try:
-            response = requests.get(
-                self.base_url + path,
-                params=params,
-                headers=headers,
-                timeout=self.timeout,
+            payload = response.json()
+        except ValueError as exc:
+            raise BitgetAPIError(
+                f"Fill GET HTTP {response.status_code} returned non-JSON body"
+            ) from exc
+
+        code = str(payload.get("code") or "")
+        message = str(payload.get("msg") or "")
+
+        if code == FUTURES_ORDER_PERMISSION_ERROR_CODE:
+            raise BitgetFillPermissionError(
+                f"Bitget HTTP {response.status_code} error {code}: "
+                f"{message or 'Incorrect permissions'}; "
+                f"required_permission={FUTURES_ORDER_READ_PERMISSION}"
             )
-            try:
-                payload = response.json()
-            except ValueError:
-                raise BitgetAPIError(
-                    f"{original_error}; diagnostic HTTP {response.status_code} "
-                    "returned non-JSON body"
-                ) from original_error
 
-            code = str(payload.get("code") or "")
-            message = str(payload.get("msg") or "")
-            if code != "00000":
-                raise BitgetAPIError(
-                    f"{original_error}; Bitget HTTP {response.status_code} "
-                    f"error {code or 'UNKNOWN'}: {message or 'UNKNOWN'}"
-                ) from original_error
+        if code != "00000":
+            raise BitgetAPIError(
+                f"Bitget HTTP {response.status_code} error "
+                f"{code or 'UNKNOWN'}: {message or 'UNKNOWN'}"
+            )
 
+        try:
             response.raise_for_status()
-            data = payload.get("data")
-            return data if isinstance(data, dict) else {}
         except requests.RequestException as exc:
             raise BitgetAPIError(
-                f"{original_error}; diagnostic GET failed: {exc}"
-            ) from original_error
+                f"Fill GET HTTP {response.status_code} failed: {exc}"
+            ) from exc
+
+        data = payload.get("data")
+        return data if isinstance(data, dict) else {}
 
     def futures_fills(
         self,
@@ -99,13 +124,40 @@ class ReadOnlyFillClient(BitgetClient):
         if id_less_than:
             params["idLessThan"] = id_less_than
 
-        path = "/api/v2/mix/order/fills"
-        try:
-            data = self._get(
-                path,
-                params,
-                private=True,
-            )
-        except BitgetAPIError as exc:
-            data = self._diagnostic_fill_get(path, params, exc)
-        return data if isinstance(data, dict) else {}
+        attempts = max(1, int(self.max_retries))
+        last_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self._signed_fill_get_once(FILL_ENDPOINT, params)
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt < attempts:
+                    time.sleep(0.5 * (2 ** (attempt - 1)))
+                    continue
+                raise BitgetAPIError(
+                    f"Fill GET transport failed after {attempts} attempts: {exc}"
+                ) from exc
+
+            if response.status_code >= 500:
+                last_error = BitgetAPIError(
+                    f"Bitget transient HTTP {response.status_code}"
+                )
+                if attempt < attempts:
+                    time.sleep(0.5 * (2 ** (attempt - 1)))
+                    continue
+
+            try:
+                return self._parse_fill_response(response)
+            except BitgetFillPermissionError:
+                raise
+            except BitgetAPIError as exc:
+                last_error = exc
+                if response.status_code >= 500 and attempt < attempts:
+                    time.sleep(0.5 * (2 ** (attempt - 1)))
+                    continue
+                raise
+
+        raise BitgetAPIError(
+            f"Fill GET failed after {attempts} attempts: {last_error}"
+        )
