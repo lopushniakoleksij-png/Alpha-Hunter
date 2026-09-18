@@ -10,7 +10,7 @@ from .storage import SupabaseConfig
 
 ACCOUNT_TABLE = "alpha_hunter_account_state_snapshots"
 POSITION_TABLE = "alpha_hunter_open_position_snapshots"
-MODEL_VERSION = "canonical-account-ledger-v0.2-permission-evidence"
+MODEL_VERSION = "canonical-account-ledger-v0.1"
 SOURCE = "CANONICAL_SCANNER_PRIVATE_ACCOUNT_CACHE"
 
 
