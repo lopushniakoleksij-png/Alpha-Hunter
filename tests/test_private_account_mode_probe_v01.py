@@ -1,6 +1,10 @@
 import requests
 
-from alpha_hunter.bitget import BitgetAPIError, BitgetClient
+from alpha_hunter.bitget import (
+    BitgetAPIError,
+    BitgetClient,
+    BitgetDeterministicAPIError,
+)
 from alpha_hunter.private_account import collect_private_account_snapshot
 
 
@@ -27,6 +31,7 @@ class FakeClient:
         self.accounts = accounts or []
         self.positions = positions or []
         self.account_info_calls = 0
+        self.settings_calls = 0
         self.classic_account_calls = 0
         self.classic_position_calls = 0
 
@@ -37,6 +42,7 @@ class FakeClient:
         return self.account_info
 
     def account_settings_v3(self):
+        self.settings_calls += 1
         if self.settings_error is not None:
             raise self.settings_error
         return self.settings
@@ -112,6 +118,44 @@ def test_permission_probe_failure_is_diagnostic_only_and_classic_fallback_surviv
     assert result["api_permission_type"] is None
     assert result["api_permissions"] == []
     assert client.account_info_calls == 1
+    assert client.classic_account_calls == 1
+    assert client.classic_position_calls == 1
+
+
+def test_40084_confirms_classic_mode_and_skips_second_uta_probe():
+    client = FakeClient(
+        account_info_error=BitgetDeterministicAPIError(
+            (
+                "Bitget HTTP 400 error 40084: You are in Classic Account mode, "
+                "and the Unified Account API is not supported at this time"
+            ),
+            http_status=400,
+            bitget_code="40084",
+            bitget_message=(
+                "You are in Classic Account mode, and the Unified Account API "
+                "is not supported at this time"
+            ),
+        ),
+        settings={"accountMode": "unified"},
+        accounts=[{
+            "marginCoin": "USDT",
+            "available": "15",
+            "locked": "0",
+            "accountEquity": "15",
+            "unrealizedPL": "0",
+        }],
+        positions=[],
+    )
+
+    result = collect_private_account_snapshot(client, "usdt-futures")
+
+    assert result["status"] == "CONNECTED"
+    assert result["api_permission_probe_status"] == "NOT_APPLICABLE_CLASSIC_ACCOUNT"
+    assert result["account_mode_probe_status"] == "CLASSIC_CONFIRMED_FROM_V3_40084"
+    assert result["account_mode"] == "classic"
+    assert result["classic_v2_risk_evidence_accepted"] is True
+    assert client.account_info_calls == 1
+    assert client.settings_calls == 0
     assert client.classic_account_calls == 1
     assert client.classic_position_calls == 1
 
