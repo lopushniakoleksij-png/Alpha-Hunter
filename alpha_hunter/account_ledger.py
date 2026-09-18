@@ -10,7 +10,7 @@ from .storage import SupabaseConfig
 
 ACCOUNT_TABLE = "alpha_hunter_account_state_snapshots"
 POSITION_TABLE = "alpha_hunter_open_position_snapshots"
-MODEL_VERSION = "canonical-account-ledger-v0.1"
+MODEL_VERSION = "canonical-account-ledger-v0.2-permission-evidence"
 SOURCE = "CANONICAL_SCANNER_PRIVATE_ACCOUNT_CACHE"
 
 
@@ -223,6 +223,13 @@ def build_account_ledger_rows(
             else None,
             "scanner_open_position_count": private_account.get("open_position_count"),
             "persisted_open_position_count": len(positions),
+            "api_permission_probe_status": private_account.get("api_permission_probe_status"),
+            "api_permission_probe_error": private_account.get("api_permission_probe_error"),
+            "api_permission_type": private_account.get("api_permission_type"),
+            "api_permissions": private_account.get("api_permissions")
+            if isinstance(private_account.get("api_permissions"), list)
+            else [],
+            "permission_metadata_is_trade_authority": False,
             "locked_observed": usdt_account.get("locked") if usdt_account else None,
             "margin_used_inferred_from_locked": False,
             "daily_realized_pnl_invented": False,
