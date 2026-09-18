@@ -16,6 +16,10 @@ class BitgetAPIError(RuntimeError):
     pass
 
 
+class _BitgetDeterministicAPIError(BitgetAPIError):
+    """Internal marker for deterministic client errors that must not be retried."""
+
+
 @dataclass
 class BitgetClient:
     base_url: str = "https://api.bitget.com"
@@ -171,12 +175,12 @@ class BitgetClient:
                             code = error_payload.get("code")
                             msg = error_payload.get("msg")
                             if code is not None or msg is not None:
-                                raise BitgetAPIError(
+                                raise _BitgetDeterministicAPIError(
                                     f"Bitget HTTP {status} error "
                                     f"{code}: {msg}"
                                 ) from exc
 
-                        raise BitgetAPIError(
+                        raise _BitgetDeterministicAPIError(
                             f"Bitget HTTP {status}: "
                             f"{response.text[:500]}"
                         ) from exc
@@ -197,6 +201,9 @@ class BitgetClient:
                 return payload.get(
                     "data"
                 )
+
+            except _BitgetDeterministicAPIError:
+                raise
 
             except (
                 requests.RequestException,
