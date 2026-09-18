@@ -16,8 +16,21 @@ class BitgetAPIError(RuntimeError):
     pass
 
 
-class _BitgetDeterministicAPIError(BitgetAPIError):
-    """Internal marker for deterministic client errors that must not be retried."""
+class BitgetDeterministicAPIError(BitgetAPIError):
+    """Deterministic Bitget client error that must not be retried."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int,
+        bitget_code: str | None = None,
+        bitget_message: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.http_status = http_status
+        self.bitget_code = bitget_code
+        self.bitget_message = bitget_message
 
 
 @dataclass
@@ -175,14 +188,18 @@ class BitgetClient:
                             code = error_payload.get("code")
                             msg = error_payload.get("msg")
                             if code is not None or msg is not None:
-                                raise _BitgetDeterministicAPIError(
+                                raise BitgetDeterministicAPIError(
                                     f"Bitget HTTP {status} error "
-                                    f"{code}: {msg}"
+                                    f"{code}: {msg}",
+                                    http_status=status,
+                                    bitget_code=str(code) if code is not None else None,
+                                    bitget_message=str(msg) if msg is not None else None,
                                 ) from exc
 
-                        raise _BitgetDeterministicAPIError(
+                        raise BitgetDeterministicAPIError(
                             f"Bitget HTTP {status}: "
-                            f"{response.text[:500]}"
+                            f"{response.text[:500]}",
+                            http_status=status,
                         ) from exc
                     raise
 
@@ -202,7 +219,7 @@ class BitgetClient:
                     "data"
                 )
 
-            except _BitgetDeterministicAPIError:
+            except BitgetDeterministicAPIError:
                 raise
 
             except (

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .bitget import BitgetAPIError, BitgetClient
+from .bitget import BitgetAPIError, BitgetClient, BitgetDeterministicAPIError
 
+CLASSIC_ACCOUNT_V3_ERROR_CODE = "40084"
 UTA_ACCOUNT_MODES = {"unified", "hybrid", "upgrading", "switching"}
 
 
@@ -17,6 +18,11 @@ def _permission_probe(client: BitgetClient) -> dict[str, Any]:
     }
     try:
         info = client.account_info_v3()
+    except BitgetDeterministicAPIError as exc:
+        result["api_permission_probe_error"] = str(exc)
+        if exc.bitget_code == CLASSIC_ACCOUNT_V3_ERROR_CODE:
+            result["api_permission_probe_status"] = "NOT_APPLICABLE_CLASSIC_ACCOUNT"
+        return result
     except BitgetAPIError as exc:
         result["api_permission_probe_error"] = str(exc)
         return result
@@ -71,26 +77,49 @@ def collect_private_account_snapshot(
     asset_mode: str | None = None
     hold_mode: str | None = None
 
-    try:
-        settings = client.account_settings_v3()
-    except BitgetAPIError as exc:
-        # Classic accounts may not have UTA-management read permission.
-        # Keep the existing Classic read path, but preserve that the mode
-        # probe was unavailable rather than silently claiming it succeeded.
-        account_mode_probe_error = str(exc)
+    if permission_evidence["api_permission_probe_status"] == "NOT_APPLICABLE_CLASSIC_ACCOUNT":
+        # Bitget 40084 explicitly states that the calling account is Classic and
+        # the Unified Account API is unsupported. Treat that as positive mode
+        # evidence and do not make a second UTA-only settings request.
+        account_mode_probe_status = "CLASSIC_CONFIRMED_FROM_V3_40084"
+        account_mode_probe_error = permission_evidence["api_permission_probe_error"]
+        account_mode = "classic"
     else:
-        account_mode_probe_status = "CONNECTED"
-        account_mode = str(settings.get("accountMode") or "").strip().lower() or None
-        account_level = str(settings.get("accountLevel") or "").strip().lower() or None
-        asset_mode = str(settings.get("assetMode") or "").strip().lower() or None
-        hold_mode = str(settings.get("holdMode") or "").strip().lower() or None
+        try:
+            settings = client.account_settings_v3()
+        except BitgetAPIError as exc:
+            # If the account-info probe did not identify Classic mode, preserve
+            # the existing fail-closed fallback behavior.
+            account_mode_probe_error = str(exc)
+        else:
+            account_mode_probe_status = "CONNECTED"
+            account_mode = str(settings.get("accountMode") or "").strip().lower() or None
+            account_level = str(settings.get("accountLevel") or "").strip().lower() or None
+            asset_mode = str(settings.get("assetMode") or "").strip().lower() or None
+            hold_mode = str(settings.get("holdMode") or "").strip().lower() or None
 
-        if account_mode in UTA_ACCOUNT_MODES:
-            # Bitget documents v3 account/assets + v3 current-position for UTA.
-            # Do not accept Classic v2 balances/positions as risk evidence once
-            # UTA/Hybrid/transition mode is explicitly detected.
+            if account_mode in UTA_ACCOUNT_MODES:
+                # Bitget documents v3 account/assets + v3 current-position for UTA.
+                # Do not accept Classic v2 balances/positions as risk evidence once
+                # UTA/Hybrid/transition mode is explicitly detected.
+                return {
+                    "status": "ACCOUNT_MODE_REQUIRES_V3",
+                    "accounts": [],
+                    "open_positions": [],
+                    "open_position_count": 0,
+                    "account_mode_probe_status": account_mode_probe_status,
+                    "account_mode": account_mode,
+                    "account_level": account_level,
+                    "asset_mode": asset_mode,
+                    "hold_mode": hold_mode,
+                    "classic_v2_risk_evidence_accepted": False,
+                    **permission_evidence,
+                }
+
+            # The v3 settings contract currently documents only UTA/Hybrid and
+            # transition states. An unexpected successful mode must not be guessed.
             return {
-                "status": "ACCOUNT_MODE_REQUIRES_V3",
+                "status": "ACCOUNT_MODE_UNRECOGNIZED",
                 "accounts": [],
                 "open_positions": [],
                 "open_position_count": 0,
@@ -102,22 +131,6 @@ def collect_private_account_snapshot(
                 "classic_v2_risk_evidence_accepted": False,
                 **permission_evidence,
             }
-
-        # The v3 settings contract currently documents only UTA/Hybrid and
-        # transition states. An unexpected successful mode must not be guessed.
-        return {
-            "status": "ACCOUNT_MODE_UNRECOGNIZED",
-            "accounts": [],
-            "open_positions": [],
-            "open_position_count": 0,
-            "account_mode_probe_status": account_mode_probe_status,
-            "account_mode": account_mode,
-            "account_level": account_level,
-            "asset_mode": asset_mode,
-            "hold_mode": hold_mode,
-            "classic_v2_risk_evidence_accepted": False,
-            **permission_evidence,
-        }
 
     try:
         accounts = client.futures_accounts(product_type)
@@ -179,6 +192,7 @@ def collect_private_account_snapshot(
         "open_position_count": len(open_positions),
         "account_mode_probe_status": account_mode_probe_status,
         "account_mode_probe_error": account_mode_probe_error,
+        "account_mode": account_mode,
         "account_source": "BITGET_V2_CLASSIC",
         "classic_v2_risk_evidence_accepted": True,
         **permission_evidence,
