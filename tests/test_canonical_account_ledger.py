@@ -28,6 +28,9 @@ def test_connected_empty_positions_is_verified_read_only_evidence():
                 ],
                 "open_positions": [],
                 "open_position_count": 0,
+                "api_permission_probe_status": "CONNECTED",
+                "api_permission_type": "read-only",
+                "api_permissions": ["uta_mgt"],
             }
         )
     )
@@ -41,6 +44,10 @@ def test_connected_empty_positions_is_verified_read_only_evidence():
     assert account["margin_used_usdt"] is None
     assert account["daily_realized_pnl_usdt"] is None
     assert account["evidence"]["no_extra_bitget_request"] is True
+    assert account["evidence"]["api_permission_probe_status"] == "CONNECTED"
+    assert account["evidence"]["api_permission_type"] == "read-only"
+    assert account["evidence"]["api_permissions"] == ["uta_mgt"]
+    assert account["evidence"]["permission_metadata_is_trade_authority"] is False
     assert positions == []
 
 

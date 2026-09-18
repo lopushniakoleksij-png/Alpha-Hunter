@@ -5,13 +5,34 @@ from alpha_hunter.private_account import collect_private_account_snapshot
 class FakeClient:
     private_api_configured = True
 
-    def __init__(self, *, settings=None, settings_error=None, accounts=None, positions=None):
+    def __init__(
+        self,
+        *,
+        account_info=None,
+        account_info_error=None,
+        settings=None,
+        settings_error=None,
+        accounts=None,
+        positions=None,
+    ):
+        self.account_info = account_info or {
+            "permType": "read-only",
+            "permissions": [],
+        }
+        self.account_info_error = account_info_error
         self.settings = settings
         self.settings_error = settings_error
         self.accounts = accounts or []
         self.positions = positions or []
+        self.account_info_calls = 0
         self.classic_account_calls = 0
         self.classic_position_calls = 0
+
+    def account_info_v3(self):
+        self.account_info_calls += 1
+        if self.account_info_error is not None:
+            raise self.account_info_error
+        return self.account_info
 
     def account_settings_v3(self):
         if self.settings_error is not None:
@@ -36,8 +57,61 @@ def test_no_credentials_still_fail_closed_without_classic_reads():
     result = collect_private_account_snapshot(client, "usdt-futures")
     assert result["status"] == "NOT_CONFIGURED"
     assert result["account_mode_probe_status"] == "NOT_CONFIGURED"
+    assert result["api_permission_probe_status"] == "NOT_CONFIGURED"
+    assert client.account_info_calls == 0
     assert client.classic_account_calls == 0
     assert client.classic_position_calls == 0
+
+
+def test_permission_metadata_is_observed_but_never_grants_trade_authority():
+    client = FakeClient(
+        account_info={
+            "permType": "read-and-write",
+            "permissions": ["uta_trade", "uta_mgt", "uta_trade"],
+        },
+        settings_error=BitgetAPIError("UTA settings unavailable"),
+        accounts=[{
+            "marginCoin": "USDT",
+            "available": "12.5",
+            "locked": "0",
+            "accountEquity": "12.5",
+            "unrealizedPL": "0",
+        }],
+        positions=[],
+    )
+    result = collect_private_account_snapshot(client, "usdt-futures")
+
+    assert result["status"] == "CONNECTED"
+    assert result["api_permission_probe_status"] == "CONNECTED"
+    assert result["api_permission_type"] == "read-and-write"
+    assert result["api_permissions"] == ["uta_mgt", "uta_trade"]
+    assert result["classic_v2_risk_evidence_accepted"] is True
+    assert "trade_permission" not in result
+
+
+def test_permission_probe_failure_is_diagnostic_only_and_classic_fallback_survives():
+    client = FakeClient(
+        account_info_error=BitgetAPIError("account info unavailable"),
+        settings_error=BitgetAPIError("UTA settings unavailable"),
+        accounts=[{
+            "marginCoin": "USDT",
+            "available": "7",
+            "locked": "0",
+            "accountEquity": "7",
+            "unrealizedPL": "0",
+        }],
+        positions=[],
+    )
+    result = collect_private_account_snapshot(client, "usdt-futures")
+
+    assert result["status"] == "CONNECTED"
+    assert result["api_permission_probe_status"] == "UNAVAILABLE"
+    assert "account info unavailable" in result["api_permission_probe_error"]
+    assert result["api_permission_type"] is None
+    assert result["api_permissions"] == []
+    assert client.account_info_calls == 1
+    assert client.classic_account_calls == 1
+    assert client.classic_position_calls == 1
 
 
 def test_unified_mode_blocks_classic_v2_risk_evidence():

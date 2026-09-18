@@ -5,7 +5,9 @@ on:
     paths:
       - 'alpha_hunter/bitget.py'
       - 'alpha_hunter/private_account.py'
+      - 'alpha_hunter/account_ledger.py'
       - 'tests/test_private_account_mode_probe_v01.py'
+      - 'tests/test_canonical_account_ledger.py'
       - '.github/workflows/account-mode-probe-v01-ci.yml'
   push:
     branches:
@@ -13,7 +15,9 @@ on:
     paths:
       - 'alpha_hunter/bitget.py'
       - 'alpha_hunter/private_account.py'
+      - 'alpha_hunter/account_ledger.py'
       - 'tests/test_private_account_mode_probe_v01.py'
+      - 'tests/test_canonical_account_ledger.py'
 
 permissions:
   contents: read
@@ -41,7 +45,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           text = Path('alpha_hunter/bitget.py').read_text().lower()
+          assert '/api/v3/account/info' in text
           assert '/api/v3/account/settings' in text
+          assert 'private=true' in text
           assert 'place-order' not in text
           assert 'place_order' not in text
           assert 'cancel-order' not in text
