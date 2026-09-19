@@ -14,7 +14,7 @@ from .storage import SupabaseConfig
 
 TRACEABILITY_TABLE = "alpha_hunter_fill_traceability_runs"
 FILL_TABLE = "alpha_hunter_fill_evidence"
-MODEL_VERSION = "canonical-readonly-fill-ledger-v0.2-permission-blocker"
+MODEL_VERSION = "canonical-readonly-fill-ledger-v0.3-historical-diagnostic"
 ENDPOINT = "/api/v2/mix/order/fills"
 WINDOW_HOURS = 168
 HISTORICAL_DIAGNOSTIC_WINDOW_HOURS = 720
