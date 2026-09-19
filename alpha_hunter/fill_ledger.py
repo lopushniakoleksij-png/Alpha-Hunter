@@ -377,7 +377,11 @@ def collect_fill_traceability(
                     fill_count=len(fills),
                     oldest_fill_at_utc=min((row["fill_time_utc"] for row in fills), default=None),
                     newest_fill_at_utc=max((row["fill_time_utc"] for row in fills), default=None),
-                    detail=(\n                        None\n                        if fills\n                        else f"Validated {window_hours / 24:g}-day window returned zero fills"\n                    ),
+                    detail=(
+                        None
+                        if fills
+                        else f"Validated {window_hours / 24:g}-day window returned zero fills"
+                    ),
                     account_probe_status=account_probe_status,
                 ),
                 fills,
