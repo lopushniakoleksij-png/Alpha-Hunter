@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from alpha_hunter.fill_client import BitgetFillPermissionError
-from alpha_hunter.fill_ledger import collect_fill_traceability
+from alpha_hunter.fill_ledger import (
+    collect_fill_traceability,
+    collect_fill_traceability_with_historical_diagnostic,
+)
 
 
 class FakeFillClient:
@@ -191,6 +194,94 @@ def test_zero_fills_is_validated_but_not_connected_traceability_pass():
     assert result.run_row["fill_count"] == 0
     assert result.run_row["evidence"]["zero_fills_do_not_pass_traceability"] is True
 
+
+
+def test_historical_diagnostic_is_not_used_when_recent_fill_exists():
+    client = FakeFillClient(
+        pages=[{"fillList": [valid_fill()], "endId": "cursor-1"}], configured=True
+    )
+    result = collect_fill_traceability_with_historical_diagnostic(
+        client,
+        product_type="usdt-futures",
+        source_run_id="run-recent-fill",
+        observed_at_utc="2026-09-19T12:00:00+00:00",
+        private_account=connected_classic_account(),
+    )
+
+    assert result.run_row["status"] == "CONNECTED"
+    assert result.run_row["fill_count"] == 1
+    assert len(client.calls) == 1
+    assert result.run_row["evidence"]["window_hours"] == 168
+    assert "historical_diagnostic_used" not in result.run_row["evidence"]
+    assert result.run_row["trade_permission"] is False
+
+
+def test_zero_recent_fills_uses_read_only_30_day_diagnostic_and_recovers_history():
+    client = FakeFillClient(
+        pages=[
+            {"fillList": [], "endId": ""},
+            {"fillList": [valid_fill("trade-old", "order-old")], "endId": "cursor-old"},
+        ],
+        configured=True,
+    )
+    result = collect_fill_traceability_with_historical_diagnostic(
+        client,
+        product_type="usdt-futures",
+        source_run_id="run-historical-fill",
+        observed_at_utc="2026-09-19T12:00:00+00:00",
+        private_account=connected_classic_account(),
+    )
+
+    assert len(client.calls) == 2
+    recent_span_hours = (
+        client.calls[0]["end_time_ms"] - client.calls[0]["start_time_ms"]
+    ) // 3_600_000
+    historical_span_hours = (
+        client.calls[1]["end_time_ms"] - client.calls[1]["start_time_ms"]
+    ) // 3_600_000
+    assert recent_span_hours == 168
+    assert historical_span_hours == 720
+    assert result.run_row["status"] == "CONNECTED"
+    assert result.run_row["complete"] is True
+    assert result.run_row["schema_validated"] is True
+    assert result.run_row["fill_count"] == 1
+    assert result.fill_rows[0]["trade_id"] == "trade-old"
+    evidence = result.run_row["evidence"]
+    assert evidence["window_hours"] == 720
+    assert evidence["recent_window_status"] == "ZERO_FILLS"
+    assert evidence["recent_window_hours"] == 168
+    assert evidence["historical_diagnostic_used"] is True
+    assert evidence["historical_diagnostic_window_hours"] == 720
+    assert evidence["read_only_get"] is True
+    assert evidence["no_order_write_path"] is True
+    assert result.run_row["trade_permission"] is False
+
+
+def test_zero_recent_and_historical_fills_stays_zero_and_fail_closed():
+    client = FakeFillClient(
+        pages=[
+            {"fillList": [], "endId": ""},
+            {"fillList": [], "endId": ""},
+        ],
+        configured=True,
+    )
+    result = collect_fill_traceability_with_historical_diagnostic(
+        client,
+        product_type="usdt-futures",
+        source_run_id="run-no-history",
+        observed_at_utc="2026-09-19T12:00:00+00:00",
+        private_account=connected_classic_account(),
+    )
+
+    assert len(client.calls) == 2
+    assert result.run_row["status"] == "ZERO_FILLS"
+    assert result.run_row["complete"] is True
+    assert result.run_row["schema_validated"] is True
+    assert result.run_row["fill_count"] == 0
+    assert "30-day historical diagnostic returned zero fills" in result.run_row["detail"]
+    assert result.run_row["evidence"]["historical_diagnostic_used"] is True
+    assert result.run_row["evidence"]["zero_fills_do_not_pass_traceability"] is True
+    assert result.run_row["trade_permission"] is False
 
 def test_invalid_fill_schema_fails_closed_without_partial_valid_claim():
     broken = valid_fill()

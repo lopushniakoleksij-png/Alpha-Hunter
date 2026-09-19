@@ -11,7 +11,7 @@ from alpha_hunter.account_ledger import (
 from alpha_hunter.collector import load_config, main
 from alpha_hunter.fill_client import ReadOnlyFillClient
 from alpha_hunter.fill_ledger import (
-    collect_fill_traceability,
+    collect_fill_traceability_with_historical_diagnostic,
     persist_fill_traceability,
 )
 from alpha_hunter.storage import SupabaseConfig
@@ -110,7 +110,7 @@ def run() -> int:
         private_account = snapshot.get("private_account")
         if not isinstance(private_account, dict):
             private_account = {}
-        fill_result = collect_fill_traceability(
+        fill_result = collect_fill_traceability_with_historical_diagnostic(
             fill_client,
             product_type=str(config.get("product_type", "usdt-futures")),
             source_run_id=run_id,
