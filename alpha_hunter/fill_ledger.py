@@ -17,6 +17,7 @@ FILL_TABLE = "alpha_hunter_fill_evidence"
 MODEL_VERSION = "canonical-readonly-fill-ledger-v0.2-permission-blocker"
 ENDPOINT = "/api/v2/mix/order/fills"
 WINDOW_HOURS = 168
+HISTORICAL_DIAGNOSTIC_WINDOW_HOURS = 720
 PAGE_LIMIT = 100
 MAX_PAGES = 20
 
@@ -204,7 +205,7 @@ def _run_row(
             "read_only_get": True,
             "maximum_pages": MAX_PAGES,
             "page_limit": PAGE_LIMIT,
-            "window_hours": window_hours,
+            "window_hours": int((end - start).total_seconds() // 3600),
             "no_order_write_path": True,
             "zero_fills_do_not_pass_traceability": True,
             "blocker_code": blocker_code,
@@ -224,6 +225,7 @@ def collect_fill_traceability(
     source_run_id: str,
     observed_at_utc: str,
     private_account: dict[str, Any],
+    window_hours: int = WINDOW_HOURS,
 ) -> FillTraceabilityResult:
     """Read recent Classic futures fills after the canonical market scan.
 
@@ -459,6 +461,63 @@ def collect_fill_traceability(
         fills,
     )
 
+
+
+def collect_fill_traceability_with_historical_diagnostic(
+    client: BitgetClient,
+    *,
+    product_type: str,
+    source_run_id: str,
+    observed_at_utc: str,
+    private_account: dict[str, Any],
+) -> FillTraceabilityResult:
+    """Widen fill evidence to 30 days only after a validated empty 7-day window.
+
+    Both probes use the same GET-only Classic futures fill endpoint. The fallback
+    is diagnostic evidence only: it never grants trade permission and never
+    authorizes slippage or realistic-net-R claims.
+    """
+
+    recent = collect_fill_traceability(
+        client,
+        product_type=product_type,
+        source_run_id=source_run_id,
+        observed_at_utc=observed_at_utc,
+        private_account=private_account,
+        window_hours=WINDOW_HOURS,
+    )
+    if recent.run_row.get("status") != "ZERO_FILLS":
+        return recent
+
+    historical = collect_fill_traceability(
+        client,
+        product_type=product_type,
+        source_run_id=source_run_id,
+        observed_at_utc=observed_at_utc,
+        private_account=private_account,
+        window_hours=HISTORICAL_DIAGNOSTIC_WINDOW_HOURS,
+    )
+    evidence = historical.run_row.setdefault("evidence", {})
+    evidence["recent_window_status"] = "ZERO_FILLS"
+    evidence["recent_window_hours"] = WINDOW_HOURS
+    evidence["historical_diagnostic_used"] = True
+    evidence["historical_diagnostic_window_hours"] = (
+        HISTORICAL_DIAGNOSTIC_WINDOW_HOURS
+    )
+
+    status = str(historical.run_row.get("status") or "")
+    fill_count = int(historical.run_row.get("fill_count") or 0)
+    if status == "ZERO_FILLS":
+        historical.run_row["detail"] = (
+            "Validated 7-day recent window and 30-day historical diagnostic "
+            "returned zero fills"
+        )
+    elif status == "CONNECTED":
+        historical.run_row["detail"] = (
+            "Recent 7-day window returned zero fills; 30-day read-only "
+            f"historical diagnostic recovered {fill_count} fill(s)"
+        )
+    return historical
 
 def _insert_ignore(
     settings: SupabaseConfig,
