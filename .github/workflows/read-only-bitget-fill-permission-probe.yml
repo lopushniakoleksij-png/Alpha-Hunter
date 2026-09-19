@@ -1,0 +1,118 @@
+name: Read-Only Bitget Fill Permission Probe
+
+on:
+  push:
+    branches:
+      - ops/read-only-bitget-fill-probe-20260919
+    paths:
+      - '.github/workflows/read-only-bitget-fill-permission-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
+      BITGET_SECRET_KEY: ${{ secrets.BITGET_SECRET_KEY }}
+      BITGET_API_PASSPHRASE: ${{ secrets.BITGET_API_PASSPHRASE }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install minimal dependency
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Assert GET-only fill client
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('alpha_hunter/fill_client.py').read_text().lower()
+          required = ['requests.get', '/api/v2/mix/order/fills']
+          forbidden = [
+              'requests.post',
+              'requests.put',
+              'requests.delete',
+              'place_order',
+              'place-order',
+              'cancel_order',
+              'cancel-order',
+              'modify-order',
+              'batch-orders',
+              'set-leverage',
+          ]
+          missing = [x for x in required if x not in text]
+          hits = [x for x in forbidden if x in text]
+          if missing:
+              raise SystemExit(f'GET-only contract missing markers: {missing}')
+          if hits:
+              raise SystemExit(f'Forbidden write markers found: {hits}')
+          print('GET_ONLY_STATIC_ASSERTION=PASS')
+          PY
+
+      - name: Probe Futures Order READ permission
+        shell: bash
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone, timedelta
+
+          from alpha_hunter.bitget import BitgetAPIError
+          from alpha_hunter.fill_client import (
+              BitgetFillPermissionError,
+              ReadOnlyFillClient,
+          )
+
+          client = ReadOnlyFillClient.from_environment(
+              timeout=12,
+              max_retries=1,
+          )
+
+          if not client.private_api_configured:
+              print('CREDENTIAL_STATE=MISSING')
+              print('PERMISSION_PROBE=NOT_RUN')
+              raise SystemExit(2)
+
+          end = datetime.now(timezone.utc)
+          start = end - timedelta(days=7)
+          start_ms = int(start.timestamp() * 1000)
+          end_ms = int(end.timestamp() * 1000)
+
+          try:
+              payload = client.futures_fills(
+                  'usdt-futures',
+                  start_time_ms=start_ms,
+                  end_time_ms=end_ms,
+                  limit=1,
+              )
+          except BitgetFillPermissionError:
+              print('CREDENTIAL_STATE=CONFIGURED')
+              print('PERMISSION_PROBE=BLOCKED')
+              print('BITGET_CODE=40014')
+              print('REQUIRED_PERMISSION=FUTURES_ORDER_READ')
+              print('HTTP_CONTRACT=GET_ONLY')
+              print('ENDPOINT=/api/v2/mix/order/fills')
+              raise SystemExit(14)
+          except BitgetAPIError as exc:
+              print('CREDENTIAL_STATE=CONFIGURED')
+              print('PERMISSION_PROBE=API_ERROR')
+              print('ERROR_TYPE=' + type(exc).__name__)
+              print('ERROR=' + str(exc)[:300].replace('\n', ' '))
+              print('HTTP_CONTRACT=GET_ONLY')
+              print('ENDPOINT=/api/v2/mix/order/fills')
+              raise SystemExit(1)
+
+          print('CREDENTIAL_STATE=CONFIGURED')
+          print('PERMISSION_PROBE=PASS')
+          print('BITGET_CODE=00000')
+          print('HTTP_CONTRACT=GET_ONLY')
+          print('ENDPOINT=/api/v2/mix/order/fills')
+          print('PAYLOAD_OBJECT=' + str(isinstance(payload, dict)).lower())
+          print('SECRET_VALUES_PRINTED=false')
+          PY
