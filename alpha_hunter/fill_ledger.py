@@ -204,7 +204,7 @@ def _run_row(
             "read_only_get": True,
             "maximum_pages": MAX_PAGES,
             "page_limit": PAGE_LIMIT,
-            "window_hours": WINDOW_HOURS,
+            "window_hours": window_hours,
             "no_order_write_path": True,
             "zero_fills_do_not_pass_traceability": True,
             "blocker_code": blocker_code,
@@ -238,7 +238,7 @@ def collect_fill_traceability(
         raise ValueError("fill traceability observed_at_utc is invalid") from exc
     if end.tzinfo is None:
         end = end.replace(tzinfo=timezone.utc)
-    start = end - timedelta(hours=WINDOW_HOURS)
+    start = end - timedelta(hours=window_hours)
     trace_id = _traceability_run_id(source_run_id, start, end)
 
     account_status = str(private_account.get("status") or "MISSING").upper()
@@ -375,7 +375,7 @@ def collect_fill_traceability(
                     fill_count=len(fills),
                     oldest_fill_at_utc=min((row["fill_time_utc"] for row in fills), default=None),
                     newest_fill_at_utc=max((row["fill_time_utc"] for row in fills), default=None),
-                    detail=(None if fills else "Validated 7-day window returned zero fills"),
+                    detail=(\n                        None\n                        if fills\n                        else f"Validated {window_hours / 24:g}-day window returned zero fills"\n                    ),
                     account_probe_status=account_probe_status,
                 ),
                 fills,
