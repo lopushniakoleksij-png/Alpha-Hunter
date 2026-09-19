@@ -49,7 +49,7 @@ jobs:
           from pathlib import Path
 
           workflow = Path(".github/workflows/p0-readonly-bitget-smoke.yml").read_text()
-          probe = workflow.split("Credentialed GET-only smoke", 1)[1]
+          probe = workflow.rsplit("# SMOKE_PROBE_BEGIN", 1)[1].split("# SMOKE_PROBE_END", 1)[0]
           forbidden = (
               "place_order",
               "cancel_order",
@@ -97,6 +97,7 @@ jobs:
         shell: bash
         run: |
           python - <<'PY'
+          # SMOKE_PROBE_BEGIN
           import json
           import os
           from datetime import datetime, timezone
@@ -185,4 +186,5 @@ jobs:
           if not passed:
               raise SystemExit("Read-only fill smoke: INCOMPLETE")
           print("READ_ONLY_BITGET_SMOKE=PASS")
+          # SMOKE_PROBE_END
           PY
