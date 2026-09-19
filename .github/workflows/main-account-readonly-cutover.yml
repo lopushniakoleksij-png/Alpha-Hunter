@@ -1,0 +1,41 @@
+name: Main Account Read-Only Cutover Verification
+
+on:
+  push:
+    branches:
+      - ops/main-account-readonly-cutover-20260919
+    paths:
+      - .github/workflows/main-account-readonly-cutover.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
+      BITGET_SECRET_KEY: ${{ secrets.BITGET_SECRET_KEY }}
+      BITGET_API_PASSPHRASE: ${{ secrets.BITGET_API_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install minimal verifier dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Prove verifier safety boundary
+        run: >-
+          python -m pytest -q
+          tests/test_main_account_readonly_cutover_verifier.py
+          tests/test_fill_client.py
+      - name: Run GET-only Main-account verifier
+        shell: bash
+        run: |
+          set +e
+          python ops/verify_main_account_readonly.py
+          code=$?
+          echo "verifier_exit_code=$code"
+          exit "$code"
