@@ -13,7 +13,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     env:
       BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
       BITGET_SECRET_KEY: ${{ secrets.BITGET_SECRET_KEY }}
@@ -26,8 +26,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install minimal dependency
-        run: python -m pip install --disable-pip-version-check requests
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check requests pytest
+
+      - name: Run current fill/account safety tests
+        run: |
+          python -m pytest -q \
+            tests/test_fill_client.py \
+            tests/test_canonical_readonly_fill_ledger_v01.py \
+            tests/test_private_account_mode_probe_v01.py
 
       - name: Assert GET-only fill client
         shell: bash
@@ -81,14 +88,12 @@ jobs:
 
           end = datetime.now(timezone.utc)
           start = end - timedelta(days=7)
-          start_ms = int(start.timestamp() * 1000)
-          end_ms = int(end.timestamp() * 1000)
 
           try:
               payload = client.futures_fills(
                   'usdt-futures',
-                  start_time_ms=start_ms,
-                  end_time_ms=end_ms,
+                  start_time_ms=int(start.timestamp() * 1000),
+                  end_time_ms=int(end.timestamp() * 1000),
                   limit=1,
               )
           except BitgetFillPermissionError:
