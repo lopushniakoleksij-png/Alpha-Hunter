@@ -121,3 +121,5 @@ jobs:
           print('PAYLOAD_OBJECT=' + str(isinstance(payload, dict)).lower())
           print('SECRET_VALUES_PRINTED=false')
           PY
+
+# rerun-after-permission-fix-and-v03-sync
