@@ -1,0 +1,37 @@
+name: Geometry Holdout Sealed Evaluator v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'geometry_holdout_sealed_evaluator_v01.sql'
+      - 'tests/test_geometry_holdout_sealed_evaluator_v01.py'
+      - '.github/workflows/geometry-holdout-sealed-evaluator-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'geometry_holdout_sealed_evaluator_v01.sql'
+      - 'tests/test_geometry_holdout_sealed_evaluator_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run sealed evaluator and scientific safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_geometry_holdout_sealed_evaluator_v01.py
+          tests/test_geometry_prospective_holdout_v01.py
+          tests/test_geometry_multitimeframe_research_v03.py
+          tests/test_scientific_forward_holdout_v01.py
+          tests/test_money_entry_progression_ledger.py
+          tests/test_production_gates_v03.py
