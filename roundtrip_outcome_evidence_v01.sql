@@ -49,6 +49,11 @@ select
     as contains_sys_origin,
   bool_or(lower(coalesce(f.enter_point_source,''))='api')
     as contains_api_origin,
+  bool_or(
+    lower(coalesce(f.enter_point_source,'')) not in ('ios','sys','api')
+  ) as contains_other_origin,
+  bool_or(nullif(trim(coalesce(f.enter_point_source,'')),'') is null)
+    as contains_unknown_origin,
   true as shadow_only,
   false as trade_permission
 from public.alpha_hunter_fill_evidence f
@@ -140,15 +145,22 @@ episode_rollup as (
       filter(where s.trade_side='CLOSE')
       /nullif(sum(s.base_qty) filter(where s.trade_side='CLOSE'),0)
       as closing_vwap,
-    array_agg(
-      distinct origin
-      order by origin
+    array_remove(
+      array[
+        case when bool_or(s.contains_ios_origin) then 'ios' end,
+        case when bool_or(s.contains_sys_origin) then 'sys' end,
+        case when bool_or(s.contains_api_origin) then 'api' end,
+        case when bool_or(s.contains_other_origin) then 'other' end,
+        case when bool_or(s.contains_unknown_origin) then 'unknown' end
+      ],
+      null
     ) as origin_set,
     bool_or(s.contains_ios_origin) as contains_ios_origin,
     bool_or(s.contains_sys_origin) as contains_sys_origin,
-    bool_or(s.contains_api_origin) as contains_api_origin
+    bool_or(s.contains_api_origin) as contains_api_origin,
+    bool_or(s.contains_other_origin) as contains_other_origin,
+    bool_or(s.contains_unknown_origin) as contains_unknown_origin
   from segmented s
-  cross join lateral unnest(s.origin_set) origin
   group by
     s.symbol,
     s.direction,
@@ -221,6 +233,8 @@ select
   c.contains_ios_origin,
   c.contains_sys_origin,
   c.contains_api_origin,
+  c.contains_other_origin,
+  c.contains_unknown_origin,
   false as verified_alpha_hunter_execution,
   false as alpha_hunter_execution_claim_permitted,
   false as funding_bound,
