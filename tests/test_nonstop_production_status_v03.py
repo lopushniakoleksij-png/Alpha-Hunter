@@ -65,6 +65,35 @@ def test_h2_repair_action_requires_capture_or_anchor_outage_not_any_historical_f
         assert marker in STATUS
 
 
+
+def test_v03_monitors_h2_sealed_collector_and_requires_all_hourly_jobs():
+    required = [
+        "alpha_hunter_h2_direction_sealed_collection_status_v01",
+        "alpha-hunter-h2-direction-sealed-outcome-hourly",
+        "required_active_job_count<14",
+        "P0_REQUIRED_JOB_MISSING",
+        "RESTORE_REQUIRED_HOURLY_JOBS",
+        "SEALED_COLLECTION_INCOMPLETE_RETRY_REQUIRED",
+        "REPAIR_H2_SEALED_COLLECTION",
+        "h2_sealed_collection_status",
+    ]
+    for marker in required:
+        assert marker in STATUS
+
+
+def test_v03_h2_sealed_results_cannot_silently_unseal():
+    required = [
+        "h2c.primary_results_exposed is true",
+        "h2c.outcome_access_permitted is true",
+        "h2c.confirmatory_analysis_permitted is true",
+        "h2c.t0_authorized is true",
+        "h2c.threshold_change_permitted is true",
+        "h2c.production_promotion_permitted is true",
+    ]
+    for marker in required:
+        assert marker in STATUS
+
+
 def test_v03_preserves_safety_claim_ceiling():
     required = [
         "false as automatic_threshold_change_permitted",
