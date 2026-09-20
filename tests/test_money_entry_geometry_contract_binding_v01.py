@@ -65,16 +65,20 @@ def test_exact_stage_requires_matching_geometry_contract():
 
 
 def test_existing_data_is_not_backfilled_or_reclassified():
-    # Migration changes schema/functions only. It must not rewrite historical
-    # threshold/stage rows to pretend a geometry identity existed.
-    forbidden = [
+    # Only inspect migration-time DDL before function definitions. The stage
+    # writer function is expected to contain a future INSERT when it is called.
+    ddl = LOWER.split(
+        "create or replace function private.alpha_hunter_run_big_mover_money_entry_bridge()",
+        1,
+    )[0]
+
+    for marker in (
         "update public.alpha_hunter_money_entry_threshold_sets",
         "update public.alpha_hunter_money_entry_stage_snapshots",
         "insert into public.alpha_hunter_money_entry_threshold_sets",
         "insert into public.alpha_hunter_money_entry_stage_snapshots",
-    ]
-    for marker in forbidden:
-        assert marker not in LOWER
+    ):
+        assert marker not in ddl
 
 
 def test_no_threshold_numbers_or_execution_authority_are_introduced():
