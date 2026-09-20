@@ -125,25 +125,25 @@ assembled as (
     d.threshold_change_permitted as confirmation_threshold_change_permitted,
     d.production_promotion_permitted as confirmation_production_promotion_permitted,
 
-    h.scientific_status as h2_scientific_status,
-    h.captured_rows as h2_captured_rows,
-    h.h2_context_rows,
-    h.h2_triggered_rows,
-    h.legacy_aligned_rows as h2_legacy_aligned_rows,
-    h.anchor_prices_resolved as h2_anchor_prices_resolved,
-    h.capture_or_anchor_failure_events as h2_capture_failure_events,
-    h.independent_h2_anchors,
-    h.independent_symbols as h2_independent_symbols,
-    h.utc_days as h2_utc_days,
-    h.long_anchors as h2_long_anchors,
-    h.short_anchors as h2_short_anchors,
-    h.source_geometry_rr5_anchors as h2_rr5_anchors,
-    h.capture_maturity_gate_met as h2_capture_maturity_gate_met,
-    h.outcome_access_permitted as h2_outcome_access_permitted,
-    h.confirmatory_analysis_permitted as h2_confirmatory_analysis_permitted,
-    h.t0_authorized as h2_t0_authorized,
-    h.threshold_change_permitted as h2_threshold_change_permitted,
-    h.production_promotion_permitted as h2_production_promotion_permitted,
+    h2s.scientific_status as h2_scientific_status,
+    h2s.captured_rows as h2_captured_rows,
+    h2s.h2_context_rows,
+    h2s.h2_triggered_rows,
+    h2s.legacy_aligned_rows as h2_legacy_aligned_rows,
+    h2s.anchor_prices_resolved as h2_anchor_prices_resolved,
+    h2s.capture_or_anchor_failure_events as h2_capture_failure_events,
+    h2s.independent_h2_anchors,
+    h2s.independent_symbols as h2_independent_symbols,
+    h2s.utc_days as h2_utc_days,
+    h2s.long_anchors as h2_long_anchors,
+    h2s.short_anchors as h2_short_anchors,
+    h2s.source_geometry_rr5_anchors as h2_rr5_anchors,
+    h2s.capture_maturity_gate_met as h2_capture_maturity_gate_met,
+    h2s.outcome_access_permitted as h2_outcome_access_permitted,
+    h2s.confirmatory_analysis_permitted as h2_confirmatory_analysis_permitted,
+    h2s.t0_authorized as h2_t0_authorized,
+    h2s.threshold_change_permitted as h2_threshold_change_permitted,
+    h2s.production_promotion_permitted as h2_production_promotion_permitted,
 
     s.safety_violation_rows as money_entry_safety_violation_rows,
     s.latest_stage_source_at_utc
@@ -151,7 +151,7 @@ assembled as (
   cross join holdout h
   cross join geometry g
   cross join confirmation d
-  cross join h2 h
+  cross join h2 h2s
   cross join stage_safety s
   cross join jobs j
 )
