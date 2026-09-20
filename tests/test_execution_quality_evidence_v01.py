@@ -237,3 +237,37 @@ def test_private_order_evidence_does_not_duplicate_raw_ids():
     assert '"raw_order_id_persisted_here": False' in MODULE
     assert '"raw_client_oid_persisted_here": False' in MODULE
     assert '"raw_order_or_client_ids_duplicated": False' in MODULE
+
+
+def test_markout_status_uses_hashed_order_as_independent_unit():
+    required = [
+        "order_identity_sha256 text not null",
+        "extensions.digest(f.order_id,'sha256')",
+        "alpha_hunter_execution_order_markouts_v01",
+        "group by order_identity_sha256,fill_origin_class,horizon_minutes",
+        "sum(constituent_fill_count)::bigint as constituent_fill_rows",
+        "order_weighted_signed_markout_bps",
+        "signed_post_fill_markout_bps*fill_quote_volume",
+    ]
+    for marker in required:
+        assert marker in SQL
+
+    status_section = SQL.split(
+        "create or replace view public.alpha_hunter_execution_quality_status_v01",
+        1,
+    )[1]
+    assert "from public.alpha_hunter_execution_order_markouts_v01" in status_section
+
+
+def test_markout_schema_does_not_persist_raw_order_identity():
+    markout_section = SQL.split(
+        "create table if not exists public.alpha_hunter_execution_markout_evidence_v01",
+        1,
+    )[1].split(
+        "create table if not exists public.alpha_hunter_execution_markout_failures_v01",
+        1,
+    )[0]
+
+    assert "order_identity_sha256" in markout_section
+    assert "order_id text" not in markout_section
+    assert "client_oid" not in markout_section
