@@ -88,7 +88,7 @@ def test_first_touch_path_does_not_guess_same_candle_order():
         "AMBIGUOUS_INTRABAR",
         "first_stop",
         "first_target",
-        "first_stop=first_target",
+        "t.first_stop=t.first_target",
     ]
     for marker in required:
         assert marker in SQL
