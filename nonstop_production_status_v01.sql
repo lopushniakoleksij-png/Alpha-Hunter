@@ -36,12 +36,6 @@ confirmation as (
   from public.alpha_hunter_direction_confirmation_tax_status_v01 d
   limit 1
 ),
-h2 as (
-  select h.*
-  from public.alpha_hunter_h2_direction_capture_status_v01 h
-  where h.spec_id='AH-DIRECTION-ARCHITECTURE-H2-CAPTURE-V01'
-  limit 1
-),
 stage_safety as (
   select
     count(*) filter(
@@ -67,8 +61,7 @@ jobs as (
           'alpha-hunter-control-plane-finalize-hourly',
           'alpha-hunter-signal-quality-forward-audit-hourly',
           'alpha-hunter-geometry-holdout-sealed-hourly',
-          'alpha-hunter-execution-markouts-hourly',
-          'alpha-hunter-h2-direction-capture-hourly'
+          'alpha-hunter-execution-markouts-hourly'
         )
     )::bigint as required_active_job_count
   from cron.job
@@ -125,33 +118,12 @@ assembled as (
     d.threshold_change_permitted as confirmation_threshold_change_permitted,
     d.production_promotion_permitted as confirmation_production_promotion_permitted,
 
-    h2s.scientific_status as h2_scientific_status,
-    h2s.captured_rows as h2_captured_rows,
-    h2s.h2_context_rows,
-    h2s.h2_triggered_rows,
-    h2s.legacy_aligned_rows as h2_legacy_aligned_rows,
-    h2s.anchor_prices_resolved as h2_anchor_prices_resolved,
-    h2s.capture_or_anchor_failure_events as h2_capture_failure_events,
-    h2s.independent_h2_anchors,
-    h2s.independent_symbols as h2_independent_symbols,
-    h2s.utc_days as h2_utc_days,
-    h2s.long_anchors as h2_long_anchors,
-    h2s.short_anchors as h2_short_anchors,
-    h2s.source_geometry_rr5_anchors as h2_rr5_anchors,
-    h2s.capture_maturity_gate_met as h2_capture_maturity_gate_met,
-    h2s.outcome_access_permitted as h2_outcome_access_permitted,
-    h2s.confirmatory_analysis_permitted as h2_confirmatory_analysis_permitted,
-    h2s.t0_authorized as h2_t0_authorized,
-    h2s.threshold_change_permitted as h2_threshold_change_permitted,
-    h2s.production_promotion_permitted as h2_production_promotion_permitted,
-
     s.safety_violation_rows as money_entry_safety_violation_rows,
     s.latest_stage_source_at_utc
   from latest_control c
   cross join holdout h
   cross join geometry g
   cross join confirmation d
-  cross join h2 h2s
   cross join stage_safety s
   cross join jobs j
 )
@@ -187,11 +159,6 @@ select
       or a.confirmation_threshold_change_permitted is true
       or a.confirmation_production_promotion_permitted is true
       or a.holdout_production_promotion_permitted is true
-      or a.h2_outcome_access_permitted is true
-      or a.h2_confirmatory_analysis_permitted is true
-      or a.h2_t0_authorized is true
-      or a.h2_threshold_change_permitted is true
-      or a.h2_production_promotion_permitted is true
     then 'REVIEW_REQUIRED'
     else 'ON_TRACK'
   end as anti_drift_status,
@@ -215,11 +182,7 @@ select
     when a.holdout_capture_failures>0
     then 'REPAIR_PROSPECTIVE_CAPTURE'
 
-    when a.h2_capture_failure_events>0
-    then 'REPAIR_H2_CAPTURE'
-
     when a.holdout_sample_gate_met is not true
-      or a.h2_capture_maturity_gate_met is not true
     then 'COLLECT_PROSPECTIVE_EVIDENCE'
 
     when a.holdout_primary_results_exposed is not true
