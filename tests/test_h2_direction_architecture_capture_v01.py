@@ -132,7 +132,7 @@ def test_outcomes_are_locked_and_future_evaluator_is_required():
         "evaluator_preregistration_required=true",
         "outcome_access_permitted=false",
         "confirmatory_analysis_permitted=false",
-        "PREREGISTER SEALED EVALUATOR BEFORE ANY H2 OUTCOME ACCESS",
+        "COLLECT PROSPECTIVE H2 EVIDENCE; KEEP OUTCOMES SEALED",
         "primary_results_exposed",
     ]
     for marker in required:
