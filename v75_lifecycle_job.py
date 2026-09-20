@@ -344,6 +344,7 @@ def load_supabase_state(
                     "first_3pct_at_utc,"
                     "first_5pct_at_utc,"
                     "first_10pct_at_utc,"
+                    "provisional_classification,"
                     "final_classification"
                 ),
             "order":
@@ -772,7 +773,7 @@ def main() -> int:
             episode = existing
             action = "UPDATE"
 
-        episode.final_classification = (
+        episode.provisional_classification = (
             classify_episode(
                 episode
             )
@@ -792,7 +793,7 @@ def main() -> int:
             f"shadow="
             f"{episode.v741_shadow_score or 0:>5.2f} "
             f"class="
-            f"{episode.final_classification}"
+            f"{episode.provisional_classification}"
         )
 
     save_state(
