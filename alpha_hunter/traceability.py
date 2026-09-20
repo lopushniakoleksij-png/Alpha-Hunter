@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-TRACEABILITY_VERSION = "1.2"
+TRACEABILITY_VERSION = "1.3"
 ROLLING_WINDOW_HOURS = 168
 DEFAULT_MINIMUM_EXECUTION_SCORE = 7.5
 DEFAULT_MINIMUM_EXECUTION_RR = 5.0
@@ -380,6 +380,32 @@ def _opening_fill_direction(fill: dict[str, Any]) -> str | None:
     return None
 
 
+def fill_origin_class(fill: dict[str, Any]) -> str:
+    source = str(
+        fill.get("enterPointSource")
+        or fill.get("enter_point_source")
+        or ""
+    ).upper().strip()
+
+    if source == "API":
+        return "API_ORIGIN_UNVERIFIED"
+    if source in {"IOS", "ANDROID", "WEB", "APP", "MOBILE"}:
+        return "HUMAN_UI_EXTERNAL"
+    if source:
+        return "NON_API_EXTERNAL"
+    return "UNKNOWN_ORIGIN"
+
+
+def heuristic_fill_attribution_eligible(fill: dict[str, Any]) -> bool:
+    """Allow heuristic signal attribution only for explicit API-origin fills.
+
+    API origin is still not proof that Alpha Hunter created the order. It only
+    permits the weaker symbol/direction/time heuristic. Human UI, other external
+    sources and unknown origin are excluded from signal->execution attribution.
+    """
+    return fill_origin_class(fill) == "API_ORIGIN_UNVERIFIED"
+
+
 def attach_fill_matches(
     episodes: list[ReadyEpisode],
     fills: list[dict[str, Any]],
@@ -387,6 +413,8 @@ def attach_fill_matches(
 ) -> None:
     for fill in fills:
         if not isinstance(fill, dict):
+            continue
+        if not heuristic_fill_attribution_eligible(fill):
             continue
         symbol = str(fill.get("symbol") or "").upper().strip()
         direction = _opening_fill_direction(fill)
@@ -417,7 +445,7 @@ def attach_fill_matches(
             episode.first_execution_at_utc = timestamp.isoformat()
             episode.first_execution_price = _float(fill.get("price"))
             episode.execution_source = str(fill.get("enterPointSource") or "UNKNOWN").upper()
-        episode.execution_match_quality = "HEURISTIC_FILL_MATCH"
+        episode.execution_match_quality = "HEURISTIC_API_ORIGIN_FILL_MATCH"
 
 
 def unlinked_open_like_fills(
@@ -434,6 +462,8 @@ def unlinked_open_like_fills(
     output = []
     for fill in fills:
         if not isinstance(fill, dict):
+            continue
+        if not heuristic_fill_attribution_eligible(fill):
             continue
         timestamp = fill_timestamp(fill)
         if timestamp is None or timestamp < start:
@@ -470,6 +500,22 @@ def rolling_summary(
     )
     fills = fills or []
     unlinked = unlinked_open_like_fills(episodes, fills, start)
+
+    open_like_origin_counts: Counter[str] = Counter()
+    non_attributable_open_like = 0
+    for fill in fills:
+        if not isinstance(fill, dict):
+            continue
+        timestamp = fill_timestamp(fill)
+        if timestamp is None or timestamp < start:
+            continue
+        if _opening_fill_direction(fill) is None:
+            continue
+        origin_class = fill_origin_class(fill)
+        open_like_origin_counts[origin_class] += 1
+        if not heuristic_fill_attribution_eligible(fill):
+            non_attributable_open_like += 1
+
     return {
         "window_start_utc": start.isoformat(),
         "window_end_utc": now.isoformat(),
@@ -482,6 +528,19 @@ def rolling_summary(
         "ready_symbols": distinct_symbols,
         "ready_ids": [episode.ready_id for episode in window],
         "unlinked_open_like_fill_count": len(unlinked),
+        "unlinked_open_like_fill_scope": (
+            "API_ORIGIN_HEURISTIC_ELIGIBLE_ONLY"
+        ),
+        "external_non_attributable_open_like_fill_count": (
+            non_attributable_open_like
+        ),
+        "open_like_fill_origin_distribution": _categorical_distribution(
+            open_like_origin_counts,
+            sum(open_like_origin_counts.values()),
+        ),
+        "execution_attribution_policy": (
+            "HUMAN_UI_EXCLUDED_API_ORIGIN_HEURISTIC_ONLY"
+        ),
         "traceability_status": (
             "FAIL"
             if unlinked

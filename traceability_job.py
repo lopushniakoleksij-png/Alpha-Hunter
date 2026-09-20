@@ -237,7 +237,21 @@ def print_report(
         "READY → EXECUTION:",
         "N/A" if conversion is None else f"{conversion:.2f}%",
     )
-    print("Unlinked open-like fills:", summary["unlinked_open_like_fill_count"])
+    print(
+        "Unlinked API-origin open-like fills:",
+        summary["unlinked_open_like_fill_count"],
+    )
+    print(
+        "External/non-attributable open-like fills:",
+        summary.get("external_non_attributable_open_like_fill_count", 0),
+    )
+    print(
+        "Execution attribution policy:",
+        summary.get(
+            "execution_attribution_policy",
+            "HUMAN_UI_EXCLUDED_API_ORIGIN_HEURISTIC_ONLY",
+        ),
+    )
     print("Traceability status:", summary["traceability_status"])
     print()
     if episodes:

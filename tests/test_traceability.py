@@ -67,7 +67,7 @@ def test_missing_symbol_does_not_terminate_ready_episode():
     assert episodes[0].ready_status == "READY"
 
 
-def test_fill_match_is_heuristic_not_verified():
+def test_human_ui_fill_is_not_heuristically_attributed():
     episodes: list[ReadyEpisode] = []
     ready = {
         "symbol": "TESTUSDT",
@@ -85,14 +85,98 @@ def test_fill_match_is_heuristic_not_verified():
             "tradeSide": "sell_single",
             "profit": "0",
             "price": "0.99",
-            "cTime": str(int(datetime(2026, 8, 30, 10, 5, tzinfo=timezone.utc).timestamp() * 1000)),
+            "cTime": str(
+                int(
+                    datetime(
+                        2026, 8, 30, 10, 5, tzinfo=timezone.utc
+                    ).timestamp()
+                    * 1000
+                )
+            ),
             "enterPointSource": "ios",
         }
     ]
+
     attach_fill_matches(episodes, fills)
+
+    assert episodes[0].first_execution_at_utc is None
+    assert episodes[0].execution_match_quality is None
+    assert episodes[0].execution_trade_ids == []
+
+
+def test_api_origin_fill_can_enter_heuristic_attribution_path():
+    episodes: list[ReadyEpisode] = []
+    ready = {
+        "symbol": "TESTUSDT",
+        "trade_permission": True,
+        "v7_trade_ready": True,
+        "execution_setup": {"direction": "SHORT"},
+    }
+    update_ready_ledger(episodes, [ready], "2026-08-30T10:00:00+00:00")
+    fills = [
+        {
+            "tradeId": "t-api",
+            "orderId": "o-api",
+            "symbol": "TESTUSDT",
+            "side": "sell",
+            "tradeSide": "sell_single",
+            "profit": "0",
+            "price": "0.99",
+            "cTime": str(
+                int(
+                    datetime(
+                        2026, 8, 30, 10, 5, tzinfo=timezone.utc
+                    ).timestamp()
+                    * 1000
+                )
+            ),
+            "enterPointSource": "api",
+        }
+    ]
+
+    attach_fill_matches(episodes, fills)
+
     assert episodes[0].first_execution_at_utc is not None
-    assert episodes[0].execution_match_quality == "HEURISTIC_FILL_MATCH"
-    assert episodes[0].execution_trade_ids == ["t1"]
+    assert (
+        episodes[0].execution_match_quality
+        == "HEURISTIC_API_ORIGIN_FILL_MATCH"
+    )
+    assert episodes[0].execution_trade_ids == ["t-api"]
+
+
+def test_rolling_summary_quarantines_manual_open_like_fills():
+    fills = [
+        {
+            "tradeId": "manual-1",
+            "symbol": "TESTUSDT",
+            "side": "buy",
+            "tradeSide": "open",
+            "profit": "0",
+            "cTime": str(
+                int(
+                    datetime(
+                        2026, 8, 30, 11, 0, tzinfo=timezone.utc
+                    ).timestamp()
+                    * 1000
+                )
+            ),
+            "enterPointSource": "ios",
+        }
+    ]
+
+    summary = rolling_summary(
+        [],
+        fills=fills,
+        now_utc="2026-08-30T12:00:00+00:00",
+        hours=168,
+    )
+
+    assert summary["unlinked_open_like_fill_count"] == 0
+    assert summary["external_non_attributable_open_like_fill_count"] == 1
+    assert summary["traceability_status"] == "PASS"
+    assert summary["execution_attribution_policy"] == (
+        "HUMAN_UI_EXCLUDED_API_ORIGIN_HEURISTIC_ONLY"
+    )
 
 
 def test_rolling_summary_separates_symbols_from_episodes():
