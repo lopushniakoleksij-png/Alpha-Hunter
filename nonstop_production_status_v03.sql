@@ -42,6 +42,12 @@ h2 as (
   where h.spec_id='AH-DIRECTION-ARCHITECTURE-H2-CAPTURE-V01'
   limit 1
 ),
+h2_sealed as (
+  select s.*
+  from public.alpha_hunter_h2_direction_sealed_collection_status_v01 s
+  where s.status_id='AH-H2-DIRECTION-SEALED-COLLECTION-V01'
+  limit 1
+),
 mover_audit as (
   select m.*
   from public.alpha_hunter_forward_missed_mover_audit_status_v01 m
@@ -74,6 +80,7 @@ jobs as (
           'alpha-hunter-geometry-holdout-sealed-hourly',
           'alpha-hunter-execution-markouts-hourly',
           'alpha-hunter-h2-direction-capture-hourly',
+          'alpha-hunter-h2-direction-sealed-outcome-hourly',
           'alpha-hunter-forward-missed-mover-audit-hourly'
         )
     )::bigint as required_active_job_count
@@ -198,6 +205,9 @@ select
     when a.latest_finalized_at_utc < clock_timestamp()-interval '2 hours'
     then 'P0_STALE'
 
+    when a.required_active_job_count<14
+    then 'P0_REQUIRED_JOB_MISSING'
+
     when a.failed_stage_count>0
     then 'P0_FAILED'
 
@@ -222,6 +232,12 @@ select
       or a.h2_t0_authorized is true
       or a.h2_threshold_change_permitted is true
       or a.h2_production_promotion_permitted is true
+      or h2c.primary_results_exposed is true
+      or h2c.outcome_access_permitted is true
+      or h2c.confirmatory_analysis_permitted is true
+      or h2c.t0_authorized is true
+      or h2c.threshold_change_permitted is true
+      or h2c.production_promotion_permitted is true
       or a.mover_second_market_scan_used is true
       or a.mover_root_cause_uses_only_pre5_evidence is not true
       or a.mover_post_event_magnitude_used_for_classification is true
@@ -239,6 +255,9 @@ select
 
     when a.latest_finalized_at_utc < clock_timestamp()-interval '2 hours'
     then 'RESTORE_P0_CONTINUITY'
+
+    when a.required_active_job_count<14
+    then 'RESTORE_REQUIRED_HOURLY_JOBS'
 
     when a.failed_stage_count>0
     then 'REPAIR_FAILED_PRODUCTION_STAGE'
@@ -258,6 +277,9 @@ select
         )
       )
     then 'REPAIR_H2_CAPTURE'
+
+    when h2c.collection_status='SEALED_COLLECTION_INCOMPLETE_RETRY_REQUIRED'
+    then 'REPAIR_H2_SEALED_COLLECTION'
 
     when a.mover_unaudited_episode_count>0
       and a.mover_latest_answer_key_episode_at_utc
@@ -282,8 +304,18 @@ select
   false as live_order_path_permitted,
   true as shadow_only,
   false as trade_permission,
-  'nonstop-production-status-v0.3'::text as model_version
-from assembled a;
+  'nonstop-production-status-v0.3'::text as model_version,
+
+  h2c.collection_status as h2_sealed_collection_status,
+  h2c.due_anchor_count as h2_sealed_due_anchor_count,
+  h2c.sealed_outcome_set_count as h2_sealed_outcome_set_count,
+  h2c.failure_event_count as h2_sealed_failure_event_count,
+  h2c.latest_failure_at_utc as h2_sealed_latest_failure_at_utc,
+  h2c.primary_results_exposed as h2_sealed_primary_results_exposed,
+  h2c.outcome_access_permitted as h2_sealed_outcome_access_permitted,
+  h2c.confirmatory_analysis_permitted as h2_sealed_confirmatory_analysis_permitted
+from assembled a
+cross join h2_sealed h2c;
 
 
 revoke all on public.alpha_hunter_nonstop_production_status_v03
