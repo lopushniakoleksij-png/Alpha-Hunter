@@ -14,6 +14,7 @@ from .storage import SupabaseConfig
 
 TRACEABILITY_TABLE = "alpha_hunter_fill_traceability_runs"
 FILL_TABLE = "alpha_hunter_fill_evidence"
+LINK_TABLE = "alpha_hunter_fill_traceability_links"
 MODEL_VERSION = "canonical-readonly-fill-ledger-v0.3-historical-diagnostic"
 ENDPOINT = "/api/v2/mix/order/fills"
 WINDOW_HOURS = 168
@@ -552,10 +553,61 @@ def _insert_ignore(
     return len(rows)
 
 
+def _fill_link_rows(
+    result: FillTraceabilityResult,
+) -> list[dict[str, Any]]:
+    """Bind this observation run to every fill it actually retrieved.
+
+    Fill identity is immutable and deduplicated globally by trade_id. The same
+    fill can therefore legitimately appear in multiple complete read-only
+    observation windows. This separate append-only membership ledger preserves
+    that run-level traceability without mutating the canonical fill row.
+    """
+
+    traceability_run_id = str(
+        result.run_row.get("traceability_run_id") or ""
+    )
+    source_run_id = str(
+        result.run_row.get("source_run_id") or ""
+    )
+    observed_at_utc = str(
+        result.run_row.get("observed_at_utc") or ""
+    )
+
+    if not traceability_run_id or not source_run_id or not observed_at_utc:
+        return []
+
+    rows: list[dict[str, Any]] = []
+
+    for fill in result.fill_rows:
+        fill_evidence_id = str(fill.get("fill_evidence_id") or "")
+        trade_id = str(fill.get("trade_id") or "")
+        fill_time_utc = str(fill.get("fill_time_utc") or "")
+
+        if not fill_evidence_id or not trade_id or not fill_time_utc:
+            continue
+
+        rows.append(
+            {
+                "traceability_run_id": traceability_run_id,
+                "source_run_id": source_run_id,
+                "fill_evidence_id": fill_evidence_id,
+                "trade_id": trade_id,
+                "observed_at_utc": observed_at_utc,
+                "fill_time_utc": fill_time_utc,
+                "model_version": MODEL_VERSION,
+                "shadow_only": True,
+                "trade_permission": False,
+            }
+        )
+
+    return rows
+
+
 def persist_fill_traceability(
     settings: SupabaseConfig,
     result: FillTraceabilityResult,
-) -> tuple[int, int]:
+) -> tuple[int, int, int]:
     run_attempted = _insert_ignore(
         settings,
         TRACEABILITY_TABLE,
@@ -568,4 +620,11 @@ def persist_fill_traceability(
         result.fill_rows,
         "trade_id",
     )
-    return run_attempted, fill_attempted
+    link_rows = _fill_link_rows(result)
+    links_attempted = _insert_ignore(
+        settings,
+        LINK_TABLE,
+        link_rows,
+        "traceability_run_id,fill_evidence_id",
+    )
+    return run_attempted, fill_attempted, links_attempted

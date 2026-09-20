@@ -117,7 +117,11 @@ def run() -> int:
             observed_at_utc=collected_at,
             private_account=private_account,
         )
-        fill_run_attempted, fills_attempted = persist_fill_traceability(
+        (
+            fill_run_attempted,
+            fills_attempted,
+            fill_links_attempted,
+        ) = persist_fill_traceability(
             settings, fill_result
         )
     except Exception as exc:
@@ -127,6 +131,7 @@ def run() -> int:
     print(
         "Fill ledger: SAVED_OR_ALREADY_PRESENT "
         f"run={fill_run_attempted} fills={fills_attempted} "
+        f"links={fill_links_attempted} "
         f"status={fill_result.run_row['status']} "
         f"complete={fill_result.run_row['complete']} "
         f"schema_validated={fill_result.run_row['schema_validated']} "
