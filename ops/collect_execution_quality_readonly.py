@@ -22,6 +22,13 @@ from alpha_hunter.execution_quality import (
 from alpha_hunter.storage import SupabaseConfig
 
 
+def _redact_identity(message: str, raw_order_id: str) -> str:
+    text = str(message)
+    if raw_order_id:
+        text = text.replace(raw_order_id, "<REDACTED_ORDER_ID>")
+    return text
+
+
 def main() -> int:
     """Collect sanitized GET-only order detail evidence for immutable fills."""
 
@@ -126,7 +133,10 @@ def main() -> int:
                     settings,
                     fill_evidence_id=fill_id,
                     error_class=exc.__class__.__name__,
-                    error_message=str(exc),
+                    error_message=_redact_identity(
+                        str(exc),
+                        order_id,
+                    ),
                 )
             except RuntimeError:
                 pass
