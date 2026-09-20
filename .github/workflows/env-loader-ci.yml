@@ -1,0 +1,33 @@
+name: Env Loader CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/env.py'
+      - 'tests/test_env.py'
+      - '.github/workflows/env-loader-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/env.py'
+      - 'tests/test_env.py'
+      - '.github/workflows/env-loader-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run env loader tests
+        run: python -m pytest -q tests/test_env.py
