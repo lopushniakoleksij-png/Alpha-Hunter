@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 
-TRACEABILITY_VERSION = "1.2"
+TRACEABILITY_VERSION = "1.3"
 ROLLING_WINDOW_HOURS = 168
 DEFAULT_MINIMUM_EXECUTION_SCORE = 7.5
 DEFAULT_MINIMUM_EXECUTION_RR = 5.0
