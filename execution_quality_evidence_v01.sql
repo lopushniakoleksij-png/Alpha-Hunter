@@ -87,6 +87,23 @@ create table if not exists public.alpha_hunter_execution_order_evidence_v01 (
 );
 
 
+create table if not exists public.alpha_hunter_execution_order_failures_v01 (
+  failure_id text primary key,
+  fill_evidence_id text,
+  failed_at_utc timestamptz not null default clock_timestamp(),
+  error_class text not null,
+  error_message text not null,
+  source_endpoint text not null
+    check (source_endpoint='/api/v2/mix/order/detail'),
+  read_only_get boolean not null default true check (read_only_get=true),
+  raw_order_id_printed boolean not null default false
+    check (raw_order_id_printed=false),
+  model_version text not null default 'execution-quality-order-v0.1',
+  shadow_only boolean not null default true check (shadow_only=true),
+  trade_permission boolean not null default false check (trade_permission=false)
+);
+
+
 create table if not exists public.alpha_hunter_execution_markout_evidence_v01 (
   markout_evidence_id text primary key,
   fill_evidence_id text not null
@@ -159,10 +176,13 @@ create table if not exists public.alpha_hunter_execution_markout_failures_v01 (
 
 
 alter table public.alpha_hunter_execution_order_evidence_v01 enable row level security;
+alter table public.alpha_hunter_execution_order_failures_v01 enable row level security;
 alter table public.alpha_hunter_execution_markout_evidence_v01 enable row level security;
 alter table public.alpha_hunter_execution_markout_failures_v01 enable row level security;
 
 revoke all on table public.alpha_hunter_execution_order_evidence_v01
+  from public,anon,authenticated;
+revoke all on table public.alpha_hunter_execution_order_failures_v01
   from public,anon,authenticated;
 revoke all on table public.alpha_hunter_execution_markout_evidence_v01
   from public,anon,authenticated;
@@ -170,6 +190,8 @@ revoke all on table public.alpha_hunter_execution_markout_failures_v01
   from public,anon,authenticated;
 
 grant select,insert on table public.alpha_hunter_execution_order_evidence_v01
+  to service_role;
+grant select,insert on table public.alpha_hunter_execution_order_failures_v01
   to service_role;
 grant select on table public.alpha_hunter_execution_markout_evidence_v01
   to service_role;
@@ -181,6 +203,12 @@ drop trigger if exists trg_ah_execution_order_evidence_append_only
   on public.alpha_hunter_execution_order_evidence_v01;
 create trigger trg_ah_execution_order_evidence_append_only
 before update or delete on public.alpha_hunter_execution_order_evidence_v01
+for each row execute function private.alpha_hunter_block_append_only_mutation();
+
+drop trigger if exists trg_ah_execution_order_failures_append_only
+  on public.alpha_hunter_execution_order_failures_v01;
+create trigger trg_ah_execution_order_failures_append_only
+before update or delete on public.alpha_hunter_execution_order_failures_v01
 for each row execute function private.alpha_hunter_block_append_only_mutation();
 
 drop trigger if exists trg_ah_execution_markout_evidence_append_only
