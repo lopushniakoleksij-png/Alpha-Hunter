@@ -1,0 +1,41 @@
+name: H2 Direction Architecture Capture v0.1 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'h2_direction_architecture_capture_v01.sql'
+      - 'nonstop_production_status_v02.sql'
+      - 'tests/test_h2_direction_architecture_capture_v01.py'
+      - '.github/workflows/h2-direction-architecture-capture-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'h2_direction_architecture_capture_v01.sql'
+      - 'nonstop_production_status_v02.sql'
+      - 'tests/test_h2_direction_architecture_capture_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run H2 capture and science regressions
+        run: >-
+          python -m pytest -q
+          tests/test_h2_direction_architecture_capture_v01.py
+          tests/test_nonstop_production_status_v01.py
+          tests/test_geometry_feasibility_decomposition_v01.py
+          tests/test_direction_confirmation_tax_v01.py
+          tests/test_geometry_prospective_holdout_v01.py
+          tests/test_geometry_holdout_sealed_evaluator_v01.py
