@@ -1,0 +1,190 @@
+name: P0 Read-Only Bitget Smoke
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-readonly-bitget-smoke.yml"
+      - "alpha_hunter/bitget.py"
+      - "alpha_hunter/private_account.py"
+      - "alpha_hunter/fill_client.py"
+      - "alpha_hunter/fill_ledger.py"
+      - "tests/test_fill_client.py"
+      - "tests/test_private_account_mode_probe_v01.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-readonly-bitget-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  safety-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Compile read-only path
+        run: >-
+          python -m py_compile
+          alpha_hunter/bitget.py
+          alpha_hunter/private_account.py
+          alpha_hunter/fill_client.py
+          alpha_hunter/fill_ledger.py
+      - name: Run read-only safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_fill_client.py
+          tests/test_private_account_mode_probe_v01.py
+      - name: Reject order and transfer methods in credentialed probe
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path(".github/workflows/p0-readonly-bitget-smoke.yml").read_text()
+          probe = workflow.rsplit("# SMOKE_PROBE_BEGIN", 1)[1].split("# SMOKE_PROBE_END", 1)[0]
+          forbidden = (
+              "place_order",
+              "cancel_order",
+              "modify_order",
+              "transfer(",
+              "withdraw",
+              "requests.post",
+              "requests.put",
+              "requests.patch",
+              "requests.delete",
+              "persist_",
+          )
+          hits = [token for token in forbidden if token in probe]
+          if hits:
+              raise SystemExit(f"Forbidden authority in credentialed probe: {hits}")
+          print("Safety contract: PASS — credentialed probe contains no order, transfer, or persistence call")
+          PY
+
+  credentialed-readonly-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    needs: safety-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: bitget-readonly-smoke
+    env:
+      BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
+      BITGET_SECRET_KEY: ${{ secrets.BITGET_SECRET_KEY }}
+      BITGET_API_PASSPHRASE: ${{ secrets.BITGET_API_PASSPHRASE }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install runtime dependency
+        run: python -m pip install --disable-pip-version-check requests
+      - name: Verify credentials are present without exposing values
+        shell: bash
+        run: |
+          test -n "$BITGET_API_KEY"
+          test -n "$BITGET_SECRET_KEY"
+          test -n "$BITGET_API_PASSPHRASE"
+          echo "Credential presence: PASS"
+      - name: Credentialed GET-only smoke
+        shell: bash
+        run: |
+          python - <<'PY'
+          # SMOKE_PROBE_BEGIN
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          from alpha_hunter.bitget import BitgetClient
+          from alpha_hunter.fill_client import ReadOnlyFillClient
+          from alpha_hunter.fill_ledger import (
+              collect_fill_traceability_with_historical_diagnostic,
+          )
+          from alpha_hunter.private_account import collect_private_account_snapshot
+
+          product_type = "usdt-futures"
+          observed_at = datetime.now(timezone.utc).isoformat()
+
+          account_client = BitgetClient.from_environment(timeout=12, max_retries=1)
+          account = collect_private_account_snapshot(
+              account_client,
+              product_type,
+              "USDT",
+          )
+          account_summary = {
+              "status": account.get("status"),
+              "account_mode_probe_status": account.get("account_mode_probe_status"),
+              "account_mode": account.get("account_mode"),
+              "classic_v2_risk_evidence_accepted": account.get(
+                  "classic_v2_risk_evidence_accepted"
+              ),
+              "api_permission_probe_status": account.get(
+                  "api_permission_probe_status"
+              ),
+              "api_permission_type": account.get("api_permission_type"),
+              "api_permissions": account.get("api_permissions"),
+              "account_count": len(account.get("accounts") or []),
+              "open_position_count": account.get("open_position_count"),
+          }
+          print("ACCOUNT_SMOKE=" + json.dumps(account_summary, sort_keys=True))
+
+          if (
+              account.get("status") != "CONNECTED"
+              or account.get("classic_v2_risk_evidence_accepted") is not True
+          ):
+              raise SystemExit("Account smoke: INCOMPLETE")
+
+          fill_client = ReadOnlyFillClient.from_environment(
+              timeout=12,
+              max_retries=1,
+          )
+          result = collect_fill_traceability_with_historical_diagnostic(
+              fill_client,
+              product_type=product_type,
+              source_run_id=f"github-readonly-smoke-{os.environ['GITHUB_RUN_ID']}",
+              observed_at_utc=observed_at,
+              private_account=account,
+          )
+          run = result.run_row
+          fill_summary = {
+              "status": run.get("status"),
+              "complete": run.get("complete"),
+              "schema_validated": run.get("schema_validated"),
+              "fill_count": run.get("fill_count"),
+              "pages_fetched": run.get("pages_fetched"),
+              "oldest_fill_at_utc": run.get("oldest_fill_at_utc"),
+              "newest_fill_at_utc": run.get("newest_fill_at_utc"),
+              "endpoint": run.get("endpoint"),
+              "shadow_only": run.get("shadow_only"),
+              "trade_permission": run.get("trade_permission"),
+              "detail": run.get("detail"),
+              "blocker_code": (run.get("evidence") or {}).get("blocker_code"),
+              "required_permission": (run.get("evidence") or {}).get(
+                  "required_permission"
+              ),
+              "bitget_error_code": (run.get("evidence") or {}).get(
+                  "bitget_error_code"
+              ),
+          }
+          print("FILL_SMOKE=" + json.dumps(fill_summary, sort_keys=True))
+
+          passed = (
+              run.get("status") == "CONNECTED"
+              and run.get("complete") is True
+              and run.get("schema_validated") is True
+              and int(run.get("fill_count") or 0) > 0
+              and run.get("shadow_only") is True
+              and run.get("trade_permission") is False
+          )
+          if not passed:
+              raise SystemExit("Read-only fill smoke: INCOMPLETE")
+          print("READ_ONLY_BITGET_SMOKE=PASS")
+          # SMOKE_PROBE_END
+          PY
