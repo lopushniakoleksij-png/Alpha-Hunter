@@ -1,0 +1,36 @@
+name: V7.5 Venue-Ineligible Tracker CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'v75_episode_market_tracker.py'
+      - 'tests/test_v75_venue_ineligible_tracker.py'
+      - '.github/workflows/v75-venue-ineligible-tracker-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'v75_episode_market_tracker.py'
+      - 'tests/test_v75_venue_ineligible_tracker.py'
+      - '.github/workflows/v75-venue-ineligible-tracker-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run V7.5 tracker regressions
+        run: >-
+          python -m pytest -q
+          tests/test_v75_venue_ineligible_tracker.py
+          tests/test_v75_lifecycle_state_compat.py
