@@ -52,6 +52,19 @@ def test_single_next_action_repairs_stale_audit_not_normal_schedule_gap():
         assert marker in STATUS
 
 
+
+def test_h2_repair_action_requires_capture_or_anchor_outage_not_any_historical_failure():
+    required = [
+        "h2_capture_failure_events>0",
+        "h2_captured_rows=0",
+        "h2_triggered_rows>0",
+        "independent_h2_anchors=0",
+        "REPAIR_H2_CAPTURE",
+    ]
+    for marker in required:
+        assert marker in STATUS
+
+
 def test_v03_preserves_safety_claim_ceiling():
     required = [
         "false as automatic_threshold_change_permitted",
