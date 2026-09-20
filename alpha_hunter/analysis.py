@@ -6,6 +6,9 @@ from time import time
 from typing import Any
 
 
+EXECUTION_GEOMETRY_CONTRACT_ID = "SCANNER_CURRENT_PRICE_1H_40_EXTREMES_V1"
+
+
 def to_float(value: Any) -> float | None:
     try:
         return float(value)
@@ -392,6 +395,7 @@ def validate_trade_setup(record: dict[str, Any], minimum_rr: float = 5.0) -> dic
     oi_change = record.get("open_interest_change_pct")
 
     result = {
+        "geometry_contract_id": EXECUTION_GEOMETRY_CONTRACT_ID,
         "direction": None,
         "entry": price,
         "stop": None,
