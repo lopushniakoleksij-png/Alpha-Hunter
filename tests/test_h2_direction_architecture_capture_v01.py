@@ -35,6 +35,12 @@ def test_source_scan_price_cannot_become_decision_anchor():
         assert marker in SQL
 
 
+
+def test_public_anchor_request_url_encodes_exchange_symbol():
+    assert "extensions.urlencode(r.symbol::varchar)" in SQL
+    assert "/api/v3/market/candles" in SQL
+
+
 def test_decision_anchor_is_exact_public_one_minute_open():
     required = [
         "/api/v3/market/candles",

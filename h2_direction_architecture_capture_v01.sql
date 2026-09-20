@@ -795,7 +795,7 @@ begin
 
       v_url := pg_catalog.format(
         'https://api.bitget.com/api/v3/market/candles?category=USDT-FUTURES&symbol=%s&interval=1m&startTime=%s&endTime=%s&limit=5',
-        r.symbol,
+        extensions.urlencode(r.symbol::varchar),
         floor(extract(epoch from(v_expected-interval '1 minute'))*1000)::bigint,
         floor(extract(epoch from(v_expected+interval '3 minutes'))*1000)::bigint
       );
