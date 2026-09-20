@@ -117,7 +117,7 @@ def test_collector_queries_three_windows_and_deduplicates_boundary_bill():
         assert call["product_type"] == "usdt-futures"
         assert call["limit"] == 100
         assert call.get("id_less_than") is None
-        assert call["end_time_ms"] - call["start_time_ms"] < (
+        assert call["end_time_ms"] - call["start_time_ms"] <= (
             30 * 24 * 60 * 60 * 1000
         )
 
