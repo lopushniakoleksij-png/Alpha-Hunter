@@ -1,0 +1,36 @@
+name: Realized Fee Evidence v0.1 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'realized_fee_evidence_v01.sql'
+      - 'tests/test_realized_fee_evidence_v01.py'
+      - '.github/workflows/realized-fee-evidence-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'realized_fee_evidence_v01.sql'
+      - 'tests/test_realized_fee_evidence_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run realized fee evidence tests
+        run: >-
+          python -m pytest -q
+          tests/test_realized_fee_evidence_v01.py
+          tests/test_canonical_readonly_fill_ledger_v01.py
+          tests/test_fill_traceability_membership_v01.py
