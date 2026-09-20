@@ -128,7 +128,7 @@ def test_percentage_change():
     assert percentage_change(110.0, 100.0) == 10.0
     assert percentage_change(1.0, None) is None
 
-from alpha_hunter.analysis import validate_trade_setup
+from alpha_hunter.analysis import EXECUTION_GEOMETRY_CONTRACT_ID, validate_trade_setup
 
 
 def executable_record(direction="LONG", price=101.0, support=100.0, resistance=107.0):
@@ -155,6 +155,12 @@ def test_long_rr_gate_passes_only_with_five_to_one():
     result = validate_trade_setup(executable_record(), 5.0)
     assert result["permission"] is True
     assert result["rr"] == 6.0
+
+
+def test_execution_setup_freezes_geometry_contract_id():
+    result = validate_trade_setup(executable_record(), 5.0)
+    assert result["geometry_contract_id"] == EXECUTION_GEOMETRY_CONTRACT_ID
+    assert EXECUTION_GEOMETRY_CONTRACT_ID == "SCANNER_CURRENT_PRICE_1H_40_EXTREMES_V1"
 
 
 def test_rr_gate_rejects_weak_reward():
