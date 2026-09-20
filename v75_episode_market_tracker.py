@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from alpha_hunter.bitget import BitgetAPIError, BitgetClient
 from alpha_hunter.collector import load_config
 from alpha_hunter.env import load_env_file
@@ -18,6 +20,8 @@ from v75_lifecycle_job import (
 
 ROOT = Path(__file__).resolve().parent
 LOOKBACK_CANDLES = 120
+UNIVERSE_TABLE = "alpha_hunter_universe_hourly"
+MAX_UNIVERSE_AGE_HOURS = 2.0
 
 
 def utc_now() -> datetime:
@@ -209,6 +213,120 @@ def inspect_candle(
         )
 
 
+
+def load_latest_universe_symbols(
+    settings: SupabaseConfig,
+    now: datetime,
+) -> tuple[set[str], datetime]:
+    headers = {
+        "apikey": settings.key,
+        "Authorization": f"Bearer {settings.key}",
+    }
+
+    latest_response = requests.get(
+        f"{settings.url}/rest/v1/{UNIVERSE_TABLE}",
+        params={
+            "select": "hour_bucket_utc",
+            "order": "hour_bucket_utc.desc",
+            "limit": "1",
+        },
+        headers=headers,
+        timeout=settings.timeout_seconds,
+    )
+
+    if latest_response.status_code != 200:
+        raise RuntimeError(
+            "V7.5 universe freshness lookup failed: "
+            f"HTTP {latest_response.status_code}: "
+            f"{latest_response.text[:500]}"
+        )
+
+    latest_payload = latest_response.json()
+
+    if (
+        not isinstance(latest_payload, list)
+        or not latest_payload
+        or not isinstance(latest_payload[0], dict)
+    ):
+        raise RuntimeError(
+            "V7.5 current canonical universe is unavailable"
+        )
+
+    hour_bucket = dt(
+        latest_payload[0].get("hour_bucket_utc")
+    )
+
+    if hour_bucket is None:
+        raise RuntimeError(
+            "V7.5 current canonical universe timestamp is invalid"
+        )
+
+    age_hours = (
+        now - hour_bucket
+    ).total_seconds() / 3600.0
+
+    if age_hours < -0.1 or age_hours > MAX_UNIVERSE_AGE_HOURS:
+        raise RuntimeError(
+            "V7.5 canonical universe is stale: "
+            f"age_hours={age_hours:.2f}"
+        )
+
+    symbols_response = requests.get(
+        f"{settings.url}/rest/v1/{UNIVERSE_TABLE}",
+        params={
+            "select": "symbol",
+            "hour_bucket_utc": f"eq.{hour_bucket.isoformat()}",
+            "limit": "2000",
+        },
+        headers=headers,
+        timeout=settings.timeout_seconds,
+    )
+
+    if symbols_response.status_code != 200:
+        raise RuntimeError(
+            "V7.5 current canonical universe load failed: "
+            f"HTTP {symbols_response.status_code}: "
+            f"{symbols_response.text[:500]}"
+        )
+
+    symbols_payload = symbols_response.json()
+
+    if not isinstance(symbols_payload, list):
+        raise RuntimeError(
+            "V7.5 canonical universe payload is not a list"
+        )
+
+    symbols = {
+        str(row.get("symbol") or "").upper()
+        for row in symbols_payload
+        if isinstance(row, dict)
+        and str(row.get("symbol") or "").strip()
+    }
+
+    if not symbols:
+        raise RuntimeError(
+            "V7.5 current canonical universe is empty"
+        )
+
+    return symbols, hour_bucket
+
+
+def finalize_venue_ineligible_episode(
+    episode: LifecycleEpisode,
+    observed_at: datetime,
+) -> None:
+    episode.previous_state = episode.lifecycle_state
+    episode.lifecycle_state = "FINALIZED"
+    episode.measurement_quality = (
+        "VENUE_INELIGIBLE_UNOBSERVABLE"
+    )
+    episode.final_classification = (
+        "VENUE_INELIGIBLE_UNOBSERVABLE"
+    )
+    episode.finalized_at_utc = observed_at.isoformat()
+    episode.is_finalized = True
+
+
 def main() -> int:
     load_env_file(
         ROOT / ".env"
@@ -264,8 +382,16 @@ def main() -> int:
 
     now = utc_now()
 
+    current_universe, universe_hour = (
+        load_latest_universe_symbols(
+            settings,
+            now,
+        )
+    )
+
     checked = 0
     failed = 0
+    venue_ineligible = 0
 
     print()
     print("=" * 110)
@@ -285,9 +411,35 @@ def main() -> int:
         len(active),
     )
 
+    print(
+        "Canonical universe hour:",
+        universe_hour.isoformat(),
+    )
+
+    print(
+        "Canonical universe symbols:",
+        len(current_universe),
+    )
+
     print()
 
     for episode in active:
+        if episode.symbol.upper() not in current_universe:
+            finalize_venue_ineligible_episode(
+                episode,
+                now,
+            )
+
+            venue_ineligible += 1
+
+            print(
+                f"{episode.symbol:<15}"
+                f"{episode.path:<14}"
+                "VENUE_INELIGIBLE_UNOBSERVABLE"
+            )
+
+            continue
+
         try:
             if (
                 episode.market_tracking_started_at_utc
@@ -437,6 +589,10 @@ def main() -> int:
     print("=" * 110)
 
     print("Checked:", checked)
+    print(
+        "Venue ineligible finalized:",
+        venue_ineligible,
+    )
     print("Failed:", failed)
     print(
         "Supabase rows upserted:",
