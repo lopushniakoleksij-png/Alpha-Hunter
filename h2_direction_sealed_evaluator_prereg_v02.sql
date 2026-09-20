@@ -111,9 +111,9 @@ alter table public.alpha_hunter_h2_direction_evaluator_specs_v02 enable row leve
 alter table public.alpha_hunter_h2_direction_evaluator_supersessions_v01 enable row level security;
 
 revoke all on public.alpha_hunter_h2_direction_evaluator_specs_v02
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 revoke all on public.alpha_hunter_h2_direction_evaluator_supersessions_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_h2_direction_evaluator_specs_v02
   to service_role;
 grant select on public.alpha_hunter_h2_direction_evaluator_supersessions_v01
@@ -159,6 +159,11 @@ begin
     from information_schema.tables
     where table_schema='public'
       and table_name='alpha_hunter_h2_direction_outcomes_sealed_v01'
+  )
+  and not exists(
+    select 1
+    from public.alpha_hunter_h2_direction_evaluator_specs_v02
+    where evaluator_spec_id=v_id
   ) then
     raise exception 'cannot supersede after H2 outcome table creation';
   end if;
@@ -361,7 +366,7 @@ from public.alpha_hunter_h2_direction_evaluator_specs_v02 e
 where e.evaluator_spec_id='AH-H2-DIRECTION-SEALED-EVALUATOR-PREREG-V02';
 
 revoke all on public.alpha_hunter_h2_direction_evaluator_active_status_v02
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_h2_direction_evaluator_active_status_v02
   to service_role;
 
