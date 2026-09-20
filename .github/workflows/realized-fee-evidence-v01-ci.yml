@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check pytest
+        run: python -m pip install --disable-pip-version-check pytest requests
       - name: Run realized fee evidence tests
         run: >-
           python -m pytest -q
