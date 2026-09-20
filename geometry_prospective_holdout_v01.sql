@@ -780,7 +780,7 @@ begin
     'multiplicity_rule',
       'one confirmatory primary contrast and one confirmatory 24H endpoint only; 12H and other geometry variants are secondary/descriptive and cannot independently support the hypothesis',
     'day_60_rule',
-      'freeze the cohort at the first scheduled UTC-day close when all minimum gates are met, otherwise at day 60; if gates are not met by day 60 conclude INCONCLUSIVE without extending or relaxing',
+      'freeze the cohort at the first scheduled UTC-day close when all minimum gates are met, otherwise at day 60; if gates are not met by day 60 conclude INCONCLUSIVE; do not extend or relax the collection window or gates',
     'source_rule',
       'capture from alpha_hunter_geometry_diagnostics model geometry-diagnostics-v0.2.2-money-entry-scope-aligned and its exact frozen alpha_hunter_signal_features payload only; source/view/function fingerprints must remain unchanged',
     'prohibited_claims',
