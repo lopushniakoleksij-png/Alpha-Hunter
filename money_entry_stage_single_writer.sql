@@ -10,6 +10,7 @@ grant usage on schema private to service_role;
 create table if not exists public.alpha_hunter_money_entry_threshold_sets (
   threshold_set_id text primary key,
   status text not null check (status in ('DRAFT','VALIDATED','ACTIVE','RETIRED')),
+  geometry_contract_id text,
   max_t0_stop_distance_pct double precision,
   min_t0_remaining_r double precision,
   min_t1_remaining_r double precision,
@@ -22,6 +23,7 @@ create table if not exists public.alpha_hunter_money_entry_threshold_sets (
   trade_permission boolean not null default false check (trade_permission=false),
   created_at timestamptz not null default clock_timestamp(),
   check (status='DRAFT' or (
+    geometry_contract_id is not null and
     max_t0_stop_distance_pct is not null and max_t0_stop_distance_pct>0 and
     min_t0_remaining_r is not null and min_t0_remaining_r>0 and
     min_t1_remaining_r is not null and min_t1_remaining_r>0 and
@@ -46,6 +48,8 @@ create table if not exists public.alpha_hunter_money_entry_stage_snapshots (
   stage_eligible boolean not null default false,
   threshold_set_id text references public.alpha_hunter_money_entry_threshold_sets(threshold_set_id),
   threshold_status text not null,
+  source_geometry_contract_id text,
+  threshold_geometry_contract_id text,
   direction_1h text,
   direction_12h text,
   direction_1d text,
@@ -83,6 +87,13 @@ create table if not exists public.alpha_hunter_money_entry_stage_snapshots (
   check (
     (stage_status in ('T0_CONTROLLED_ENTRY','T1_ACCEPTANCE_CONFIRMED','T2_EXPANSION_CONFIRMED') and stage_eligible=true)
     or (stage_status in ('DATA_INSUFFICIENT','NO_T0') and stage_eligible=false)
+  ),
+  check (
+    stage_status not in ('T0_CONTROLLED_ENTRY','T1_ACCEPTANCE_CONFIRMED','T2_EXPANSION_CONFIRMED')
+    or (
+      source_geometry_contract_id is not null
+      and threshold_geometry_contract_id=source_geometry_contract_id
+    )
   )
 );
 
@@ -131,6 +142,10 @@ declare
   v_source_run_id text;
   v_threshold_id text;
   v_threshold_status text := 'NO_ACTIVE_VALIDATED_THRESHOLD_SET';
+  v_source_geometry_contract_id text;
+  v_threshold_geometry_contract_id text;
+  v_geometry_contract_distinct_count integer := 0;
+  v_geometry_contract_missing_count integer := 0;
   v_max_t0_stop double precision;
   v_min_t0_r double precision;
   v_min_t1_r double precision;
@@ -155,15 +170,62 @@ begin
     );
   end if;
 
-  select t.threshold_set_id,t.status,t.max_t0_stop_distance_pct,t.min_t0_remaining_r,t.min_t1_remaining_r,t.min_t2_remaining_r
-  into v_threshold_id,v_threshold_status,v_max_t0_stop,v_min_t0_r,v_min_t1_r,v_min_t2_r
-  from public.alpha_hunter_money_entry_threshold_sets t
-  where t.status='ACTIVE' and t.validated_at_utc is not null and t.activated_at_utc is not null
-  order by t.activated_at_utc desc limit 1;
-  if v_threshold_id is null then v_threshold_status := 'NO_ACTIVE_VALIDATED_THRESHOLD_SET'; end if;
+  select
+    count(distinct nullif(b.evidence->>'geometry_contract_id','')),
+    count(*) filter (
+      where nullif(b.evidence->>'geometry_contract_id','') is null
+    ),
+    min(nullif(b.evidence->>'geometry_contract_id',''))
+  into
+    v_geometry_contract_distinct_count,
+    v_geometry_contract_missing_count,
+    v_source_geometry_contract_id
+  from public.alpha_hunter_big_mover_money_entry_shadow b
+  where b.run_id=v_source_run_id
+    and b.research_status='SHADOW_QUEUE'
+    and b.lifecycle in ('PRE_MOVER','IGNITION','EXPANSION');
+
+  if v_geometry_contract_missing_count>0
+     or v_source_geometry_contract_id is null then
+    v_threshold_status := 'SOURCE_GEOMETRY_CONTRACT_MISSING';
+  elsif v_geometry_contract_distinct_count<>1 then
+    v_threshold_status := 'SOURCE_GEOMETRY_CONTRACT_MIXED';
+  else
+    select
+      t.threshold_set_id,
+      t.status,
+      t.geometry_contract_id,
+      t.max_t0_stop_distance_pct,
+      t.min_t0_remaining_r,
+      t.min_t1_remaining_r,
+      t.min_t2_remaining_r
+    into
+      v_threshold_id,
+      v_threshold_status,
+      v_threshold_geometry_contract_id,
+      v_max_t0_stop,
+      v_min_t0_r,
+      v_min_t1_r,
+      v_min_t2_r
+    from public.alpha_hunter_money_entry_threshold_sets t
+    where t.status='ACTIVE'
+      and t.validated_at_utc is not null
+      and t.activated_at_utc is not null
+      and t.geometry_contract_id=v_source_geometry_contract_id
+    order by t.activated_at_utc desc,t.created_at desc
+    limit 1;
+
+    if v_threshold_id is null then
+      v_threshold_status := 'NO_ACTIVE_VALIDATED_THRESHOLD_SET_FOR_GEOMETRY';
+    end if;
+  end if;
 
   with src as (
-    select b.*,sf.signal_id source_signal_id,coalesce(sf.source_payload,'{}'::jsonb) source_payload
+    select
+      b.*,
+      nullif(b.evidence->>'geometry_contract_id','') source_geometry_contract_id,
+      sf.signal_id source_signal_id,
+      coalesce(sf.source_payload,'{}'::jsonb) source_payload
     from public.alpha_hunter_big_mover_money_entry_shadow b
     left join lateral (
       select s.signal_id,s.source_payload
@@ -201,7 +263,14 @@ begin
     select n.*,
       (select coalesce(jsonb_agg(x order by ord),'[]'::jsonb)
        from unnest(array[
-         case when v_threshold_id is null then 'NO_ACTIVE_VALIDATED_THRESHOLD_SET' end,
+         case when v_threshold_id is null then v_threshold_status end,
+         case
+           when n.source_geometry_contract_id is null
+             then 'SOURCE_GEOMETRY_CONTRACT_MISSING'
+           when v_threshold_id is not null
+             and n.source_geometry_contract_id<>v_threshold_geometry_contract_id
+             then 'THRESHOLD_GEOMETRY_CONTRACT_MISMATCH'
+         end,
          case when not n.parent_12h_aligned then case when n.direction_12h is null or n.direction_12h='DATA_UNAVAILABLE' then 'PARENT_12H_DATA_UNAVAILABLE' else 'PARENT_12H_NOT_ALIGNED' end end,
          case when not n.parent_1d_aligned then case when n.direction_1d is null or n.direction_1d='DATA_UNAVAILABLE' then 'PARENT_1D_DATA_UNAVAILABLE' else 'PARENT_1D_NOT_ALIGNED' end end,
          case when n.execution_setup_direction is null then 'SCANNER_EXECUTION_DIRECTION_MISSING' when n.execution_setup_direction<>n.direction then 'SCANNER_EXECUTION_DIRECTION_CONFLICT' end,
@@ -234,7 +303,8 @@ begin
   ), ins as (
     insert into public.alpha_hunter_money_entry_stage_snapshots(
       stage_snapshot_id,control_run_id,source_run_id,source_bridge_id,source_signal_id,source_captured_at_utc,snapshot_at_utc,symbol,direction,
-      stage_status,stage_eligible,threshold_set_id,threshold_status,direction_1h,direction_12h,direction_1d,lifecycle,research_status,bridge_status,
+      stage_status,stage_eligible,threshold_set_id,threshold_status,source_geometry_contract_id,threshold_geometry_contract_id,
+      direction_1h,direction_12h,direction_1d,lifecycle,research_status,bridge_status,
       scanner_state,decision_stage,market_phase,liquidity_state,candidate_entry,stop_price,target_price,stop_distance_pct,remaining_r,
       execution_setup_direction,scanner_structure_valid,scanner_direction_aligned,scanner_momentum_confirmed,scanner_participation_confirmed,
       scanner_data_integrity_pass,liquidity_ok,participation_emerging,acceptance_confirmed,trigger_confirmed,expansion_confirmed,open_position_conflict,
@@ -242,7 +312,8 @@ begin
     )
     select md5('money-entry-stage-single-writer-v0.1|'||s.bridge_id),p_control_run_id,s.run_id,s.bridge_id,s.source_signal_id,s.captured_at_utc,
       clock_timestamp(),s.symbol,s.direction,s.exact_stage,s.exact_stage in ('T0_CONTROLLED_ENTRY','T1_ACCEPTANCE_CONFIRMED','T2_EXPANSION_CONFIRMED'),
-      v_threshold_id,v_threshold_status,s.direction_1h,s.direction_12h,s.direction_1d,s.lifecycle,s.research_status,s.bridge_status,
+      v_threshold_id,v_threshold_status,s.source_geometry_contract_id,v_threshold_geometry_contract_id,
+      s.direction_1h,s.direction_12h,s.direction_1d,s.lifecycle,s.research_status,s.bridge_status,
       s.source_payload->>'state',s.source_payload#>>'{decision_trace,decision_stage}',s.source_payload->>'market_phase',s.liquidity_state,
       s.candidate_entry,s.stop_price,s.target_price,s.stop_distance_pct,s.execution_rr,s.execution_setup_direction,s.scanner_structure_valid,
       s.scanner_direction_aligned,s.scanner_momentum_confirmed,s.scanner_participation_confirmed,s.scanner_data_integrity_pass,s.liquidity_ok,
@@ -251,7 +322,17 @@ begin
         then s.base_blockers||jsonb_build_array('T0_REMAINING_R_TOO_LOW') else s.base_blockers end,
       s.next_blockers,
       jsonb_build_object(
-        'source_bridge_model_version',s.model_version,'source_bridge_blockers',s.blockers,'thresholds_invented',false,
+        'source_bridge_model_version',s.model_version,
+        'source_bridge_blockers',s.blockers,
+        'source_geometry_contract_id',s.source_geometry_contract_id,
+        'threshold_geometry_contract_id',v_threshold_geometry_contract_id,
+        'geometry_contract_match',
+          (
+            v_threshold_id is not null
+            and s.source_geometry_contract_id is not null
+            and s.source_geometry_contract_id=v_threshold_geometry_contract_id
+          ),
+        'thresholds_invented',false,
         'threshold_activation_required_for_numeric_stage_gate',v_threshold_id is null,
         'source_execution_checks',coalesce(s.source_payload#>'{execution_setup,checks}','{}'::jsonb),
         'source_execution_reason',s.source_payload#>>'{execution_setup,reason}',
@@ -277,7 +358,11 @@ begin
 
   return jsonb_build_object(
     'mode','MONEY_ENTRY_STAGE_SINGLE_WRITER','control_run_id',p_control_run_id,'run_id',v_source_run_id,'rows_inserted',v_inserted,
-    'threshold_set_id',v_threshold_id,'threshold_status',v_threshold_status,'stage_status_counts',v_status_counts,'top_blockers',v_top_blockers,
+    'threshold_set_id',v_threshold_id,
+    'threshold_status',v_threshold_status,
+    'source_geometry_contract_id',v_source_geometry_contract_id,
+    'threshold_geometry_contract_id',v_threshold_geometry_contract_id,
+    'stage_status_counts',v_status_counts,'top_blockers',v_top_blockers,
     'exact_stage_claim_requires_active_validated_thresholds',true,'shadow_only',true,'trade_permission',false
   );
 end;
