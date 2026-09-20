@@ -998,7 +998,7 @@ select
     and a.short_anchors>=s.minimum_anchors_per_direction
   ) as capture_maturity_gate_met,
   'CAPTURE_ONLY - OUTCOMES LOCKED'::text as scientific_status,
-  'PREREGISTER SEALED EVALUATOR BEFORE ANY H2 OUTCOME ACCESS'::text
+  'COLLECT PROSPECTIVE H2 EVIDENCE; KEEP OUTCOMES SEALED'::text
     as next_gate,
   false as primary_results_exposed,
   false as outcome_access_permitted,
