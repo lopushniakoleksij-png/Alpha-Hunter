@@ -570,7 +570,7 @@ begin
         as research_stop_15m,
       case when s.direction='LONG' then s.resistance_4h else s.support_4h end
         as research_target_4h,
-      (
+      coalesce((
         (s.direction='LONG'
           and s.parent_direction_12h='BULLISH'
           and s.parent_direction_1d='BULLISH')
@@ -578,12 +578,12 @@ begin
         (s.direction='SHORT'
           and s.parent_direction_12h='BEARISH'
           and s.parent_direction_1d='BEARISH')
-      ) as parent_aligned,
-      (
+      ),false) as parent_aligned,
+      coalesce((
         (s.direction='LONG' and s.trend_1h='BULLISH')
         or
         (s.direction='SHORT' and s.trend_1h='BEARISH')
-      ) as timing_1h_aligned,
+      ),false) as timing_1h_aligned,
       (
         (s.direction='LONG'
           and s.candle_15m_close is not null
@@ -677,14 +677,14 @@ begin
       (
         g.geometry_shadow_only is true
         and g.geometry_trade_permission is false
-        and g.opportunity_timing='EARLY'
+        and coalesce(g.opportunity_timing='EARLY',false)
         and g.parent_aligned
         and g.timing_1h_aligned
         and g.geometry_valid_at_source
         and g.source_fresh
       ) as h2_context,
       (
-        g.scanner_direction=g.direction
+        coalesce(g.scanner_direction=g.direction,false)
         and g.geometry_valid_at_source
         and g.source_fresh
       ) as legacy_aligned

@@ -73,6 +73,18 @@ def test_h2_trigger_does_not_require_15m_trend_alignment():
     assert "trend_15m" not in h2_context_section
 
 
+
+def test_capture_classification_booleans_fail_closed_on_missing_context():
+    required = [
+        "coalesce(g.scanner_direction=g.direction,false)",
+        "coalesce(g.opportunity_timing='EARLY',false)",
+        "),false) as parent_aligned",
+        "),false) as timing_1h_aligned",
+    ]
+    for marker in required:
+        assert marker in SQL
+
+
 def test_reclaim_and_structural_trigger_are_secondary_tags():
     required = [
         "trigger_accept_fast_value",
