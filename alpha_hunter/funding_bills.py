@@ -501,13 +501,30 @@ def persist_funding_bills(
         [result.run_row],
         "funding_run_id",
     )
+
+    evidence_complete = (
+        result.run_row.get("complete") is True
+        and result.run_row.get("schema_validated") is True
+        and result.run_row.get("status")
+        in {"CONNECTED", "ZERO_FUNDING_BILLS"}
+    )
+    canonical_rows = (
+        result.bill_rows
+        if evidence_complete
+        else []
+    )
+
     bill_attempted = _insert_ignore(
         settings,
         BILL_TABLE,
-        result.bill_rows,
+        canonical_rows,
         "bill_identity_sha256",
     )
-    link_rows = _link_rows(result)
+    link_rows = (
+        _link_rows(result)
+        if evidence_complete
+        else []
+    )
     link_attempted = _insert_ignore(
         settings,
         LINK_TABLE,
