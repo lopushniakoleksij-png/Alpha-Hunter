@@ -97,7 +97,7 @@ create table if not exists public.alpha_hunter_h2_direction_evaluator_specs_v01 
 
 alter table public.alpha_hunter_h2_direction_evaluator_specs_v01 enable row level security;
 revoke all on public.alpha_hunter_h2_direction_evaluator_specs_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_h2_direction_evaluator_specs_v01
   to service_role;
 
@@ -331,7 +331,7 @@ from public.alpha_hunter_h2_direction_evaluator_specs_v01 e
 where e.evaluator_spec_id='AH-H2-DIRECTION-SEALED-EVALUATOR-PREREG-V01';
 
 revoke all on public.alpha_hunter_h2_direction_evaluator_prereg_status_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_h2_direction_evaluator_prereg_status_v01
   to service_role;
 
