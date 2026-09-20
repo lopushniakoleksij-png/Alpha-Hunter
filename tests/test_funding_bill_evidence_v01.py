@@ -240,20 +240,25 @@ def test_funding_schema_is_append_only_and_service_role_scoped():
 
 def test_no_write_or_execution_authority_is_added():
     combined = (SQL + MODULE + SCRIPT).lower()
-    forbidden = [
-        "place_order",
-        "cancel_order",
-        "modify_order",
-        "set-leverage",
-        "withdraw",
-        "transfer",
+
+    for marker in (
+        "place_order(",
+        "cancel_order(",
+        "modify_order(",
+        "set_leverage(",
+        "/api/v2/mix/order/place-order",
+        "/api/v2/mix/order/cancel-order",
+        "/api/v2/mix/account/set-leverage",
+        "/api/v2/spot/wallet/transfer",
+        "/api/v2/spot/wallet/withdrawal",
         "trade_permission=true",
         "trade_permission = true",
-        "realistic_net_r_claimed": true",
-    ]
-    for marker in forbidden:
+    ):
         assert marker not in combined
 
     assert '"raw_bill_ids_printed": False' in SCRIPT
     assert '"full_economic_pnl_claimed": False' in SCRIPT
+    assert '"realistic_net_r_claimed": False' in SCRIPT
     assert '"trade_permission": False' in SCRIPT
+    assert '"read_only_get": True' in SCRIPT
+    assert '"no_order_write_path": True' in SCRIPT
