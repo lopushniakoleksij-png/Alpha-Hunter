@@ -1,0 +1,43 @@
+name: Forward Missed Mover Audit v0.1 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'forward_missed_mover_audit_v01.sql'
+      - 'nonstop_production_status_v03.sql'
+      - 'tests/test_forward_missed_mover_audit_v01.py'
+      - 'tests/test_nonstop_production_status_v03.py'
+      - '.github/workflows/forward-missed-mover-audit-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'forward_missed_mover_audit_v01.sql'
+      - 'nonstop_production_status_v03.sql'
+      - 'tests/test_forward_missed_mover_audit_v01.py'
+      - 'tests/test_nonstop_production_status_v03.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run missed-mover and science regressions
+        run: >-
+          python -m pytest -q
+          tests/test_forward_missed_mover_audit_v01.py
+          tests/test_nonstop_production_status_v03.py
+          tests/test_h2_direction_architecture_capture_v01.py
+          tests/test_nonstop_production_status_v01.py
+          tests/test_direction_confirmation_tax_v01.py
+          tests/test_geometry_feasibility_decomposition_v01.py
