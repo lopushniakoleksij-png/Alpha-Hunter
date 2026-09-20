@@ -211,21 +211,21 @@ alter table public.alpha_hunter_h2_direction_anchor_prices_v01 enable row level 
 alter table public.alpha_hunter_h2_direction_capture_failures_v01 enable row level security;
 
 revoke all on table public.alpha_hunter_h2_direction_specs_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 revoke all on table public.alpha_hunter_h2_direction_captures_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 revoke all on table public.alpha_hunter_h2_direction_anchor_prices_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 revoke all on table public.alpha_hunter_h2_direction_capture_failures_v01
-  from public,anon,authenticated;
+  from public,anon,authenticated,service_role;
 
-grant select,insert on table public.alpha_hunter_h2_direction_specs_v01
+grant select on table public.alpha_hunter_h2_direction_specs_v01
   to service_role;
-grant select,insert on table public.alpha_hunter_h2_direction_captures_v01
+grant select on table public.alpha_hunter_h2_direction_captures_v01
   to service_role;
-grant select,insert on table public.alpha_hunter_h2_direction_anchor_prices_v01
+grant select on table public.alpha_hunter_h2_direction_anchor_prices_v01
   to service_role;
-grant select,insert on table public.alpha_hunter_h2_direction_capture_failures_v01
+grant select on table public.alpha_hunter_h2_direction_capture_failures_v01
   to service_role;
 
 
