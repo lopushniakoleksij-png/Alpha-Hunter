@@ -1,0 +1,39 @@
+name: Round-trip Fill Recovery v0.1 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'ops/recover_roundtrip_fills_readonly.py'
+      - 'tests/test_roundtrip_fill_recovery_v01.py'
+      - '.github/workflows/roundtrip-fill-recovery-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'ops/recover_roundtrip_fills_readonly.py'
+      - 'tests/test_roundtrip_fill_recovery_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Compile recovery script
+        run: python -m py_compile ops/recover_roundtrip_fills_readonly.py
+      - name: Run recovery safety regressions
+        run: >-
+          python -m pytest -q
+          tests/test_roundtrip_fill_recovery_v01.py
+          tests/test_canonical_readonly_fill_ledger_v01.py
+          tests/test_fill_traceability_membership_v01.py
+          tests/test_execution_quality_evidence_v01.py
