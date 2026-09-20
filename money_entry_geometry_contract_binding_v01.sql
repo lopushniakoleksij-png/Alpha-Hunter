@@ -302,9 +302,7 @@ begin
       v_min_t1_r,
       v_min_t2_r
     from public.alpha_hunter_money_entry_threshold_sets t
-    where t.status='ACTIVE'
-      and t.validated_at_utc is not null
-      and t.activated_at_utc is not null
+    where t.status='ACTIVE' and t.validated_at_utc is not null and t.activated_at_utc is not null
       and t.geometry_contract_id=v_source_geometry_contract_id
     order by t.activated_at_utc desc,t.created_at desc
     limit 1;
