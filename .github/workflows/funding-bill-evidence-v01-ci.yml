@@ -1,0 +1,46 @@
+name: Funding Bill Evidence v0.1 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/funding_bills.py'
+      - 'ops/collect_funding_bills_readonly.py'
+      - 'funding_bill_evidence_v01.sql'
+      - 'tests/test_funding_bill_evidence_v01.py'
+      - '.github/workflows/funding-bill-evidence-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/funding_bills.py'
+      - 'ops/collect_funding_bills_readonly.py'
+      - 'funding_bill_evidence_v01.sql'
+      - 'tests/test_funding_bill_evidence_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Compile funding collector
+        run: >-
+          python -m py_compile
+          alpha_hunter/funding_bills.py
+          ops/collect_funding_bills_readonly.py
+      - name: Run funding evidence regressions
+        run: >-
+          python -m pytest -q
+          tests/test_funding_bill_evidence_v01.py
+          tests/test_roundtrip_outcome_evidence_v01.py
+          tests/test_canonical_readonly_fill_ledger_v01.py
+          tests/test_fill_traceability_membership_v01.py
