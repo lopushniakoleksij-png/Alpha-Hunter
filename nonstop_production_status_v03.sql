@@ -250,6 +250,13 @@ select
     then 'REPAIR_PROSPECTIVE_CAPTURE'
 
     when a.h2_capture_failure_events>0
+      and (
+        a.h2_captured_rows=0
+        or (
+          a.h2_triggered_rows>0
+          and a.independent_h2_anchors=0
+        )
+      )
     then 'REPAIR_H2_CAPTURE'
 
     when a.mover_unaudited_episode_count>0
