@@ -30,4 +30,4 @@ jobs:
       - name: Compile dashboard
         run: python -m py_compile app.py
       - name: Test build identity contract
-        run: pytest -q tests/test_build_identity.py
+        run: PYTHONPATH=. pytest -q tests/test_build_identity.py
