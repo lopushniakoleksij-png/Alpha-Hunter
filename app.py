@@ -21,6 +21,8 @@ app = Flask(__name__)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_TABLE = os.getenv("ALPHA_HUNTER_SNAPSHOT_TABLE", "alpha_hunter_snapshots")
+APP_VERSION = os.getenv("ALPHA_HUNTER_VERSION", "7.2")
+SERVICE_STARTED_AT_UTC = datetime.now(timezone.utc).isoformat()
 
 REFERENCE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"}
 
@@ -50,6 +52,35 @@ MINIMUM_EXECUTION_RR = float(
         RUNTIME_CONFIG.get("minimum_reward_risk", 5.0),
     )
 )
+
+
+def build_identity() -> dict[str, Any]:
+    """Return non-secret runtime identity for production traceability.
+
+    Render provides the Git commit and branch at runtime. Render does not expose
+    a documented deploy timestamp, so the service start time is used as an
+    explicit fallback unless ALPHA_HUNTER_DEPLOYED_AT_UTC is injected by a
+    deployment workflow.
+    """
+    commit = os.getenv("RENDER_GIT_COMMIT") or os.getenv("GIT_COMMIT") or "unknown"
+    deployed_at = os.getenv("ALPHA_HUNTER_DEPLOYED_AT_UTC") or SERVICE_STARTED_AT_UTC
+    deployed_at_source = (
+        "deployment_environment"
+        if os.getenv("ALPHA_HUNTER_DEPLOYED_AT_UTC")
+        else "process_start_fallback"
+    )
+    return {
+        "version": APP_VERSION,
+        "git_commit": commit,
+        "git_commit_short": commit[:7] if commit != "unknown" else "unknown",
+        "git_branch": os.getenv("RENDER_GIT_BRANCH") or os.getenv("GIT_BRANCH") or "unknown",
+        "git_repo": os.getenv("RENDER_GIT_REPO_SLUG") or "unknown",
+        "render_service": os.getenv("RENDER_SERVICE_NAME") or "unknown",
+        "render_instance_id": os.getenv("RENDER_INSTANCE_ID") or "unknown",
+        "deployed_at_utc": deployed_at,
+        "deployed_at_source": deployed_at_source,
+        "service_started_at_utc": SERVICE_STARTED_AT_UTC,
+    }
 
 
 def supabase_headers() -> dict[str, str]:
@@ -310,6 +341,7 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
         "btc_change_24h": safe_float(snapshot.get("btc_change_24h_pct")),
         "minimum_execution_rr": MINIMUM_EXECUTION_RR,
         "discovery_summary": snapshot.get("discovery_summary", {}),
+        "build": build_identity(),
     }
 
 
@@ -381,7 +413,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 <body>
 <div class="wrap">
   <div class="top">
-    <div><h1>Alpha Hunter V7.2</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div></div>
+    <div><h1>Alpha Hunter V{{ data.build.version }}</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div><div class="small" style="margin-top:5px">Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · deployed {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start fallback){% endif %}</div></div>
     <div><div class="toolbar"><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
   </div>
 
@@ -475,6 +507,11 @@ def api_latest():
         return jsonify({"error": str(exc)}), 503
 
 
+@app.get("/api/build")
+def api_build():
+    return jsonify(build_identity())
+
+
 @app.post("/api/run-scan")
 def api_run_scan():
     with scan_lock:
@@ -522,7 +559,8 @@ def health():
     return jsonify({
         "status": "ok",
         "service": "alpha-hunter-dashboard",
-        "version": "7.2",
+        "version": APP_VERSION,
+        "build": build_identity(),
         "scan_status": scan_state["status"],
         "scan_running": scan_state["running"],
         "minimum_execution_rr": MINIMUM_EXECUTION_RR,

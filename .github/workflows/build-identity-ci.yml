@@ -1,0 +1,33 @@
+name: Build identity CI
+
+on:
+  push:
+    branches:
+      - observability/build-identity
+    paths:
+      - app.py
+      - tests/test_build_identity.py
+      - .github/workflows/build-identity-ci.yml
+  pull_request:
+    paths:
+      - app.py
+      - tests/test_build_identity.py
+      - .github/workflows/build-identity-ci.yml
+
+jobs:
+  build-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Compile dashboard
+        run: python -m py_compile app.py
+      - name: Test build identity contract
+        run: PYTHONPATH=. pytest -q tests/test_build_identity.py
