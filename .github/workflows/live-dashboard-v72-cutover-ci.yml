@@ -1,0 +1,46 @@
+name: Live Dashboard V7.2 Cutover CI
+
+on:
+  pull_request:
+    branches:
+      - live/alpha-hunter-5d-20260816
+    paths:
+      - app.py
+      - tests/test_money_action_dashboard_v72.py
+      - tests/test_build_identity.py
+      - .github/workflows/live-dashboard-v72-cutover-ci.yml
+  push:
+    branches:
+      - live/alpha-hunter-5d-20260816
+    paths:
+      - app.py
+      - tests/test_money_action_dashboard_v72.py
+      - tests/test_build_identity.py
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+      - name: Compile dashboard
+        run: python -m py_compile app.py
+      - name: Run V7.2 dashboard and live safety regressions
+        run: >-
+          PYTHONPATH=. python -m pytest -q
+          tests/test_money_action_dashboard_v72.py
+          tests/test_build_identity.py
+          tests/test_live_fee_account_evidence_v01.py
+          tests/test_private_account_mode_probe_v01.py
+          tests/test_universe_ledger_single_scanner.py
+          tests/test_canonical_account_ledger.py
