@@ -58,3 +58,25 @@ def test_monitor_never_grants_execution_authority():
     ]
     for marker in forbidden:
         assert marker not in LOWER
+
+
+def test_monitor_avoids_cartesian_join_between_scans_observations_and_outcomes():
+    assert "scan_counts as (" in LOWER
+    assert "observation_counts as (" in LOWER
+    assert "outcome_counts as (" in LOWER
+    forbidden = (
+        "left join public.alpha_hunter_snapshots p\n    on p.collected_at_utc>=s.preregistered_at_utc\n  left join public.alpha_hunter_strategy_observations_v01 o",
+        "left join public.alpha_hunter_strategy_observations_v01 o\n    on o.observed_at_utc>=s.preregistered_at_utc\n  left join public.alpha_hunter_strategy_forward_outcomes_v01 f",
+    )
+    for marker in forbidden:
+        assert marker not in LOWER
+
+
+def test_monitor_has_time_indexes_for_forward_only_counts():
+    required = [
+        "idx_ah_snapshots_collected_at_realtime_v01",
+        "idx_ah_strategy_obs_observed_at_realtime_v01",
+        "idx_ah_strategy_forward_observed_horizon_realtime_v01",
+    ]
+    for marker in required:
+        assert marker in LOWER

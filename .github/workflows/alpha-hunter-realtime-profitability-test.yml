@@ -11,6 +11,7 @@ on:
       - 'alpha_hunter/test_engine.py'
       - 'test_engine_job.py'
       - 'test_engine_schema_v01.sql'
+      - 'realtime_profitability_monitor_v01.sql'
       - '.github/workflows/alpha-hunter-realtime-profitability-test.yml'
       - 'alpha_hunter/collector.py'
       - 'alpha_hunter/strategy_engine.py'

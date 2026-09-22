@@ -5,6 +5,17 @@
 --   against the real production clock. This view does not evaluate historical
 --   data as test evidence and cannot grant execution authority.
 
+create index if not exists idx_ah_snapshots_collected_at_realtime_v01
+  on public.alpha_hunter_snapshots(collected_at_utc);
+
+create index if not exists idx_ah_strategy_obs_observed_at_realtime_v01
+  on public.alpha_hunter_strategy_observations_v01(observed_at_utc);
+
+create index if not exists idx_ah_strategy_forward_observed_horizon_realtime_v01
+  on public.alpha_hunter_strategy_forward_outcomes_v01(
+    first_observed_at_utc,horizon_hours
+  );
+
 create or replace view public.alpha_hunter_realtime_profitability_monitor_v01
 with (security_invoker=true,security_barrier=true)
 as
@@ -45,32 +56,52 @@ latest_scan as (
   order by p.collected_at_utc desc
   limit 1
 ),
-post_registration as (
+scan_counts as (
   select
     s.spec_id,
-    count(distinct p.run_id) filter(
-      where p.collected_at_utc>=s.preregistered_at_utc
-    ) as real_scans_since_registration,
-    count(o.*) filter(
-      where o.observed_at_utc>=s.preregistered_at_utc
-    ) as real_strategy_observations_since_registration,
-    count(o.*) filter(
-      where o.observed_at_utc>=s.preregistered_at_utc
-        and o.status='SHADOW_CANDIDATE'
-    ) as real_shadow_candidates_since_registration,
-    count(f.*) filter(
-      where f.first_observed_at_utc>=s.preregistered_at_utc
-        and f.horizon_hours=24
-    ) as real_24h_forward_outcomes_since_registration
+    count(p.run_id) as real_scans_since_registration
   from spec s
   left join public.alpha_hunter_snapshots p
     on p.collected_at_utc>=s.preregistered_at_utc
+  group by s.spec_id
+),
+observation_counts as (
+  select
+    s.spec_id,
+    count(o.observation_id) as real_strategy_observations_since_registration,
+    count(o.observation_id) filter(
+      where o.status='SHADOW_CANDIDATE'
+    ) as real_shadow_candidates_since_registration
+  from spec s
   left join public.alpha_hunter_strategy_observations_v01 o
     on o.observed_at_utc>=s.preregistered_at_utc
+  group by s.spec_id
+),
+outcome_counts as (
+  select
+    s.spec_id,
+    count(f.episode_id) as real_24h_forward_outcomes_since_registration
+  from spec s
   left join public.alpha_hunter_strategy_forward_outcomes_v01 f
     on f.first_observed_at_utc>=s.preregistered_at_utc
    and f.horizon_hours=24
   group by s.spec_id
+),
+post_registration as (
+  select
+    s.spec_id,
+    coalesce(sc.real_scans_since_registration,0)
+      as real_scans_since_registration,
+    coalesce(oc.real_strategy_observations_since_registration,0)
+      as real_strategy_observations_since_registration,
+    coalesce(oc.real_shadow_candidates_since_registration,0)
+      as real_shadow_candidates_since_registration,
+    coalesce(fc.real_24h_forward_outcomes_since_registration,0)
+      as real_24h_forward_outcomes_since_registration
+  from spec s
+  left join scan_counts sc on sc.spec_id=s.spec_id
+  left join observation_counts oc on oc.spec_id=s.spec_id
+  left join outcome_counts fc on fc.spec_id=s.spec_id
 )
 select
   clock_timestamp() as real_now_utc,
