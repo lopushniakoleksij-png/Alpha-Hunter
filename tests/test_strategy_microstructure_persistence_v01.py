@@ -1,4 +1,5 @@
 from alpha_hunter.microstructure import (
+    build_microstructure_coverage,
     build_microstructure_snapshot,
     summarize_order_book,
     summarize_recent_trades,
@@ -189,3 +190,21 @@ def test_strategy_persistence_tracks_continuing_candidate_without_granting_permi
     assert s7["persistence"]["consecutive_scans"] == 2
     assert s7["trade_permission"] is False
     assert summary["continuing_count"] >= 1
+
+
+def test_microstructure_coverage_reports_complete_and_insufficient_symbols():
+    complete_record = {
+        "symbol": "AUSDT",
+        "microstructure": {"status": "COMPLETE"},
+    }
+    missing_record = {
+        "symbol": "BUSDT",
+        "microstructure": {"status": "DATA_INSUFFICIENT"},
+    }
+    summary = build_microstructure_coverage([complete_record, missing_record, {"symbol": "ERR", "error": "x"}])
+
+    assert summary["eligible_symbol_count"] == 2
+    assert summary["complete_count"] == 1
+    assert summary["data_insufficient_count"] == 1
+    assert summary["coverage_pct"] == 50.0
+    assert summary["trade_permission"] is False
