@@ -69,8 +69,10 @@ def test_limit_fill_requires_future_fully_closed_candle_touch():
     required = [
         "v_candidate.action='PLACE_LIMIT'",
         "last_closed_candle",
-        "low','')::double precision <= v_candidate_entry",
-        "high','')::double precision >= v_candidate_entry",
+        "last_closed_candle'->>'low',''",
+        "::double precision <= v_candidate_entry",
+        "last_closed_candle'->>'high',''",
+        "::double precision >= v_candidate_entry",
         "v_trigger_known_at := v_trigger_candle_open+interval '1 hour'",
     ]
     for marker in required:
@@ -81,7 +83,8 @@ def test_intrabar_ordering_is_not_invented():
     required = [
         "trigger_candle_excluded boolean not null default true",
         "partial_signal_hour_excluded boolean not null default true",
-        "v_measurement_start := v_trigger_candle_open+interval '1 hour'",
+        "v_measurement_start :=",
+        "v_trigger_candle_open+interval '1 hour'",
         "target_stop_same_candle_ambiguous",
         "ordering_ambiguous",
     ]
