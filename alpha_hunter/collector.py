@@ -22,6 +22,7 @@ from .analysis import (
     validate_trade_setup,
 )
 from .bitget import BitgetAPIError, BitgetClient
+from .catalyst import bind_official_catalyst, build_catalyst_summary
 from .env import load_env_file
 from .decision_trace import build_decision_trace
 from .microstructure import build_microstructure_coverage, build_microstructure_snapshot
@@ -322,6 +323,9 @@ def collect_symbol(
     client: BitgetClient,
     symbol: str,
     config: dict[str, Any],
+    *,
+    official_notices: list[dict[str, Any]] | None = None,
+    instrument_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
 
     product_type = config[
@@ -522,6 +526,31 @@ def collect_symbol(
     if microstructure_errors:
         microstructure["errors"] = microstructure_errors
 
+    metadata = instrument_metadata or {}
+    base_coin = str(
+        metadata.get("baseCoin")
+        or symbol.removesuffix("USDT")
+    ).upper()
+    catalyst_settings = config.get("catalyst_engine", {})
+    catalyst = bind_official_catalyst(
+        symbol=symbol,
+        base_coin=base_coin,
+        notices=list(official_notices or []),
+        exchange_timestamp_ms=exchange_timestamp_ms or None,
+        freshness_hours=float(
+            catalyst_settings.get(
+                "freshness_hours",
+                48.0,
+            )
+        ),
+        future_tolerance_ms=int(
+            catalyst_settings.get(
+                "future_tolerance_ms",
+                300000,
+            )
+        ),
+    )
+
     trends = {
         timeframe:
             values["trend"]
@@ -607,6 +636,9 @@ def collect_symbol(
 
         "microstructure":
             microstructure,
+
+        "catalyst":
+            catalyst,
 
         "last_price":
             last_price,
@@ -3111,6 +3143,56 @@ def main() -> int:
 
         instruments = []
 
+    catalyst_settings = config.get(
+        "catalyst_engine",
+        {},
+    )
+    catalyst_categories = list(
+        catalyst_settings.get(
+            "official_bitget_categories",
+            [
+                "coin_listings",
+                "symbol_delisting",
+                "product_updates",
+                "maintenance_system_updates",
+                "latest_news",
+            ],
+        )
+    )
+    official_notices: list[dict[str, Any]] = []
+    catalyst_fetch_errors: list[str] = []
+    if catalyst_settings.get("enabled", True):
+        for category in catalyst_categories:
+            try:
+                official_notices.extend(
+                    client.announcements(
+                        ann_type=str(category),
+                        language=str(
+                            catalyst_settings.get(
+                                "language",
+                                "en_US",
+                            )
+                        ),
+                        limit=int(
+                            catalyst_settings.get(
+                                "per_category_limit",
+                                10,
+                            )
+                        ),
+                    )
+                )
+            except BitgetAPIError as exc:
+                catalyst_fetch_errors.append(
+                    f"{category}: {exc}"
+                )
+
+    notice_by_id: dict[str, dict[str, Any]] = {}
+    for notice in official_notices:
+        notice_id = str(notice.get("annId") or "")
+        if notice_id:
+            notice_by_id[notice_id] = notice
+    official_notices = list(notice_by_id.values())
+
     ticker_by_symbol = {
         str(
             row.get(
@@ -3215,6 +3297,8 @@ def main() -> int:
                     client,
                     symbol,
                     config,
+                    official_notices=official_notices,
+                    instrument_metadata=available.get(symbol, {}),
                 )
             )
 
@@ -3279,6 +3363,13 @@ def main() -> int:
 
     microstructure_summary = build_microstructure_coverage(
         results
+    )
+
+    catalyst_summary = build_catalyst_summary(
+        results,
+        fetched_notice_count=len(official_notices),
+        fetch_errors=catalyst_fetch_errors,
+        categories=catalyst_categories,
     )
 
     results.sort(
@@ -3363,6 +3454,9 @@ def main() -> int:
 
         "microstructure_summary":
             microstructure_summary,
+
+        "catalyst_summary":
+            catalyst_summary,
 
         "discovery_summary": {
             "qualified_count":
@@ -3504,6 +3598,13 @@ def main() -> int:
         f"{microstructure_summary['complete_count']}/"
         f"{microstructure_summary['eligible_symbol_count']} "
         f"({microstructure_summary['coverage_pct']:.2f}%)"
+    )
+
+    print(
+        "Official catalyst evidence: "
+        f"notices={catalyst_summary['fetched_notice_count']} "
+        f"| fresh_bound_symbols={catalyst_summary['fresh_bound_symbol_count']} "
+        f"| status={catalyst_summary['fetch_status']}"
     )
 
     private_status = (
