@@ -149,7 +149,7 @@ def collect_private_account_snapshot(
         identity_status = str(
             identity_evidence.get("account_identity_probe_status") or "UNAVAILABLE"
         )
-        if identity_status != "MATCHED":
+        if identity_status in {"MISMATCH", "UNAVAILABLE", "INVALID_SCHEMA"}:
             return {
                 "status": f"ACCOUNT_IDENTITY_{identity_status}",
                 "accounts": [],
@@ -163,6 +163,9 @@ def collect_private_account_snapshot(
                 **identity_evidence,
                 **permission_evidence,
             }
+        # UNPINNED may collect read-only evidence so a repaired credential can be
+        # verified and fingerprinted. It must not be allowed to certify a
+        # zero-activity account downstream.
     else:
         try:
             settings = client.account_settings_v3()
