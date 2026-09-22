@@ -959,8 +959,10 @@ def _s9_catalyst(record: dict[str, Any], previous: dict[str, Any] | None, config
         target=target,
         evidence={
             "catalyst_id": catalyst.get("id"),
+            "catalyst_version": catalyst.get("version"),
             "source": catalyst.get("source"),
             "source_read_only": catalyst.get("source_read_only"),
+            "match_rule": catalyst.get("match_rule"),
             "title": catalyst.get("title"),
             "ann_type": catalyst.get("ann_type"),
             "ann_sub_type": catalyst.get("ann_sub_type"),
