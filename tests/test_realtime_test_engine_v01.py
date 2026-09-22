@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import json
 
 from alpha_hunter.storage import SupabaseConfig
@@ -188,3 +190,9 @@ def test_report_format_is_phone_friendly():
     assert "ALPHA HUNTER REAL-TIME TEST ENGINE" in text
     assert "operational_status=PASS" in text
     assert "paper_only=true trade_permission=false order_path=NONE" in text
+
+
+def test_test_engine_schema_grants_service_role_insert_without_update_delete():
+    schema = Path("test_engine_schema_v01.sql").read_text(encoding="utf-8").lower()
+    assert "grant select, insert on public.alpha_hunter_test_engine_runs_v01" in schema
+    assert "before update or delete on public.alpha_hunter_test_engine_runs_v01" in schema
