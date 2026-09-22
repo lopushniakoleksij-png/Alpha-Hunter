@@ -24,6 +24,7 @@ declare
   v_previous_source text;
   v_catalyst_version text;
   v_config_sha text;
+  v_not_before timestamptz;
   v_activated integer := 0;
 begin
   for v_spec in
@@ -37,10 +38,23 @@ begin
     order by s.preregistered_at_utc
   loop
     v_parent := null;
+    v_not_before := v_spec.preregistered_at_utc;
+
+    if to_regclass('public.alpha_hunter_profitability_cadence_contract_v01') is not null then
+      select greatest(
+        v_spec.preregistered_at_utc,
+        c.baseline_not_before_utc
+      )
+      into v_not_before
+      from public.alpha_hunter_profitability_cadence_contract_v01 c
+      where c.spec_id=v_spec.spec_id;
+
+      v_not_before := coalesce(v_not_before,v_spec.preregistered_at_utc);
+    end if;
 
     select p.* into v_parent
     from public.alpha_hunter_snapshots p
-    where p.collected_at_utc>=v_spec.preregistered_at_utc
+    where p.collected_at_utc>=v_not_before
       and p.payload->'validation_identity'->>'git_commit'=v_spec.frozen_git_commit
       and coalesce(
         (p.payload->'multi_strategy_summary'->>'configured_strategy_count')::integer,
@@ -128,6 +142,8 @@ begin
         'prospective_boundary_ok',
           v_parent.collected_at_utc>=v_spec.preregistered_at_utc,
         'baseline_after_preregistration',true,
+        'baseline_not_before_utc',v_not_before,
+        'baseline_not_before_ok',v_parent.collected_at_utc>=v_not_before,
         'strategy_count_ok',true,
         'previous_context_ok',true,
         'catalyst_v02_ok',true,
