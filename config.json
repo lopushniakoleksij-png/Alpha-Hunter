@@ -53,17 +53,17 @@
     "notify_timing": [
       "EARLY"
     ],
-    "minimum_compression_score": 3.0,
+    "minimum_compression_score": 3,
     "stoch_rsi_limits": {
       "1H": 90,
       "4H": 85
     },
-    "bollinger_upper_band_tolerance_pct": 2.0,
-    "maximum_post_expansion_volume_ratio": 4.0,
+    "bollinger_upper_band_tolerance_pct": 2,
+    "maximum_post_expansion_volume_ratio": 4,
     "minimum_data_integrity": 88,
-    "minimum_discovery_score": 5.0,
+    "minimum_discovery_score": 5,
     "minimum_execution_score": 7.5,
-    "minimum_execution_reward_risk": 5.0
+    "minimum_execution_reward_risk": 5
   },
   "behaviour_engine": {
     "enabled": true,
@@ -73,7 +73,7 @@
     "open_interest_weight": 1.25,
     "funding_change_weight": 0.75,
     "volatility_transition_weight": 1.25,
-    "trend_acceleration_weight": 1.0,
+    "trend_acceleration_weight": 1,
     "liquidity_weight": 0.75,
     "early_anomaly_threshold": 3.5,
     "under_surveillance_threshold": 4.5,
@@ -91,7 +91,7 @@
   "max_retries": 3,
   "snapshot_directory": "data/snapshots",
   "funding_history_limit": 30,
-  "minimum_reward_risk": 5.0,
+  "minimum_reward_risk": 5,
   "state_history_file": "data/state-history.jsonl",
   "supabase": {
     "enabled": true,
@@ -108,5 +108,26 @@
     "primary_limit": 5,
     "reserve_limit": 5,
     "version": "7.4"
+  },
+  "multi_strategy_engine": {
+    "enabled": true,
+    "version": "0.1",
+    "shadow_only": true,
+    "minimum_shadow_reward_risk": 5,
+    "minimum_signal_score": 6.5,
+    "minimum_data_integrity": 88,
+    "maximum_spread_pct": 0.15,
+    "strategies": [
+      "S1_EARLY_MOMENTUM_EXPANSION",
+      "S2_BREAKOUT_RETEST",
+      "S3_TREND_PULLBACK",
+      "S4_RELATIVE_STRENGTH_WEAKNESS",
+      "S5_VOLATILITY_COMPRESSION",
+      "S6_LIQUIDITY_SWEEP_RECLAIM",
+      "S7_ACCEPTANCE_ABSORPTION",
+      "S8_MEAN_REVERSION_EDGE",
+      "S9_CATALYST_NEWS_MOMENTUM",
+      "S10_RISK_REGIME_BETA"
+    ]
   }
 }
