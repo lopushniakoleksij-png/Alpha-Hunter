@@ -24,6 +24,7 @@ from .analysis import (
 from .bitget import BitgetAPIError, BitgetClient
 from .env import load_env_file
 from .decision_trace import build_decision_trace
+from .strategy_engine import apply_multi_strategy_engine, build_multi_strategy_summary
 from .pre_move import apply_pre_move_engine
 from .private_account import collect_private_account_snapshot
 from .storage import (
@@ -3203,9 +3204,19 @@ def main() -> int:
             config,
         )
 
+        apply_multi_strategy_engine(
+            item,
+            previous,
+            config,
+        )
+
     pre_move_summary = apply_pre_move_engine(
         results,
         config,
+    )
+
+    multi_strategy_summary = build_multi_strategy_summary(
+        results
     )
 
     results.sort(
@@ -3284,6 +3295,9 @@ def main() -> int:
 
         "pre_move_summary":
             pre_move_summary,
+
+        "multi_strategy_summary":
+            multi_strategy_summary,
 
         "discovery_summary": {
             "qualified_count":
@@ -3411,6 +3425,13 @@ def main() -> int:
     print(
         "V7 Trade Ready: "
         f"{len(trade_ready)}"
+    )
+
+    print(
+        "S1-S10 shadow evaluations: "
+        f"{multi_strategy_summary['total_evaluations']} "
+        f"| shadow candidates: {multi_strategy_summary['shadow_candidate_count']} "
+        "| trade_permission=false"
     )
 
     private_status = (
