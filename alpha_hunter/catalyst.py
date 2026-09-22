@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 
-CATALYST_VERSION = "0.1"
+CATALYST_VERSION = "0.2"
 
 
 def _int(value: Any) -> int | None:
@@ -30,7 +30,17 @@ def _title_matches_symbol(
     title: str,
     symbol: str,
     base_coin: str,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, str | None]:
+    """Match only complete symbol/pair tokens, never embedded substrings.
+
+    Examples that must NOT match:
+    - LSKUSDT inside CLSKUSDT
+    - MUSDT inside CRMUSDT
+    - SUSDT inside GFSUSDT
+
+    Announcement text is not a structured symbol feed, so fail closed rather
+    than treating an alphanumeric substring as evidence for another contract.
+    """
     upper = title.upper()
     symbol_upper = symbol.upper()
     base_upper = base_coin.upper()
@@ -42,16 +52,20 @@ def _title_matches_symbol(
         f"{base_upper}_USDT",
     )
     for form in direct_forms:
-        if form and form in upper:
-            return True, form
+        if not form:
+            continue
+        pattern = rf"(?<![A-Z0-9]){re.escape(form)}(?![A-Z0-9])"
+        if re.search(pattern, upper):
+            return True, form, "EXACT_SYMBOL_OR_PAIR_TOKEN"
 
     if len(base_upper) < 3:
-        return False, None
+        return False, None, None
 
     pattern = rf"(?<![A-Z0-9]){re.escape(base_upper)}(?![A-Z0-9])"
     if re.search(pattern, upper):
-        return True, base_upper
-    return False, None
+        return True, base_upper, "WHOLE_BASE_TOKEN"
+
+    return False, None, None
 
 
 def normalize_notice(
@@ -90,7 +104,7 @@ def bind_official_catalyst(
         notice = normalize_notice(raw)
         if notice is None:
             continue
-        matched, matched_on = _title_matches_symbol(
+        matched, matched_on, match_rule = _title_matches_symbol(
             notice["title"],
             symbol,
             base_coin,
@@ -111,6 +125,7 @@ def bind_official_catalyst(
         matches.append({
             **notice,
             "matched_on": matched_on,
+            "match_rule": match_rule,
             "age_ms": age_ms,
             "fresh": fresh,
         })
@@ -138,6 +153,7 @@ def bind_official_catalyst(
         "age_ms": selected["age_ms"],
         "fresh": selected["fresh"],
         "matched_on": selected["matched_on"],
+        "match_rule": selected["match_rule"],
         "matched_notice_count": len(matches),
         "direction": "MARKET_CONFIRMED",
         "trade_permission": False,
