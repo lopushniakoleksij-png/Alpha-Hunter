@@ -211,3 +211,31 @@ Still fail-closed:
 - no announcement alone grants trade permission
 - stale or unmatched announcements cannot create an S9 shadow candidate
 - all S9 results remain shadow-only until forward evidence supports promotion
+
+
+## P4 execution increment — v0.1 prospective strategy forward outcomes
+
+Implemented in this increment:
+
+- persist the most recent fully closed candle separately from the currently forming candle
+- normalize every S1-S10 canonical observation from the immutable symbol snapshot stream
+- create immutable persistent strategy episodes from strategy_instance_id
+- freeze 1H / 4H / 12H / 24H forward horizons
+- quantify first SHADOW_CANDIDATE time and price
+- quantify confirmation tax in reference-price %, planned-entry %, and first-risk R units
+- preserve remaining R at first candidate and its change from first observation
+- detect PLACE_LIMIT touches only from future fully closed canonical 1H candles
+- calculate conservative post-trigger MAE, MFE and direction-adjusted endpoint return
+- classify target-first / stop-first / same-candle ambiguity without inventing intrabar ordering
+- explicitly exclude the trigger candle and partial signal hour from path measurements
+- record path coverage and incomplete-data quality
+- expose a non-ranking per-strategy forward scorecard
+- schedule the database evaluator hourly using only canonical persisted evidence
+
+Scientific fail-closed boundary:
+
+- no second universe scanner is used
+- no additional exchange market query is needed for the outcome evaluator
+- incomplete candle coverage remains incomplete rather than imputed
+- net-of-cost return remains NULL until canonical cost evidence is bound
+- outcomes cannot change thresholds, grant READY, grant trade permission, or promote a strategy

@@ -119,6 +119,19 @@ def percent_change(
     )
 
 
+def last_closed_candle(
+    candles: list[dict[str, float | int]],
+) -> dict[str, float | int] | None:
+    """Return the most recent fully closed candle from an exchange series.
+
+    Bitget candle arrays include the currently forming candle. Using the
+    immediately preceding candle avoids mixing pre/post-observation path data.
+    """
+    if len(candles) < 2:
+        return None
+    return dict(candles[-2])
+
+
 def average_close(
     candles: list[dict[str, float | int]],
     lookback: int,
@@ -423,6 +436,11 @@ def collect_symbol(
                     candles[-1]
                     if candles
                     else None
+                ),
+
+            "last_closed_candle":
+                last_closed_candle(
+                    candles
                 ),
 
             "indicators":
