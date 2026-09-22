@@ -8,7 +8,9 @@ on:
       - "alpha_hunter/private_account.py"
       - "alpha_hunter/fill_client.py"
       - "alpha_hunter/fill_ledger.py"
+      - "ops/verify_bitget_48h_history_readonly.py"
       - "tests/test_fill_client.py"
+      - "tests/test_bitget_account_identity_guard_v01.py"
       - "tests/test_private_account_mode_probe_v01.py"
   workflow_dispatch:
 
@@ -37,11 +39,13 @@ jobs:
           alpha_hunter/private_account.py
           alpha_hunter/fill_client.py
           alpha_hunter/fill_ledger.py
+          ops/verify_bitget_48h_history_readonly.py
       - name: Run read-only safety regressions
         run: >-
           python -m pytest -q
           tests/test_fill_client.py
           tests/test_private_account_mode_probe_v01.py
+          tests/test_bitget_account_identity_guard_v01.py
       - name: Reject order and transfer methods in credentialed probe
         shell: bash
         run: |
@@ -78,6 +82,7 @@ jobs:
       BITGET_API_KEY: ${{ secrets.BITGET_API_KEY }}
       BITGET_SECRET_KEY: ${{ secrets.BITGET_SECRET_KEY }}
       BITGET_API_PASSPHRASE: ${{ secrets.BITGET_API_PASSPHRASE }}
+      BITGET_EXPECTED_ACCOUNT_FINGERPRINT: ${{ secrets.BITGET_EXPECTED_ACCOUNT_FINGERPRINT }}
       PYTHONPATH: .
     steps:
       - uses: actions/checkout@v4
@@ -122,6 +127,10 @@ jobs:
               "status": account.get("status"),
               "account_mode_probe_status": account.get("account_mode_probe_status"),
               "account_mode": account.get("account_mode"),
+              "account_identity_probe_status": account.get(
+                  "account_identity_probe_status"
+              ),
+              "account_identity_match": account.get("account_identity_match"),
               "classic_v2_risk_evidence_accepted": account.get(
                   "classic_v2_risk_evidence_accepted"
               ),
@@ -137,6 +146,7 @@ jobs:
 
           if (
               account.get("status") != "CONNECTED"
+              or account.get("account_identity_match") is not True
               or account.get("classic_v2_risk_evidence_accepted") is not True
           ):
               raise SystemExit("Account smoke: INCOMPLETE")

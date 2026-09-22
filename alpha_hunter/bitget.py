@@ -507,6 +507,22 @@ class BitgetClient:
             )
         return data
 
+    def spot_account_info_v2(
+        self,
+    ) -> dict[str, Any]:
+        """Read Classic-account identity/permission metadata via signed GET only."""
+        data = self._get(
+            "/api/v2/spot/account/info",
+            {},
+            private=True,
+            retry_deterministic_4xx=False,
+        )
+        if not isinstance(data, dict):
+            raise BitgetAPIError(
+                "Bitget v2 spot account info returned invalid schema"
+            )
+        return data
+
     def futures_accounts(
         self,
         product_type: str,
