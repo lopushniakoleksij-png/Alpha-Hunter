@@ -106,7 +106,8 @@ economics_counts as (
     count(e.episode_id) filter(
       where e.first_observed_at_utc<s.started_at_utc
     ) as contaminated_pre_baseline_economics_rows,
-    count(*)-count(distinct e.episode_id) as duplicate_economics_episode_rows
+    count(e.episode_id)-count(distinct e.episode_id)
+      as duplicate_economics_episode_rows
   from specs s
   left join public.alpha_hunter_strategy_paper_economics_v01 e
     on e.spec_id=s.spec_id
