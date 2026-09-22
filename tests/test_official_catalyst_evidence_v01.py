@@ -100,7 +100,9 @@ def test_official_notice_binds_exact_symbol_and_is_fresh():
     assert catalyst["validated"] is True
     assert catalyst["source"] == "BITGET_OFFICIAL_ANNOUNCEMENT_API"
     assert catalyst["fresh"] is True
+    assert catalyst["version"] == "0.2"
     assert catalyst["matched_on"] == "HYPE/USDT"
+    assert catalyst["match_rule"] == "EXACT_SYMBOL_OR_PAIR_TOKEN"
     assert catalyst["direction"] == "MARKET_CONFIRMED"
     assert catalyst["trade_permission"] is False
 
@@ -132,6 +134,8 @@ def test_s9_uses_market_confirmation_instead_of_inventing_announcement_direction
 
     assert s9["direction"] == "LONG"
     assert s9["evidence"]["direction_source"] == "MARKET_CONFIRMED_TRENDS"
+    assert s9["evidence"]["catalyst_version"] == "0.2"
+    assert s9["evidence"]["match_rule"] == "EXACT_SYMBOL_OR_PAIR_TOKEN"
     assert s9["evidence"]["title"].startswith("Bitget Will List HYPE")
     assert s9["status"] == "SHADOW_CANDIDATE"
     assert s9["trade_permission"] is False
@@ -179,3 +183,68 @@ def test_catalyst_summary_counts_bound_and_fresh_symbols():
     assert summary["bound_symbol_count"] == 1
     assert summary["fresh_bound_symbol_count"] == 1
     assert summary["trade_permission"] is False
+
+
+def test_full_symbol_does_not_match_inside_longer_contract_symbol():
+    cases = [
+        (
+            "LSKUSDT",
+            "LSK",
+            "[Important] Bitget Announcement on Listing QLDUSDT, IBITUSDT, and CLSKUSDT Stock Perps",
+        ),
+        (
+            "MUSDT",
+            "M",
+            "[Important] Bitget Announcement on Cash Dividend Settlement for CRMUSDT, HPEUSDT Stock Perps",
+        ),
+        (
+            "SUSDT",
+            "S",
+            "[Important] Bitget Announcement on Cash Dividend Settlement for GFSUSDT, LRCXUSDT Stock Perps",
+        ),
+    ]
+
+    for symbol, base_coin, title in cases:
+        catalyst = bind_official_catalyst(
+            symbol=symbol,
+            base_coin=base_coin,
+            notices=[notice(title=title)],
+            exchange_timestamp_ms=1_800_000_000_000,
+            freshness_hours=48,
+        )
+        assert catalyst is None, (symbol, title)
+
+
+def test_exact_full_symbol_token_still_matches():
+    catalyst = bind_official_catalyst(
+        symbol="LSKUSDT",
+        base_coin="LSK",
+        notices=[notice(title="Bitget updates LSKUSDT perpetual futures")],
+        exchange_timestamp_ms=1_800_000_000_000,
+        freshness_hours=48,
+    )
+
+    assert catalyst is not None
+    assert catalyst["matched_on"] == "LSKUSDT"
+    assert catalyst["match_rule"] == "EXACT_SYMBOL_OR_PAIR_TOKEN"
+
+
+def test_whole_base_token_matches_but_embedded_base_does_not():
+    exact = bind_official_catalyst(
+        symbol="LSKUSDT",
+        base_coin="LSK",
+        notices=[notice(title="Bitget will support LSK network upgrade")],
+        exchange_timestamp_ms=1_800_000_000_000,
+        freshness_hours=48,
+    )
+    embedded = bind_official_catalyst(
+        symbol="LSKUSDT",
+        base_coin="LSK",
+        notices=[notice(title="Bitget will list CLSKUSDT perpetual futures")],
+        exchange_timestamp_ms=1_800_000_000_000,
+        freshness_hours=48,
+    )
+
+    assert exact is not None
+    assert exact["match_rule"] == "WHOLE_BASE_TOKEN"
+    assert embedded is None
