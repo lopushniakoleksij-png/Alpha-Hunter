@@ -282,3 +282,23 @@ It cannot establish:
 - a best strategy ranking
 
 Those claims still require controlled prospective evidence and net-of-cost validation.
+
+
+## Live evidence correction — catalyst symbol-boundary v0.2
+
+The first live multi-strategy scan exposed a matcher defect in catalyst v0.1:
+a short futures symbol could be found as an alphanumeric substring inside a
+different, longer contract symbol (for example LSKUSDT inside CLSKUSDT).
+
+Corrective action:
+
+- catalyst evidence version bumped to v0.2
+- full symbols and pair forms now require alphanumeric token boundaries
+- whole-base fallback also requires token boundaries
+- short base coins remain in fail-closed mode for base-only matching
+- S9 persists catalyst_version and match_rule for auditability
+- regression cases explicitly reject LSKUSDT/CLSKUSDT, MUSDT/CRMUSDT and SUSDT/GFSUSDT collisions
+
+Historical canonical snapshots remain immutable. Catalyst v0.1 evidence can be
+distinguished from v0.2 and must not be treated as equivalent evidence in future
+S9 scientific analysis.
