@@ -182,7 +182,7 @@ def test_40084_confirms_classic_mode_and_skips_second_uta_probe(monkeypatch):
     assert client.classic_position_calls == 1
 
 
-def test_classic_account_identity_unpinned_fails_closed(monkeypatch):
+def test_classic_account_identity_unpinned_allows_readonly_recovery(monkeypatch):
     monkeypatch.delenv("BITGET_EXPECTED_ACCOUNT_FINGERPRINT", raising=False)
     client = FakeClient(
         account_info_error=BitgetDeterministicAPIError(
@@ -191,14 +191,22 @@ def test_classic_account_identity_unpinned_fails_closed(monkeypatch):
             bitget_code="40084",
             bitget_message="classic",
         ),
+        accounts=[{
+            "marginCoin": "USDT",
+            "available": "12.5",
+            "locked": "0",
+            "accountEquity": "12.5",
+            "unrealizedPL": "0",
+        }],
     )
     result = collect_private_account_snapshot(client, "usdt-futures")
-    assert result["status"] == "ACCOUNT_IDENTITY_UNPINNED"
-    assert result["classic_v2_risk_evidence_accepted"] is False
+    assert result["status"] == "CONNECTED"
+    assert result["classic_v2_risk_evidence_accepted"] is True
+    assert result["account_identity_probe_status"] == "UNPINNED"
     assert result["account_identity_match"] is False
     assert client.classic_identity_calls == 1
-    assert client.classic_account_calls == 0
-    assert client.classic_position_calls == 0
+    assert client.classic_account_calls == 1
+    assert client.classic_position_calls == 1
 
 
 def test_classic_account_identity_mismatch_fails_closed(monkeypatch):
