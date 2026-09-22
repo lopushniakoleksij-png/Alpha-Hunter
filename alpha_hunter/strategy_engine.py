@@ -638,30 +638,191 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
 
 
 def _s7_acceptance_absorption(record: dict[str, Any], previous: dict[str, Any] | None, config: dict[str, Any]) -> dict[str, Any]:
-    del config
     strategy_id, strategy_name = STRATEGY_CATALOG[6]
     latest = _tf(record, "1H").get("latest_candle")
-    prev_support = _float(previous.get("support")) if previous else None
-    prev_resistance = _float(previous.get("resistance")) if previous else None
-    close = _float(latest.get("close")) if isinstance(latest, dict) else None
+    if not previous or not isinstance(latest, dict):
+        return _data_insufficient(
+            strategy_id,
+            strategy_name,
+            "Acceptance requires the previous canonical levels plus a current 1H candle",
+        )
+
+    micro = record.get("microstructure")
+    if not isinstance(micro, dict) or micro.get("status") != "COMPLETE":
+        return _data_insufficient(
+            strategy_id,
+            strategy_name,
+            "Canonical Bitget order-book and recent-trade evidence is incomplete; acceptance/absorption cannot be assessed",
+            evidence={
+                "microstructure_status": (
+                    micro.get("status")
+                    if isinstance(micro, dict)
+                    else "MISSING"
+                ),
+            },
+        )
+
+    book = micro.get("order_book") if isinstance(micro.get("order_book"), dict) else {}
+    flow = micro.get("recent_trades") if isinstance(micro.get("recent_trades"), dict) else {}
+    settings = config.get("multi_strategy_engine", {}).get("s7_acceptance", {})
+    min_trade_count = int(settings.get("minimum_recent_trade_count", 20))
+    min_trade_imbalance = float(settings.get("minimum_trade_imbalance_abs", 0.15))
+    min_depth_imbalance = float(settings.get("minimum_depth_imbalance_abs", 0.05))
+    max_distance_pct = float(settings.get("maximum_distance_from_level_pct", 3.0))
+    max_source_skew_ms = int(settings.get("maximum_source_skew_ms", 60000))
+
+    prev_support = _float(previous.get("support"))
+    prev_resistance = _float(previous.get("resistance"))
+    close = _float(latest.get("close"))
+    price = _float(record.get("last_price"))
+    atr = _float(_indicators(record).get("atr_14"))
     volume_state = str(_indicators(record).get("volume_anomaly", {}).get("state") or "")
-    proxy = None
-    if close is not None and prev_resistance is not None and close > prev_resistance and volume_state in {"ELEVATED", "HIGH"}:
-        proxy = "ACCEPTANCE_ABOVE_PREVIOUS_RESISTANCE"
-    elif close is not None and prev_support is not None and close < prev_support and volume_state in {"ELEVATED", "HIGH"}:
-        proxy = "ACCEPTANCE_BELOW_PREVIOUS_SUPPORT"
-    return _data_insufficient(
-        strategy_id,
-        strategy_name,
-        "Order-book/trade-flow absorption evidence is not captured by the canonical scanner; fail closed rather than infer absorption",
-        evidence={
-            "acceptance_proxy_observation": proxy,
-            "previous_support": prev_support,
-            "previous_resistance": prev_resistance,
-            "volume_state": volume_state,
-        },
+    trade_count = int(flow.get("trade_count") or 0)
+    trade_imbalance = _float(flow.get("trade_imbalance"))
+    depth_imbalance = _float(book.get("depth_imbalance"))
+    midpoint = _float(book.get("midpoint"))
+    source_skew_ms = micro.get("source_skew_ms")
+    source_fresh = (
+        isinstance(source_skew_ms, int)
+        and source_skew_ms <= max_source_skew_ms
     )
 
+    if None in (close, price, trade_imbalance, depth_imbalance, midpoint):
+        return _data_insufficient(
+            strategy_id,
+            strategy_name,
+            "Acceptance microstructure fields are incomplete",
+            evidence={
+                "trade_count": trade_count,
+                "trade_imbalance": trade_imbalance,
+                "depth_imbalance": depth_imbalance,
+                "midpoint": midpoint,
+                "source_skew_ms": source_skew_ms,
+            },
+        )
+
+    direction = None
+    accepted_level = None
+    if (
+        prev_resistance is not None
+        and close > prev_resistance
+        and price > prev_resistance
+        and midpoint > prev_resistance
+    ):
+        direction = "LONG"
+        accepted_level = prev_resistance
+    elif (
+        prev_support is not None
+        and close < prev_support
+        and price < prev_support
+        and midpoint < prev_support
+    ):
+        direction = "SHORT"
+        accepted_level = prev_support
+
+    if direction is None or accepted_level is None:
+        return _finish(
+            record=record,
+            config=config,
+            strategy_id=strategy_id,
+            strategy_name=strategy_name,
+            direction=None,
+            signal=False,
+            signal_score=0.0,
+            action="NO_SAFE_TRADE",
+            entry=None,
+            stop=None,
+            target=None,
+            evidence={
+                "previous_support": prev_support,
+                "previous_resistance": prev_resistance,
+                "latest_close": close,
+                "current_price": price,
+                "book_midpoint": midpoint,
+                "trade_imbalance": trade_imbalance,
+                "depth_imbalance": depth_imbalance,
+            },
+            reasons=["No price acceptance beyond a previous canonical support/resistance level"],
+        )
+
+    if direction == "LONG":
+        flow_aligned = trade_imbalance >= min_trade_imbalance
+        depth_aligned = depth_imbalance >= min_depth_imbalance
+    else:
+        flow_aligned = trade_imbalance <= -min_trade_imbalance
+        depth_aligned = depth_imbalance <= -min_depth_imbalance
+
+    volume_aligned = volume_state in {"ELEVATED", "HIGH"}
+    trade_count_ok = trade_count >= min_trade_count
+    distance_pct = abs(price - accepted_level) / price * 100 if price else None
+    distance_ok = distance_pct is not None and distance_pct <= max_distance_pct
+    signal = bool(
+        source_fresh
+        and trade_count_ok
+        and flow_aligned
+        and depth_aligned
+        and volume_aligned
+        and distance_ok
+    )
+
+    atr_buffer = atr if atr is not None and atr > 0 else abs(price - accepted_level)
+    if not atr_buffer:
+        atr_buffer = price * 0.01
+    stop = (
+        accepted_level - atr_buffer
+        if direction == "LONG"
+        else accepted_level + atr_buffer
+    )
+    target = _structural_target(record, direction, accepted_level)
+
+    score = (
+        3.0
+        + (1.5 if source_fresh else 0.0)
+        + (1.0 if trade_count_ok else 0.0)
+        + (1.5 if flow_aligned else 0.0)
+        + (1.0 if depth_aligned else 0.0)
+        + (1.0 if volume_aligned else 0.0)
+        + (1.0 if distance_ok else 0.0)
+    )
+    return _finish(
+        record=record,
+        config=config,
+        strategy_id=strategy_id,
+        strategy_name=strategy_name,
+        direction=direction,
+        signal=signal,
+        signal_score=score,
+        action="PLACE_LIMIT",
+        entry=accepted_level,
+        stop=stop,
+        target=target,
+        evidence={
+            "evidence_type": "ACCEPTANCE_SNAPSHOT_V1",
+            "absorption_confirmed": False,
+            "accepted_level": accepted_level,
+            "previous_support": prev_support,
+            "previous_resistance": prev_resistance,
+            "latest_close": close,
+            "current_price": price,
+            "book_midpoint": midpoint,
+            "trade_count": trade_count,
+            "trade_imbalance": trade_imbalance,
+            "depth_imbalance": depth_imbalance,
+            "volume_state": volume_state,
+            "distance_from_level_pct": distance_pct,
+            "source_skew_ms": source_skew_ms,
+            "note": "Snapshot evidence can establish acceptance; it does not by itself prove absorption",
+        },
+        reasons=[] if signal else ["Acceptance exists, but microstructure/participation/freshness conditions are not all aligned"],
+        extra_checks={
+            "source_fresh": source_fresh,
+            "trade_count": trade_count_ok,
+            "trade_flow_alignment": flow_aligned,
+            "depth_alignment": depth_aligned,
+            "volume_participation": volume_aligned,
+            "distance_to_level": distance_ok,
+        },
+    )
 
 def _s8_mean_reversion(record: dict[str, Any], previous: dict[str, Any] | None, config: dict[str, Any]) -> dict[str, Any]:
     del previous
@@ -899,6 +1060,8 @@ def build_multi_strategy_summary(results: list[dict[str, Any]]) -> dict[str, Any
     watches = 0
     data_insufficient = 0
     covered_symbols = 0
+    persistent_active = 0
+    persistent_continuing = 0
 
     for record in results:
         if "error" in record:
@@ -907,6 +1070,14 @@ def build_multi_strategy_summary(results: list[dict[str, Any]]) -> dict[str, Any
         strategies = engine.get("strategies", []) if isinstance(engine, dict) else []
         if strategies:
             covered_symbols += 1
+        persistence_summary = (
+            engine.get("persistence_summary", {})
+            if isinstance(engine, dict)
+            else {}
+        )
+        if isinstance(persistence_summary, dict):
+            persistent_active += int(persistence_summary.get("active_count") or 0)
+            persistent_continuing += int(persistence_summary.get("continuing_count") or 0)
         for row in strategies:
             strategy_id = str(row.get("strategy_id") or "")
             if strategy_id in strategy_counts:
@@ -932,6 +1103,8 @@ def build_multi_strategy_summary(results: list[dict[str, Any]]) -> dict[str, Any
         "shadow_candidate_count": shadow_candidates,
         "watch_count": watches,
         "data_insufficient_count": data_insufficient,
+        "persistent_active_count": persistent_active,
+        "persistent_continuing_count": persistent_continuing,
         "evaluations_by_strategy": strategy_counts,
         "candidates_by_strategy": candidate_counts,
     }

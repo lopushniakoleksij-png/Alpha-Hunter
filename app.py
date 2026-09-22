@@ -305,6 +305,11 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
             item = dict(strategy)
             item["symbol"] = row.get("symbol")
             item["price"] = row.get("last_price")
+            persistence = item.get("persistence")
+            if not isinstance(persistence, dict):
+                persistence = {}
+            item["_persistence_state"] = str(persistence.get("state") or "—")
+            item["_consecutive_scans"] = int(persistence.get("consecutive_scans") or 0)
             strategy_shadow.append(item)
 
     strategy_status_priority = {
@@ -353,6 +358,9 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
     strategy_summary = snapshot.get("multi_strategy_summary", {})
     if not isinstance(strategy_summary, dict):
         strategy_summary = {}
+    microstructure_summary = snapshot.get("microstructure_summary", {})
+    if not isinstance(microstructure_summary, dict):
+        microstructure_summary = {}
     evaluations = strategy_summary.get("evaluations_by_strategy", {})
     candidates = strategy_summary.get("candidates_by_strategy", {})
     strategy_coverage = [
@@ -373,6 +381,7 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
         "research": ranked_research[:25],
         "strategy_shadow": strategy_shadow[:60],
         "strategy_summary": strategy_summary,
+        "microstructure_summary": microstructure_summary,
         "strategy_coverage": strategy_coverage,
         "references": sorted(
             [row for row in symbols if row["_reference"]],
@@ -445,7 +454,7 @@ PAGE = r"""
 :root{--bg:#071018;--panel:#0d1822;--line:#1c2c39;--text:#e8f0f6;--muted:#8ea1b2;--green:#24d18f;--red:#ff6474;--amber:#ffbf47;--blue:#4db6ff}
 *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
 .wrap{max-width:1500px;margin:auto;padding:20px}.top{display:flex;justify-content:space-between;gap:16px;align-items:flex-end;margin-bottom:18px}
-h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-size:12px}.panel,.card{background:rgba(13,24,34,.96);border:1px solid var(--line);border-radius:16px}.panel{padding:18px;margin-bottom:16px}.cards{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:16px}.card{padding:14px}.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.value{font-size:24px;font-weight:800;margin-top:4px}
+h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-size:12px}.panel,.card{background:rgba(13,24,34,.96);border:1px solid var(--line);border-radius:16px}.panel{padding:18px;margin-bottom:16px}.cards{display:grid;grid-template-columns:repeat(8,1fr);gap:12px;margin-bottom:16px}.card{padding:14px}.label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.value{font-size:24px;font-weight:800;margin-top:4px}
 .action-ready{border-color:#1f6a50;box-shadow:0 0 0 1px rgba(36,209,143,.15)}.action-retest{border-color:#7a6224}.action-none{border-color:#314454}.action-title{font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.ready{color:var(--green)}.retest{color:var(--amber)}.reject,.short{color:var(--red)}.long{color:var(--green)}
 .action-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:14px}.metric{background:#09131c;border:1px solid #162734;border-radius:12px;padding:11px}.metric b{display:block;margin-top:4px;font-size:16px}.reason{margin-top:12px;padding:11px;border-left:3px solid var(--blue);background:#09131c;color:#b9c7d2;font-size:13px;line-height:1.45}
 .layout{display:grid;grid-template-columns:3fr 1fr;gap:16px}table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:var(--muted);padding:9px 6px;border-bottom:1px solid var(--line)}td{padding:10px 6px;border-bottom:1px solid #142431;white-space:nowrap}.wrap-cell{white-space:normal;min-width:180px}.badge{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid var(--line);font-size:10px;font-weight:700}.badge-ready{color:var(--green);border-color:#1f6a50}.badge-retest{color:var(--amber);border-color:#7a6224}.badge-research{color:var(--muted)}
@@ -468,6 +477,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <div class="card"><div class="label">Minimum R:R</div><div class="value">{{ '%.1f'|format(data.minimum_execution_rr) }}R</div><div class="small">not relaxed</div></div>
     <div class="card"><div class="label">BTC 24H</div><div class="value {{ 'long' if data.btc_change_24h>0 else 'short' if data.btc_change_24h<0 else '' }}">{{ '%.2f'|format(data.btc_change_24h) }}%</div><div class="small">regime reference</div></div>
     <div class="card"><div class="label">Strategies</div><div class="value">{{ data.strategy_summary.get('configured_strategy_count',0) }}</div><div class="small">S1-S10 shadow · {{ data.strategy_summary.get('shadow_candidate_count',0) }} candidates</div></div>
+    <div class="card"><div class="label">Microstructure</div><div class="value">{{ data.microstructure_summary.get('complete_count',0) }}/{{ data.microstructure_summary.get('eligible_symbol_count',0) }}</div><div class="small">Bitget depth + public trades</div></div>
+    <div class="card"><div class="label">Persistent</div><div class="value">{{ data.strategy_summary.get('persistent_continuing_count',0) }}</div><div class="small">strategy signals continuing</div></div>
   </div>
 
   {% if data.best_action %}
@@ -502,12 +513,14 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       {% endfor %}
     </div>
     {% if data.strategy_shadow %}
-    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Side</th><th>Action</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
+    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Action</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
     {% for s in data.strategy_shadow %}
       <tr>
         <td><b>{{ s.symbol }}</b></td>
         <td><b>{{ s.strategy_id }}</b> {{ s.strategy_name }}</td>
         <td><span class="badge {{ 'badge-ready' if s.status=='SHADOW_CANDIDATE' else 'badge-retest' if s.status=='WATCH' else 'badge-research' }}">{{ s.status }}</span></td>
+        <td>{{ s._persistence_state }}</td>
+        <td>{{ s._consecutive_scans }}</td>
         <td class="{{ 'long' if s.direction=='LONG' else 'short' if s.direction=='SHORT' else '' }}">{{ s.direction or '—' }}</td>
         <td>{{ s.action }}</td>
         <td>{{ '%.2f'|format(s.signal_score or 0) }}</td>

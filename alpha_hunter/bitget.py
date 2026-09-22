@@ -471,6 +471,56 @@ class BitgetClient:
             },
         )
 
+    def merge_depth(
+        self,
+        symbol: str,
+        product_type: str,
+        *,
+        limit: int = 15,
+        precision: str = "scale0",
+    ) -> dict[str, Any]:
+        """Read public futures order-book depth. No account permission required."""
+        data = self._get(
+            "/api/v2/mix/market/merge-depth",
+            {
+                "symbol": symbol,
+                "productType": product_type,
+                "limit": str(limit),
+                "precision": precision,
+            },
+        )
+        if not isinstance(data, dict):
+            raise BitgetAPIError(
+                f"No merge-depth data for {symbol}"
+            )
+        return data
+
+    def recent_market_fills(
+        self,
+        symbol: str,
+        product_type: str,
+        *,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Read recent public market transactions. This is not private fill history."""
+        data = self._get(
+            "/api/v2/mix/market/fills",
+            {
+                "symbol": symbol,
+                "productType": product_type,
+                "limit": str(limit),
+            },
+        )
+        if not isinstance(data, list):
+            raise BitgetAPIError(
+                f"No recent market transactions for {symbol}"
+            )
+        return [
+            row
+            for row in data
+            if isinstance(row, dict)
+        ]
+
     # -------------------------------------------------
     # PRIVATE ACCOUNT (READ ONLY)
     # -------------------------------------------------
