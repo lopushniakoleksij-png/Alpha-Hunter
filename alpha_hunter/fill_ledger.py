@@ -494,6 +494,24 @@ def collect_fill_traceability_with_historical_diagnostic(
     if recent.run_row.get("status") != "ZERO_FILLS":
         return recent
 
+    identity_status = str(
+        private_account.get("account_identity_probe_status") or "UNAVAILABLE"
+    )
+    identity_match = private_account.get("account_identity_match") is True
+    if not identity_match:
+        evidence = recent.run_row.setdefault("evidence", {})
+        evidence["account_identity_probe_status"] = identity_status
+        evidence["account_identity_match"] = False
+        recent.run_row["status"] = "ACCOUNT_IDENTITY_UNVERIFIED_ZERO_FILLS"
+        recent.run_row["complete"] = False
+        recent.run_row["schema_validated"] = False
+        recent.run_row["detail"] = (
+            "Read-only fill query returned zero rows, but the Bitget account "
+            f"identity is {identity_status}; ZERO_FILLS is not trusted until "
+            "the canonical account fingerprint is pinned."
+        )
+        return recent
+
     historical = collect_fill_traceability(
         client,
         product_type=product_type,
