@@ -322,6 +322,40 @@ class BitgetClient:
             },
         ) or []
 
+    def announcements(
+        self,
+        *,
+        ann_type: str | None = None,
+        language: str = "en_US",
+        limit: int = 10,
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read official Bitget platform announcements from the public API."""
+        params: dict[str, Any] = {
+            "language": language,
+            "limit": str(limit),
+        }
+        if ann_type:
+            params["annType"] = ann_type
+        if start_time_ms is not None:
+            params["startTime"] = str(start_time_ms)
+        if end_time_ms is not None:
+            params["endTime"] = str(end_time_ms)
+        data = self._get(
+            "/api/v2/public/annoucements",
+            params,
+        )
+        if not isinstance(data, list):
+            raise BitgetAPIError(
+                "Bitget announcements returned invalid schema"
+            )
+        return [
+            row
+            for row in data
+            if isinstance(row, dict)
+        ]
+
     # -------------------------------------------------
     # SYMBOL MARKET DATA
     # -------------------------------------------------
