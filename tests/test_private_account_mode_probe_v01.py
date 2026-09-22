@@ -1,3 +1,5 @@
+import hashlib
+
 import requests
 
 from alpha_hunter.bitget import (
@@ -20,6 +22,8 @@ class FakeClient:
         settings_error=None,
         accounts=None,
         positions=None,
+        classic_identity=None,
+        classic_identity_error=None,
     ):
         self.account_info = account_info or {
             "permType": "read-only",
@@ -30,8 +34,15 @@ class FakeClient:
         self.settings_error = settings_error
         self.accounts = accounts or []
         self.positions = positions or []
+        self.classic_identity = classic_identity or {
+            "userId": "123456789",
+            "parentId": "0",
+            "authorities": ["readonly"],
+        }
+        self.classic_identity_error = classic_identity_error
         self.account_info_calls = 0
         self.settings_calls = 0
+        self.classic_identity_calls = 0
         self.classic_account_calls = 0
         self.classic_position_calls = 0
 
@@ -46,6 +57,12 @@ class FakeClient:
         if self.settings_error is not None:
             raise self.settings_error
         return self.settings
+
+    def spot_account_info_v2(self):
+        self.classic_identity_calls += 1
+        if self.classic_identity_error is not None:
+            raise self.classic_identity_error
+        return self.classic_identity
 
     def futures_accounts(self, product_type):
         self.classic_account_calls += 1
@@ -122,7 +139,9 @@ def test_permission_probe_failure_is_diagnostic_only_and_classic_fallback_surviv
     assert client.classic_position_calls == 1
 
 
-def test_40084_confirms_classic_mode_and_skips_second_uta_probe():
+def test_40084_confirms_classic_mode_and_skips_second_uta_probe(monkeypatch):
+    fingerprint = hashlib.sha256(b"123456789").hexdigest()
+    monkeypatch.setenv("BITGET_EXPECTED_ACCOUNT_FINGERPRINT", fingerprint)
     client = FakeClient(
         account_info_error=BitgetDeterministicAPIError(
             (
@@ -154,10 +173,55 @@ def test_40084_confirms_classic_mode_and_skips_second_uta_probe():
     assert result["account_mode_probe_status"] == "CLASSIC_CONFIRMED_FROM_V3_40084"
     assert result["account_mode"] == "classic"
     assert result["classic_v2_risk_evidence_accepted"] is True
+    assert result["account_identity_probe_status"] == "MATCHED"
+    assert result["account_identity_match"] is True
     assert client.account_info_calls == 1
     assert client.settings_calls == 0
+    assert client.classic_identity_calls == 1
     assert client.classic_account_calls == 1
     assert client.classic_position_calls == 1
+
+
+def test_classic_account_identity_unpinned_fails_closed(monkeypatch):
+    monkeypatch.delenv("BITGET_EXPECTED_ACCOUNT_FINGERPRINT", raising=False)
+    client = FakeClient(
+        account_info_error=BitgetDeterministicAPIError(
+            "classic",
+            http_status=400,
+            bitget_code="40084",
+            bitget_message="classic",
+        ),
+    )
+    result = collect_private_account_snapshot(client, "usdt-futures")
+    assert result["status"] == "ACCOUNT_IDENTITY_UNPINNED"
+    assert result["classic_v2_risk_evidence_accepted"] is False
+    assert result["account_identity_match"] is False
+    assert client.classic_identity_calls == 1
+    assert client.classic_account_calls == 0
+    assert client.classic_position_calls == 0
+
+
+def test_classic_account_identity_mismatch_fails_closed(monkeypatch):
+    monkeypatch.setenv(
+        "BITGET_EXPECTED_ACCOUNT_FINGERPRINT",
+        hashlib.sha256(b"correct-account").hexdigest(),
+    )
+    client = FakeClient(
+        account_info_error=BitgetDeterministicAPIError(
+            "classic",
+            http_status=400,
+            bitget_code="40084",
+            bitget_message="classic",
+        ),
+        classic_identity={"userId": "wrong-account", "parentId": "0"},
+    )
+    result = collect_private_account_snapshot(client, "usdt-futures")
+    assert result["status"] == "ACCOUNT_IDENTITY_MISMATCH"
+    assert result["classic_v2_risk_evidence_accepted"] is False
+    assert result["account_identity_probe_status"] == "MISMATCH"
+    assert result["account_identity_match"] is False
+    assert client.classic_account_calls == 0
+    assert client.classic_position_calls == 0
 
 
 def test_unified_mode_blocks_classic_v2_risk_evidence():
