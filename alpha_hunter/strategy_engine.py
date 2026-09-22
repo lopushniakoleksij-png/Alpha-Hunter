@@ -652,7 +652,7 @@ def _s7_acceptance_absorption(record: dict[str, Any], previous: dict[str, Any] |
         return _data_insufficient(
             strategy_id,
             strategy_name,
-            "Canonical Bitget order-book and recent-trade evidence is incomplete",
+            "Canonical Bitget order-book and recent-trade evidence is incomplete; acceptance/absorption cannot be assessed",
             evidence={
                 "microstructure_status": (
                     micro.get("status")
