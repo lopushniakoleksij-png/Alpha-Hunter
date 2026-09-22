@@ -4,10 +4,14 @@ on:
   pull_request:
     paths:
       - 'alpha_hunter/strategy_engine.py'
+      - 'alpha_hunter/microstructure.py'
+      - 'alpha_hunter/strategy_persistence.py'
+      - 'alpha_hunter/bitget.py'
       - 'alpha_hunter/collector.py'
       - 'config.json'
       - 'app.py'
       - 'tests/test_multi_strategy_engine_v01.py'
+      - 'tests/test_strategy_microstructure_persistence_v01.py'
       - 'tests/test_money_action_dashboard_v72.py'
       - 'tests/test_multi_strategy_dashboard_v01.py'
       - '.github/workflows/multi-strategy-shadow-v01-ci.yml'
@@ -40,6 +44,7 @@ jobs:
         run: |
           python -m pytest -q \
             tests/test_multi_strategy_engine_v01.py \
+            tests/test_strategy_microstructure_persistence_v01.py \
             tests/test_money_action_dashboard_v72.py \
             tests/test_multi_strategy_dashboard_v01.py \
             tests/test_production_gates_v03.py \
