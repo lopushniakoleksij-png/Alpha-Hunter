@@ -1,11 +1,57 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
 from typing import Any
 
 from .bitget import BitgetAPIError, BitgetClient, BitgetDeterministicAPIError
 
 CLASSIC_ACCOUNT_V3_ERROR_CODE = "40084"
 UTA_ACCOUNT_MODES = {"unified", "hybrid", "upgrading", "switching"}
+EXPECTED_ACCOUNT_FINGERPRINT_ENV = "BITGET_EXPECTED_ACCOUNT_FINGERPRINT"
+
+
+def _fingerprint_account_id(user_id: str) -> str:
+    return hashlib.sha256(user_id.encode("utf-8")).hexdigest()
+
+
+def _classic_account_identity_probe(client: BitgetClient) -> dict[str, Any]:
+    """Bind Classic API credentials to one pinned Bitget account without storing UID."""
+    expected = str(os.getenv(EXPECTED_ACCOUNT_FINGERPRINT_ENV) or "").strip().lower()
+    result: dict[str, Any] = {
+        "account_identity_probe_status": "UNAVAILABLE",
+        "account_identity_fingerprint": None,
+        "account_identity_expected_configured": bool(expected),
+        "account_identity_match": False,
+        "account_identity_error": None,
+        "account_is_subaccount": None,
+    }
+    try:
+        info = client.spot_account_info_v2()
+    except BitgetAPIError as exc:
+        result["account_identity_error"] = str(exc)
+        return result
+
+    user_id = str(info.get("userId") or "").strip()
+    if not user_id:
+        result["account_identity_probe_status"] = "INVALID_SCHEMA"
+        result["account_identity_error"] = "Classic account info returned no userId"
+        return result
+
+    fingerprint = _fingerprint_account_id(user_id)
+    parent_id = str(info.get("parentId") or "").strip()
+    result["account_identity_fingerprint"] = fingerprint
+    result["account_is_subaccount"] = bool(parent_id and parent_id != "0")
+
+    if not expected:
+        result["account_identity_probe_status"] = "UNPINNED"
+        return result
+
+    matched = hmac.compare_digest(fingerprint, expected)
+    result["account_identity_match"] = matched
+    result["account_identity_probe_status"] = "MATCHED" if matched else "MISMATCH"
+    return result
 
 
 def _permission_probe(client: BitgetClient) -> dict[str, Any]:
@@ -66,6 +112,12 @@ def collect_private_account_snapshot(
             "api_permission_probe_error": None,
             "api_permission_type": None,
             "api_permissions": [],
+            "account_identity_probe_status": "NOT_CONFIGURED",
+            "account_identity_fingerprint": None,
+            "account_identity_expected_configured": bool(
+                str(os.getenv(EXPECTED_ACCOUNT_FINGERPRINT_ENV) or "").strip()
+            ),
+            "account_identity_match": False,
         }
 
     permission_evidence = _permission_probe(client)
@@ -77,13 +129,40 @@ def collect_private_account_snapshot(
     asset_mode: str | None = None
     hold_mode: str | None = None
 
+    identity_evidence: dict[str, Any] = {
+        "account_identity_probe_status": "NOT_APPLICABLE",
+        "account_identity_fingerprint": None,
+        "account_identity_expected_configured": False,
+        "account_identity_match": False,
+        "account_identity_error": None,
+        "account_is_subaccount": None,
+    }
+
     if permission_evidence["api_permission_probe_status"] == "NOT_APPLICABLE_CLASSIC_ACCOUNT":
-        # Bitget 40084 explicitly states that the calling account is Classic and
-        # the Unified Account API is unsupported. Treat that as positive mode
-        # evidence and do not make a second UTA-only settings request.
+        # Bitget 40084 explicitly states that the calling account is Classic.
+        # Prove which Classic account owns the credentials before accepting
+        # balances, positions, fills, or a ZERO_FILLS conclusion.
         account_mode_probe_status = "CLASSIC_CONFIRMED_FROM_V3_40084"
         account_mode_probe_error = permission_evidence["api_permission_probe_error"]
         account_mode = "classic"
+        identity_evidence = _classic_account_identity_probe(client)
+        identity_status = str(
+            identity_evidence.get("account_identity_probe_status") or "UNAVAILABLE"
+        )
+        if identity_status != "MATCHED":
+            return {
+                "status": f"ACCOUNT_IDENTITY_{identity_status}",
+                "accounts": [],
+                "open_positions": [],
+                "open_position_count": 0,
+                "account_mode_probe_status": account_mode_probe_status,
+                "account_mode_probe_error": account_mode_probe_error,
+                "account_mode": account_mode,
+                "account_source": "BITGET_V2_CLASSIC",
+                "classic_v2_risk_evidence_accepted": False,
+                **identity_evidence,
+                **permission_evidence,
+            }
     else:
         try:
             settings = client.account_settings_v3()
@@ -145,6 +224,7 @@ def collect_private_account_snapshot(
             "account_mode_probe_status": account_mode_probe_status,
             "account_mode_probe_error": account_mode_probe_error,
             "account_source": "BITGET_V2_CLASSIC",
+            **identity_evidence,
             **permission_evidence,
         }
 
@@ -195,5 +275,6 @@ def collect_private_account_snapshot(
         "account_mode": account_mode,
         "account_source": "BITGET_V2_CLASSIC",
         "classic_v2_risk_evidence_accepted": True,
+        **identity_evidence,
         **permission_evidence,
     }
