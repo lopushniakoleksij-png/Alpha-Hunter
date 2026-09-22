@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
@@ -45,6 +47,32 @@ from .storage import (
 def load_config(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def build_validation_identity(
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    canonical_config = json.dumps(
+        config,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "git_commit": (
+            os.getenv("RENDER_GIT_COMMIT")
+            or os.getenv("GIT_COMMIT")
+            or "unknown"
+        ),
+        "git_branch": (
+            os.getenv("RENDER_GIT_BRANCH")
+            or os.getenv("GIT_BRANCH")
+            or "unknown"
+        ),
+        "config_sha256": hashlib.sha256(
+            canonical_config.encode("utf-8")
+        ).hexdigest(),
+        "test_contract": "sealed-profitability-v0.1",
+    }
 
 
 def safe_float(
@@ -3514,6 +3542,11 @@ def main() -> int:
     snapshot = {
         "version":
             "0.7.1",
+
+        "validation_identity":
+            build_validation_identity(
+                config
+            ),
 
         "collected_at_utc":
             datetime.now(
