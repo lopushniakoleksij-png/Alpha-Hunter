@@ -112,6 +112,25 @@ def latest_snapshot() -> dict[str, Any]:
     return rows[0].get("payload") or {}
 
 
+def latest_test_engine_status() -> dict[str, Any]:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return {}
+    try:
+        response = requests.get(
+            f"{SUPABASE_URL}/rest/v1/alpha_hunter_test_engine_latest_v01",
+            params={"select": "*", "limit": "1"},
+            headers=supabase_headers(),
+            timeout=15,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+            return rows[0]
+    except requests.RequestException:
+        return {}
+    return {}
+
+
 def safe_float(value: Any) -> float:
     try:
         return float(value)
@@ -270,7 +289,10 @@ def build_money_action(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
+def dashboard_payload(
+    snapshot: dict[str, Any],
+    test_engine: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     symbols = [
         dict(row)
         for row in snapshot.get("symbols", [])
@@ -403,6 +425,7 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
         "minimum_execution_rr": MINIMUM_EXECUTION_RR,
         "discovery_summary": snapshot.get("discovery_summary", {}),
         "build": build_identity(),
+        "test_engine": test_engine or {},
     }
 
 
@@ -488,6 +511,29 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <div class="card"><div class="label">Microstructure</div><div class="value">{{ data.microstructure_summary.get('complete_count',0) }}/{{ data.microstructure_summary.get('eligible_symbol_count',0) }}</div><div class="small">Bitget depth + public trades</div></div>
     <div class="card"><div class="label">Persistent</div><div class="value">{{ data.strategy_summary.get('persistent_continuing_count',0) }}</div><div class="small">strategy signals continuing</div></div>
     <div class="card"><div class="label">Catalysts</div><div class="value">{{ data.catalyst_summary.get('fresh_bound_symbol_count',0) }}</div><div class="small">fresh official Bitget matches</div></div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">Real-Time Profitability Test Engine</h2>
+    {% if data.test_engine %}
+      <div class="action-grid">
+        <div class="metric"><span class="label">Operational</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
+        <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
+        <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration',0) }}</b></div>
+        <div class="metric"><span class="label">Paper trades</span><b>{{ data.test_engine.get('completed_paper_trades',0) }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
+        <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
+        <div class="metric"><span class="label">24H outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration',0) }}</b></div>
+      </div>
+      <div class="reason">
+        <b>Real-time:</b> {{ data.test_engine.get('evaluated_at_utc') }}<br>
+        <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
+        <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
+        <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
+        <span class="small">Forward-only real market evidence. Historical replay/backtest is not counted. Paper-only; no order authority.</span>
+      </div>
+    {% else %}
+      <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
+    {% endif %}
   </div>
 
   {% if data.best_action %}
@@ -593,7 +639,13 @@ async function checkScanStatus(){const b=document.getElementById('runScanButton'
 @app.get("/")
 def dashboard():
     try:
-        return render_template_string(PAGE, data=dashboard_payload(latest_snapshot()))
+        return render_template_string(
+            PAGE,
+            data=dashboard_payload(
+                latest_snapshot(),
+                latest_test_engine_status(),
+            ),
+        )
     except Exception as exc:
         return render_template_string("<h1>Alpha Hunter Dashboard</h1><p>{{ error }}</p>", error=str(exc)), 503
 
@@ -601,7 +653,12 @@ def dashboard():
 @app.get("/api/latest")
 def api_latest():
     try:
-        return jsonify(dashboard_payload(latest_snapshot()))
+        return jsonify(
+            dashboard_payload(
+                latest_snapshot(),
+                latest_test_engine_status(),
+            )
+        )
     except Exception as exc:
         return jsonify({"error": str(exc)}), 503
 
