@@ -1060,6 +1060,8 @@ def build_multi_strategy_summary(results: list[dict[str, Any]]) -> dict[str, Any
     watches = 0
     data_insufficient = 0
     covered_symbols = 0
+    persistent_active = 0
+    persistent_continuing = 0
 
     for record in results:
         if "error" in record:
@@ -1068,6 +1070,14 @@ def build_multi_strategy_summary(results: list[dict[str, Any]]) -> dict[str, Any
         strategies = engine.get("strategies", []) if isinstance(engine, dict) else []
         if strategies:
             covered_symbols += 1
+        persistence_summary = (
+            engine.get("persistence_summary", {})
+            if isinstance(engine, dict)
+            else {}
+        )
+        if isinstance(persistence_summary, dict):
+            persistent_active += int(persistence_summary.get("active_count") or 0)
+            persistent_continuing += int(persistence_summary.get("continuing_count") or 0)
         for row in strategies:
             strategy_id = str(row.get("strategy_id") or "")
             if strategy_id in strategy_counts:
@@ -1093,6 +1103,8 @@ def build_multi_strategy_summary(results: list[dict[str, Any]]) -> dict[str, Any
         "shadow_candidate_count": shadow_candidates,
         "watch_count": watches,
         "data_insufficient_count": data_insufficient,
+        "persistent_active_count": persistent_active,
+        "persistent_continuing_count": persistent_continuing,
         "evaluations_by_strategy": strategy_counts,
         "candidates_by_strategy": candidate_counts,
     }
