@@ -239,3 +239,19 @@ Scientific fail-closed boundary:
 - incomplete candle coverage remains incomplete rather than imputed
 - net-of-cost return remains NULL until canonical cost evidence is bound
 - outcomes cannot change thresholds, grant READY, grant trade permission, or promote a strategy
+
+
+## Continuity hardening — canonical previous snapshot v0.1
+
+Implemented after the first live S1-S10 production scan exposed that a redeploy can start without a project-local previous snapshot:
+
+- scanner now loads both project-local latest.json and the latest canonical Supabase parent snapshot when configured
+- the newest valid snapshot wins
+- cloud canonical context is therefore available after process restart/redeploy instead of resetting S6/S7 and persistence history to no previous evidence
+- every new snapshot records previous_snapshot_context source/run/time for auditability
+- dashboard exposes whether previous context came from LOCAL_LATEST, SUPABASE_CANONICAL or NONE
+- WATCH strategies can no longer display EXECUTE_NOW or PLACE_LIMIT as their gate action when execution gates fail
+- raw strategy intent is preserved separately as proposed_action for research analysis
+- SHADOW_CANDIDATE remains the only strategy status permitted to expose EXECUTE_NOW or PLACE_LIMIT inside the shadow matrix
+
+This does not relax any R:R, safety, liquidity, integrity or production-permission gate.

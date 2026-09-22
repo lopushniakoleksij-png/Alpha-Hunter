@@ -364,6 +364,9 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
     catalyst_summary = snapshot.get("catalyst_summary", {})
     if not isinstance(catalyst_summary, dict):
         catalyst_summary = {}
+    previous_snapshot_context = snapshot.get("previous_snapshot_context", {})
+    if not isinstance(previous_snapshot_context, dict):
+        previous_snapshot_context = {}
     evaluations = strategy_summary.get("evaluations_by_strategy", {})
     candidates = strategy_summary.get("candidates_by_strategy", {})
     strategy_coverage = [
@@ -386,6 +389,7 @@ def dashboard_payload(snapshot: dict[str, Any]) -> dict[str, Any]:
         "strategy_summary": strategy_summary,
         "microstructure_summary": microstructure_summary,
         "catalyst_summary": catalyst_summary,
+        "previous_snapshot_context": previous_snapshot_context,
         "strategy_coverage": strategy_coverage,
         "references": sorted(
             [row for row in symbols if row["_reference"]],
@@ -511,14 +515,14 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   <div class="panel">
     <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
-    <div class="small" style="margin-bottom:10px">Research architecture only. These strategy results cannot grant trade permission or change the Money Action block. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols.</div>
+    <div class="small" style="margin-bottom:10px">Research architecture only. These strategy results cannot grant trade permission or change the Money Action block. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
     <div class="toolbar" style="margin-bottom:12px">
       {% for row in data.strategy_coverage %}
       <span class="badge badge-research">{{ row.strategy_id }}: {{ row.evaluations }} eval / {{ row.candidates }} cand</span>
       {% endfor %}
     </div>
     {% if data.strategy_shadow %}
-    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Action</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
+    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Gate action</th><th>Setup intent</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
     {% for s in data.strategy_shadow %}
       <tr>
         <td><b>{{ s.symbol }}</b></td>
@@ -528,6 +532,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <td>{{ s._consecutive_scans }}</td>
         <td class="{{ 'long' if s.direction=='LONG' else 'short' if s.direction=='SHORT' else '' }}">{{ s.direction or '—' }}</td>
         <td>{{ s.action }}</td>
+        <td>{{ s.proposed_action or s.action }}</td>
         <td>{{ '%.2f'|format(s.signal_score or 0) }}</td>
         <td>{{ s.entry if s.entry is not none else '—' }}</td>
         <td>{{ s.stop if s.stop is not none else '—' }}</td>

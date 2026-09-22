@@ -10,7 +10,7 @@ import requests
 
 
 class SupabaseStorageError(RuntimeError):
-    """Raised when a configured Supabase write fails."""
+    """Raised when configured Supabase persistence or retrieval fails."""
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,51 @@ class SupabaseStorage:
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }
+
+    def load_latest_snapshot(self) -> dict[str, Any] | None:
+        response = self.session.get(
+            f"{self.settings.url}/rest/v1/{self.settings.snapshot_table}",
+            params={
+                "select": "run_id,collected_at_utc,payload",
+                "order": "collected_at_utc.desc",
+                "limit": "1",
+            },
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code != 200:
+            body = response.text[:500]
+            raise SupabaseStorageError(
+                "Supabase latest snapshot read failed: "
+                f"HTTP {response.status_code}: {body}"
+            )
+
+        try:
+            rows = response.json()
+        except ValueError as exc:
+            raise SupabaseStorageError(
+                "Supabase latest snapshot read returned invalid JSON"
+            ) from exc
+
+        if not isinstance(rows, list) or not rows:
+            return None
+
+        row = rows[0]
+        if not isinstance(row, dict):
+            raise SupabaseStorageError(
+                "Supabase latest snapshot read returned invalid row schema"
+            )
+
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            raise SupabaseStorageError(
+                "Supabase latest snapshot row is missing JSON payload"
+            )
+
+        snapshot = dict(payload)
+        snapshot.setdefault("run_id", row.get("run_id"))
+        snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
+        return snapshot
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
         if not rows:

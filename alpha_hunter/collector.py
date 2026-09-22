@@ -840,10 +840,30 @@ def collect_symbol(
 # PREVIOUS SNAPSHOT
 # =========================================================
 
+def _snapshot_timestamp(
+    snapshot: dict[str, Any] | None,
+) -> datetime | None:
+    if not snapshot:
+        return None
+    raw = snapshot.get("collected_at_utc")
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(
+            str(raw).replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def load_previous_snapshot(
     config_path: Path,
     config: dict[str, Any],
-) -> dict[str, Any] | None:
+    cloud_settings: SupabaseConfig | None = None,
+) -> tuple[dict[str, Any] | None, str]:
 
     path = (
         config_path.parent
@@ -853,21 +873,59 @@ def load_previous_snapshot(
         / "latest.json"
     )
 
-    if not path.exists():
-        return None
+    local_snapshot: dict[str, Any] | None = None
 
-    try:
-        return json.loads(
-            path.read_text(
-                encoding="utf-8"
+    if path.exists():
+        try:
+            parsed = json.loads(
+                path.read_text(
+                    encoding="utf-8"
+                )
+            )
+            if isinstance(parsed, dict):
+                local_snapshot = parsed
+        except (
+            OSError,
+            json.JSONDecodeError,
+        ):
+            local_snapshot = None
+
+    cloud_snapshot: dict[str, Any] | None = None
+
+    if cloud_settings is not None:
+        try:
+            cloud_snapshot = SupabaseStorage(
+                cloud_settings
+            ).load_latest_snapshot()
+        except SupabaseStorageError:
+            cloud_snapshot = None
+
+    local_time = _snapshot_timestamp(
+        local_snapshot
+    )
+    cloud_time = _snapshot_timestamp(
+        cloud_snapshot
+    )
+
+    if cloud_snapshot is not None and (
+        local_snapshot is None
+        or (
+            cloud_time is not None
+            and (
+                local_time is None
+                or cloud_time > local_time
             )
         )
-
-    except (
-        OSError,
-        json.JSONDecodeError,
     ):
-        return None
+        return cloud_snapshot, "SUPABASE_CANONICAL"
+
+    if local_snapshot is not None:
+        return local_snapshot, "LOCAL_LATEST"
+
+    if cloud_snapshot is not None:
+        return cloud_snapshot, "SUPABASE_CANONICAL"
+
+    return None, "NONE"
 
 
 # =========================================================
@@ -3121,11 +3179,20 @@ def main() -> int:
         )
     )
 
-    previous_snapshot = (
-        load_previous_snapshot(
-            config_path,
-            config,
+    supabase_settings = (
+        SupabaseConfig
+        .from_environment(
+            config
         )
+    )
+
+    (
+        previous_snapshot,
+        previous_snapshot_source,
+    ) = load_previous_snapshot(
+        config_path,
+        config,
+        cloud_settings=supabase_settings,
     )
 
     contracts = (
@@ -3458,6 +3525,25 @@ def main() -> int:
                 "product_type"
             ],
 
+        "previous_snapshot_context": {
+            "source":
+                previous_snapshot_source,
+
+            "run_id":
+                (
+                    previous_snapshot.get("run_id")
+                    if previous_snapshot
+                    else None
+                ),
+
+            "collected_at_utc":
+                (
+                    previous_snapshot.get("collected_at_utc")
+                    if previous_snapshot
+                    else None
+                ),
+        },
+
         "btc_change_24h_pct":
             btc_change_24h,
 
@@ -3522,13 +3608,6 @@ def main() -> int:
 
     cloud_status = "DISABLED"
 
-    supabase_settings = (
-        SupabaseConfig
-        .from_environment(
-            config
-        )
-    )
-
     if (
         config.get(
             "supabase",
@@ -3587,6 +3666,16 @@ def main() -> int:
     print(
         "Supabase: "
         f"{cloud_status}"
+    )
+
+    print(
+        "Previous snapshot: "
+        f"{previous_snapshot_source}"
+        + (
+            f" | {previous_snapshot.get('collected_at_utc')}"
+            if previous_snapshot
+            else ""
+        )
     )
 
     print(

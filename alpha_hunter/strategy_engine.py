@@ -152,6 +152,7 @@ def _base_result(strategy_id: str, strategy_name: str) -> dict[str, Any]:
         "engine_version": ENGINE_VERSION,
         "status": "NO_SETUP",
         "action": "NO_SAFE_TRADE",
+        "proposed_action": "NO_SAFE_TRADE",
         "direction": None,
         "signal_score": 0.0,
         "score_is_calibrated": False,
@@ -235,10 +236,17 @@ def _finish(
     if current and entry:
         distance = abs(entry - current) / current * 100
 
+    proposed_action = (
+        action
+        if action in ACTION_PRIORITY
+        else "NO_SAFE_TRADE"
+    )
+
     result.update(
         direction=direction,
         signal_score=round(max(0.0, min(10.0, signal_score)), 2),
-        action=action if action in ACTION_PRIORITY else "NO_SAFE_TRADE",
+        action="NO_SAFE_TRADE",
+        proposed_action=proposed_action,
         entry=entry,
         stop=stop,
         target=target,
@@ -259,16 +267,16 @@ def _finish(
         and all_shared
         and geometry["valid"]
         and rr_ok
-        and result["action"] in {"EXECUTE_NOW", "PLACE_LIMIT"}
+        and proposed_action in {"EXECUTE_NOW", "PLACE_LIMIT"}
         and all(value for key, value in checks.items() if key not in {"rr_minimum_met"})
     )
 
     if candidate:
         result["status"] = "SHADOW_CANDIDATE"
+        result["action"] = proposed_action
     elif signal:
         result["status"] = "WATCH"
-        if result["action"] == "NO_SAFE_TRADE":
-            result["action"] = "WAIT_FOR_TRIGGER"
+        result["action"] = "WAIT_FOR_TRIGGER"
     else:
         result["status"] = "NO_SETUP"
         result["action"] = "NO_SAFE_TRADE"
