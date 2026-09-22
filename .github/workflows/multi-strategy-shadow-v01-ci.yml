@@ -9,11 +9,13 @@ on:
       - 'alpha_hunter/strategy_persistence.py'
       - 'alpha_hunter/bitget.py'
       - 'alpha_hunter/collector.py'
+      - 'alpha_hunter/storage.py'
       - 'config.json'
       - 'app.py'
       - 'tests/test_multi_strategy_engine_v01.py'
       - 'tests/test_strategy_microstructure_persistence_v01.py'
       - 'tests/test_official_catalyst_evidence_v01.py'
+      - 'tests/test_canonical_previous_snapshot_continuity_v01.py'
       - 'tests/test_money_action_dashboard_v72.py'
       - 'tests/test_multi_strategy_dashboard_v01.py'
       - '.github/workflows/multi-strategy-shadow-v01-ci.yml'
@@ -27,11 +29,13 @@ on:
       - 'alpha_hunter/strategy_persistence.py'
       - 'alpha_hunter/bitget.py'
       - 'alpha_hunter/collector.py'
+      - 'alpha_hunter/storage.py'
       - 'config.json'
       - 'app.py'
       - 'tests/test_multi_strategy_engine_v01.py'
       - 'tests/test_strategy_microstructure_persistence_v01.py'
       - 'tests/test_official_catalyst_evidence_v01.py'
+      - 'tests/test_canonical_previous_snapshot_continuity_v01.py'
 
 permissions:
   contents: read
@@ -54,6 +58,7 @@ jobs:
             tests/test_multi_strategy_engine_v01.py \
             tests/test_strategy_microstructure_persistence_v01.py \
             tests/test_official_catalyst_evidence_v01.py \
+            tests/test_canonical_previous_snapshot_continuity_v01.py \
             tests/test_money_action_dashboard_v72.py \
             tests/test_multi_strategy_dashboard_v01.py \
             tests/test_production_gates_v03.py \
