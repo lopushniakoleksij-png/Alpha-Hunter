@@ -302,3 +302,38 @@ Corrective action:
 Historical canonical snapshots remain immutable. Catalyst v0.1 evidence can be
 distinguished from v0.2 and must not be treated as equivalent evidence in future
 S9 scientific analysis.
+
+
+## Profitability validation — sealed prospective paper test v0.1
+
+Trading architecture is now frozen for a forward profitability test. The
+validation harness is separate from strategy logic.
+
+Preregistered test contract:
+
+- first eligible clean production scan must run the frozen git commit
+- config hash is frozen at activation
+- 10 strategies must be present
+- minimum strategy R:R remains 5.0R
+- catalyst evidence must be v0.2
+- canonical previous-snapshot continuity must be present
+- strategy, microstructure and fully closed 1H candle evidence must be complete
+  for every valid scanned symbol at baseline
+- evaluation horizon = 24H
+- minimum duration = 30 calendar days
+- minimum completed paper trades = 100
+- any git/config drift invalidates the sealed test
+- only triggered, complete and non-ambiguous SHADOW_CANDIDATE outcomes enter
+  paper economics
+- gross R is measured first
+- a conservative p90 observed fee+spread floor is applied as a stress test
+- a modeled-net profitability claim is blocked until an ACTIVE validated cost
+  model exists and the execution-cost evidence explicitly permits a realistic
+  net-R claim
+- positive net edge requires a positive 95% lower confidence bound and profit
+  factor > 1 after the minimum duration/sample gates
+- this paper test can never grant live-money permission
+
+Early checkpoints can be observed at 1D/7D, but they do not count as a pass.
+If 100 completed paper trades are not reached in 30 days, the test continues
+until both duration and sample requirements are satisfied.

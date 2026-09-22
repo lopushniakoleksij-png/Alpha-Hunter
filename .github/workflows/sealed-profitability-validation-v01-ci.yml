@@ -1,0 +1,61 @@
+name: Sealed Profitability Validation v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/collector.py'
+      - 'sealed_profitability_validation_v01.sql'
+      - 'tests/test_sealed_profitability_validation_v01.py'
+      - 'strategy_forward_outcome_ledger_v01.sql'
+      - '.github/workflows/sealed-profitability-validation-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/collector.py'
+      - 'sealed_profitability_validation_v01.sql'
+      - 'tests/test_sealed_profitability_validation_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+      - name: Compile canonical scanner
+        run: python -m py_compile alpha_hunter/collector.py
+      - name: Run sealed profitability regressions
+        run: |
+          python -m pytest -q \
+            tests/test_sealed_profitability_validation_v01.py \
+            tests/test_strategy_forward_outcome_ledger_v01.py \
+            tests/test_canonical_previous_snapshot_continuity_v01.py \
+            tests/test_multi_strategy_engine_v01.py \
+            tests/test_production_gates_v03.py
+      - name: Reject execution authority in validation harness
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('sealed_profitability_validation_v01.sql').read_text().lower()
+          forbidden = [
+              'trade_permission=true',
+              'trade_permission = true',
+              'production_execution_enabled=true',
+              'place_order',
+              'cancel_order',
+              'modify_order',
+              'set_leverage',
+          ]
+          hits = [item for item in forbidden if item in text]
+          if hits:
+              raise SystemExit(f'forbidden profitability-validation authority: {hits}')
+          PY
