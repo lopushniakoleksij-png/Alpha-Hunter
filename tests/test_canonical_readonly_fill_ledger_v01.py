@@ -66,6 +66,8 @@ def connected_classic_account():
         "status": "CONNECTED",
         "account_mode_probe_status": "UNAVAILABLE_CLASSIC_FALLBACK",
         "classic_v2_risk_evidence_accepted": True,
+        "account_identity_probe_status": "MATCHED",
+        "account_identity_match": True,
     }
 
 
@@ -194,6 +196,33 @@ def test_zero_fills_is_validated_but_not_connected_traceability_pass():
     assert result.run_row["fill_count"] == 0
     assert result.run_row["evidence"]["zero_fills_do_not_pass_traceability"] is True
 
+
+
+def test_unpinned_zero_fills_is_not_trusted_or_widened():
+    client = FakeFillClient(
+        pages=[{"fillList": [], "endId": ""}],
+        configured=True,
+    )
+    account = connected_classic_account()
+    account["account_identity_probe_status"] = "UNPINNED"
+    account["account_identity_match"] = False
+
+    result = collect_fill_traceability_with_historical_diagnostic(
+        client,
+        product_type="usdt-futures",
+        source_run_id="run-unpinned-zero",
+        observed_at_utc="2026-09-19T12:00:00+00:00",
+        private_account=account,
+    )
+
+    assert len(client.calls) == 1
+    assert result.run_row["status"] == "ACCOUNT_IDENTITY_UNVERIFIED_ZERO_FILLS"
+    assert result.run_row["complete"] is False
+    assert result.run_row["schema_validated"] is False
+    assert result.run_row["fill_count"] == 0
+    assert result.run_row["evidence"]["account_identity_probe_status"] == "UNPINNED"
+    assert result.run_row["evidence"]["account_identity_match"] is False
+    assert "ZERO_FILLS is not trusted" in result.run_row["detail"]
 
 
 def test_historical_diagnostic_is_not_used_when_recent_fill_exists():

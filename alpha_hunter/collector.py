@@ -2989,9 +2989,14 @@ def main() -> int:
         args.config
     ).resolve()
 
+    # The project-local .env is the canonical credential source for local
+    # production. Override any stale inherited BITGET_* variables from a long-
+    # running shell/daemon so hourly.py and manual verification use the same
+    # account credentials. Cloud environments without a .env are unaffected.
     load_env_file(
         config_path.parent
-        / ".env"
+        / ".env",
+        override=True,
     )
 
     config = load_config(

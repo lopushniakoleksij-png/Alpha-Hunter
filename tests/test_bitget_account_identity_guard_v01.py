@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BITGET = ROOT / "alpha_hunter" / "bitget.py"
 PRIVATE_ACCOUNT = ROOT / "alpha_hunter" / "private_account.py"
 VERIFIER = ROOT / "ops" / "verify_bitget_48h_history_readonly.py"
+COLLECTOR = ROOT / "alpha_hunter" / "collector.py"
 
 
 def test_classic_identity_probe_uses_documented_read_only_account_info():
@@ -53,3 +54,9 @@ def test_48h_history_verifier_is_get_only_and_never_prints_raw_ids_or_secrets():
         assert marker in text
     for marker in forbidden:
         assert marker not in text
+
+
+def test_local_production_prefers_project_env_over_stale_inherited_credentials():
+    text = COLLECTOR.read_text(encoding="utf-8")
+    marker = 'load_env_file(\n        config_path.parent\n        / ".env",\n        override=True,\n    )'
+    assert marker in text
