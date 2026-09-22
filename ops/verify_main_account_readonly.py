@@ -32,6 +32,9 @@ def main() -> int:
         "account_status": None,
         "account_mode": None,
         "account_source": None,
+        "account_identity_probe_status": None,
+        "account_identity_match": False,
+        "account_identity_fingerprint": None,
         "api_permission_probe_status": None,
         "api_permission_type": None,
         "api_permissions": [],
@@ -65,6 +68,15 @@ def main() -> int:
             "account_status": private_account.get("status"),
             "account_mode": private_account.get("account_mode"),
             "account_source": private_account.get("account_source"),
+            "account_identity_probe_status": private_account.get(
+                "account_identity_probe_status"
+            ),
+            "account_identity_match": bool(
+                private_account.get("account_identity_match")
+            ),
+            "account_identity_fingerprint": private_account.get(
+                "account_identity_fingerprint"
+            ),
             "api_permission_probe_status": private_account.get(
                 "api_permission_probe_status"
             ),
@@ -105,6 +117,10 @@ def main() -> int:
 
     print(json.dumps(result, indent=2, sort_keys=True))
 
+    if result["account_identity_probe_status"] == "UNPINNED":
+        return 4
+    if not result["account_identity_match"]:
+        return 5
     if not result["read_only_get"] or not result["no_order_write_path"]:
         return 10
     if result["trade_permission"] or not result["shadow_only"]:
