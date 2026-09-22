@@ -135,44 +135,48 @@ class RealtimeTestEngine:
         catalyst_version = str(realtime.get("catalyst_version") or "")
         strategy_count = self._int(realtime.get("configured_strategy_count"))
 
-        blockers: list[str] = []
+        operational_blockers: list[str] = []
+        economic_blockers: list[str] = []
+
         if scan_age is None:
-            blockers.append("LIVE_SCAN_AGE_UNKNOWN")
+            operational_blockers.append("LIVE_SCAN_AGE_UNKNOWN")
         elif scan_age > MAX_LIVE_SCAN_AGE_SECONDS:
-            blockers.append("LIVE_SCAN_STALE")
+            operational_blockers.append("LIVE_SCAN_STALE")
 
         if not latest_commit:
-            blockers.append("LIVE_BUILD_IDENTITY_MISSING")
+            operational_blockers.append("LIVE_BUILD_IDENTITY_MISSING")
         if not latest_config:
-            blockers.append("LIVE_CONFIG_IDENTITY_MISSING")
+            operational_blockers.append("LIVE_CONFIG_IDENTITY_MISSING")
         if strategy_count != 10:
-            blockers.append("S1_S10_COVERAGE_NOT_10")
+            operational_blockers.append("S1_S10_COVERAGE_NOT_10")
         if previous_source in {"", "NONE"}:
-            blockers.append("PREVIOUS_CANONICAL_CONTEXT_MISSING")
+            operational_blockers.append("PREVIOUS_CANONICAL_CONTEXT_MISSING")
         if catalyst_version != "0.2":
-            blockers.append("CATALYST_EVIDENCE_NOT_V02")
+            operational_blockers.append("CATALYST_EVIDENCE_NOT_V02")
 
         test_activated = self._bool(validation.get("test_activated"))
         if not test_activated:
-            blockers.append("SEALED_TEST_BASELINE_NOT_ACTIVATED")
+            operational_blockers.append("SEALED_TEST_BASELINE_NOT_ACTIVATED")
 
         drift_ok = self._bool(validation.get("identity_drift_gate_met"))
         if not drift_ok:
-            blockers.append("BUILD_OR_CONFIG_DRIFT")
+            operational_blockers.append("BUILD_OR_CONFIG_DRIFT")
 
         cost_model_validated = self._bool(validation.get("cost_model_validated"))
         realistic_net_allowed = self._bool(
             validation.get("realistic_net_r_claim_permitted")
         )
         if not cost_model_validated:
-            blockers.append("VALIDATED_EXECUTION_COST_MODEL_MISSING")
+            economic_blockers.append("VALIDATED_EXECUTION_COST_MODEL_MISSING")
         if not realistic_net_allowed:
-            blockers.append("REALISTIC_NET_R_CLAIM_NOT_PERMITTED")
+            economic_blockers.append("REALISTIC_NET_R_CLAIM_NOT_PERMITTED")
 
-        if blockers:
-            operational_status = "BLOCKED"
-        else:
-            operational_status = "PASS"
+        operational_status = (
+            "PASS"
+            if not operational_blockers
+            else "BLOCKED"
+        )
+        blockers = operational_blockers + economic_blockers
 
         profitability_status = str(
             validation.get("profitability_test_status")
@@ -273,10 +277,12 @@ class RealtimeTestEngine:
                 "opportunity_path_rows": opportunity.get(
                     "opportunity_path_rows"
                 ),
+                "operational_blockers": operational_blockers,
                 "cost_scientific_status": cost.get("scientific_status"),
                 "cost_next_gate": cost.get("next_gate"),
             },
             "economics": {
+                "economic_blockers": economic_blockers,
                 "duration_gate_met": self._bool(
                     validation.get("duration_gate_met")
                 ),
