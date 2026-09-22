@@ -83,7 +83,8 @@ alter table public.alpha_hunter_test_engine_runs_v01 enable row level security;
 
 revoke all on public.alpha_hunter_test_engine_runs_v01
   from public,anon,authenticated,service_role;
-grant select on public.alpha_hunter_test_engine_runs_v01 to service_role;
+grant select, insert on public.alpha_hunter_test_engine_runs_v01
+  to service_role;
 
 drop trigger if exists trg_ah_test_engine_runs_append_only_v01
   on public.alpha_hunter_test_engine_runs_v01;
