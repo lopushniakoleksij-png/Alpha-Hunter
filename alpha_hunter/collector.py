@@ -24,7 +24,7 @@ from .analysis import (
 from .bitget import BitgetAPIError, BitgetClient
 from .env import load_env_file
 from .decision_trace import build_decision_trace
-from .microstructure import build_microstructure_snapshot
+from .microstructure import build_microstructure_coverage, build_microstructure_snapshot
 from .strategy_engine import apply_multi_strategy_engine, build_multi_strategy_summary
 from .strategy_persistence import annotate_strategy_persistence
 from .pre_move import apply_pre_move_engine
@@ -3277,6 +3277,10 @@ def main() -> int:
         results
     )
 
+    microstructure_summary = build_microstructure_coverage(
+        results
+    )
+
     results.sort(
         key=lambda item:
             (
@@ -3356,6 +3360,9 @@ def main() -> int:
 
         "multi_strategy_summary":
             multi_strategy_summary,
+
+        "microstructure_summary":
+            microstructure_summary,
 
         "discovery_summary": {
             "qualified_count":
@@ -3490,6 +3497,13 @@ def main() -> int:
         f"{multi_strategy_summary['total_evaluations']} "
         f"| shadow candidates: {multi_strategy_summary['shadow_candidate_count']} "
         "| trade_permission=false"
+    )
+
+    print(
+        "Microstructure coverage: "
+        f"{microstructure_summary['complete_count']}/"
+        f"{microstructure_summary['eligible_symbol_count']} "
+        f"({microstructure_summary['coverage_pct']:.2f}%)"
     )
 
     private_status = (
