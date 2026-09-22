@@ -255,3 +255,30 @@ Implemented after the first live S1-S10 production scan exposed that a redeploy 
 - SHADOW_CANDIDATE remains the only strategy status permitted to expose EXECUTE_NOW or PLACE_LIMIT inside the shadow matrix
 
 This does not relax any R:R, safety, liquidity, integrity or production-permission gate.
+
+
+## P4 execution increment — v0.1 first-observation opportunity path
+
+Implemented as a descriptive companion to the execution-forward ledger:
+
+- measures what happened after the FIRST persistent S1-S10 observation even if the setup never became a SHADOW_CANDIDATE
+- freezes 1H / 4H / 12H / 24H horizons
+- starts path measurement at the next fully closed 1H candle, excluding the partial signal hour
+- records direction-adjusted opportunity MFE, MAE and endpoint return from the first observed reference price
+- records opportunity excursion in the initial geometry's R unit when a valid initial risk amount exists
+- records first candidate time, candidate conversion delay and confirmation tax when a later SHADOW_CANDIDATE appears
+- records whether the originally proposed PLACE_LIMIT entry was touched after first observation
+- preserves path coverage and incomplete-data quality
+- exposes a descriptive per-strategy scorecard only
+- explicitly labels this evidence DESCRIPTIVE_ONLY_NOT_EDGE_PROOF
+
+This table is intended to answer:
+"Did Alpha Hunter identify the move early enough before confirmation?"
+
+It cannot establish:
+- executable edge
+- profitability
+- production readiness
+- a best strategy ranking
+
+Those claims still require controlled prospective evidence and net-of-cost validation.
