@@ -567,7 +567,7 @@ begin
           select
             to_timestamp(
               ((s.payload->'timeframes'->'1H'->'last_closed_candle'->>'timestamp')::double precision)/1000.0
-            ) at time zone 'UTC'
+            )
           into v_trigger_candle_open
           from public.alpha_hunter_symbol_snapshots s
           where s.symbol=v_episode.symbol
@@ -580,11 +580,11 @@ begin
             ) is not null
             and to_timestamp(
               ((s.payload->'timeframes'->'1H'->'last_closed_candle'->>'timestamp')::double precision)/1000.0
-            ) at time zone 'UTC'
+            )
               >= date_trunc('hour',v_candidate.observed_at_utc)+interval '1 hour'
             and to_timestamp(
               ((s.payload->'timeframes'->'1H'->'last_closed_candle'->>'timestamp')::double precision)/1000.0
-            ) at time zone 'UTC' + interval '1 hour'
+            ) + interval '1 hour'
               <= v_horizon_end
             and nullif(
               s.payload->'timeframes'->'1H'->'last_closed_candle'->>'low',''
@@ -635,7 +635,7 @@ begin
             select
               to_timestamp(
                 ((s.payload->'timeframes'->'1H'->'last_closed_candle'->>'timestamp')::double precision)/1000.0
-              ) at time zone 'UTC' as candle_open,
+              ) as candle_open,
               nullif(
                 s.payload->'timeframes'->'1H'->'last_closed_candle'->>'high',''
               )::double precision as high_price,
