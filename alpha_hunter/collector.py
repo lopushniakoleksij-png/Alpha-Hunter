@@ -24,7 +24,9 @@ from .analysis import (
 from .bitget import BitgetAPIError, BitgetClient
 from .env import load_env_file
 from .decision_trace import build_decision_trace
+from .microstructure import build_microstructure_snapshot
 from .strategy_engine import apply_multi_strategy_engine, build_multi_strategy_summary
+from .strategy_persistence import annotate_strategy_persistence
 from .pre_move import apply_pre_move_engine
 from .private_account import collect_private_account_snapshot
 from .storage import (
@@ -464,6 +466,62 @@ def collect_symbol(
         )
     )
 
+    exchange_timestamp_ms = int(
+        prices.get("ts")
+        or ticker.get("ts")
+        or 0
+    )
+
+    depth_payload: dict[str, Any] | None = None
+    recent_trade_rows: list[dict[str, Any]] | None = None
+    microstructure_errors: list[str] = []
+
+    try:
+        depth_payload = client.merge_depth(
+            symbol,
+            product_type,
+            limit=int(
+                config.get(
+                    "microstructure",
+                    {},
+                ).get(
+                    "depth_limit",
+                    15,
+                )
+            ),
+        )
+    except BitgetAPIError as exc:
+        microstructure_errors.append(
+            f"merge_depth: {exc}"
+        )
+
+    try:
+        recent_trade_rows = client.recent_market_fills(
+            symbol,
+            product_type,
+            limit=int(
+                config.get(
+                    "microstructure",
+                    {},
+                ).get(
+                    "recent_trade_limit",
+                    100,
+                )
+            ),
+        )
+    except BitgetAPIError as exc:
+        microstructure_errors.append(
+            f"recent_market_fills: {exc}"
+        )
+
+    microstructure = build_microstructure_snapshot(
+        depth_payload,
+        recent_trade_rows,
+        ticker_timestamp_ms=exchange_timestamp_ms or None,
+    )
+    if microstructure_errors:
+        microstructure["errors"] = microstructure_errors
+
     trends = {
         timeframe:
             values["trend"]
@@ -545,15 +603,10 @@ def collect_symbol(
             ).isoformat(),
 
         "exchange_timestamp_ms":
-            int(
-                prices.get(
-                    "ts"
-                )
-                or ticker.get(
-                    "ts"
-                )
-                or 0
-            ),
+            exchange_timestamp_ms,
+
+        "microstructure":
+            microstructure,
 
         "last_price":
             last_price,
@@ -3208,6 +3261,11 @@ def main() -> int:
             item,
             previous,
             config,
+        )
+
+        annotate_strategy_persistence(
+            item,
+            previous,
         )
 
     pre_move_summary = apply_pre_move_engine(
