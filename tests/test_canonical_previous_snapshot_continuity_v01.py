@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import alpha_hunter.collector as collector
-from alpha_hunter.storage import SupabaseConfig
+from alpha_hunter.storage import SupabaseConfig, SupabaseStorage
 from alpha_hunter.strategy_engine import apply_multi_strategy_engine
 
 
@@ -169,3 +169,42 @@ def test_watch_never_exposes_execute_now_action_when_rr_gate_fails():
     assert s4["action"] == "WAIT_FOR_TRIGGER"
     assert s4["checks"]["rr_minimum_met"] is False
     assert s4["trade_permission"] is False
+
+
+class FakeReadResponse:
+    status_code = 200
+    text = ""
+
+    def json(self):
+        return [{
+            "run_id": "cloud-read",
+            "collected_at_utc": "2026-09-22T19:00:00+00:00",
+            "payload": {
+                "symbols": [{"symbol": "BTCUSDT"}],
+            },
+        }]
+
+
+class FakeReadSession:
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeReadResponse()
+
+
+def test_supabase_storage_reads_latest_canonical_parent_snapshot():
+    session = FakeReadSession()
+    storage = SupabaseStorage(
+        cloud_settings(),
+        session=session,
+    )
+
+    snapshot = storage.load_latest_snapshot()
+
+    assert snapshot["run_id"] == "cloud-read"
+    assert snapshot["collected_at_utc"] == "2026-09-22T19:00:00+00:00"
+    assert snapshot["symbols"][0]["symbol"] == "BTCUSDT"
+    assert session.calls[0][1]["params"]["order"] == "collected_at_utc.desc"
+    assert session.calls[0][1]["params"]["limit"] == "1"
