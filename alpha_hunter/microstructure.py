@@ -183,3 +183,41 @@ def build_microstructure_snapshot(
         "order_book": book,
         "recent_trades": flow,
     }
+
+
+def build_microstructure_coverage(
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    eligible = [
+        record
+        for record in records
+        if isinstance(record, dict)
+        and "error" not in record
+    ]
+    complete = 0
+    insufficient = 0
+    for record in eligible:
+        micro = record.get("microstructure")
+        status = (
+            str(micro.get("status") or "")
+            if isinstance(micro, dict)
+            else "MISSING"
+        )
+        if status == "COMPLETE":
+            complete += 1
+        else:
+            insufficient += 1
+    coverage_pct = (
+        complete / len(eligible) * 100
+        if eligible
+        else 0.0
+    )
+    return {
+        "version": MICROSTRUCTURE_VERSION,
+        "source": "BITGET_PUBLIC_READ_ONLY",
+        "eligible_symbol_count": len(eligible),
+        "complete_count": complete,
+        "data_insufficient_count": insufficient,
+        "coverage_pct": round(coverage_pct, 2),
+        "trade_permission": False,
+    }
