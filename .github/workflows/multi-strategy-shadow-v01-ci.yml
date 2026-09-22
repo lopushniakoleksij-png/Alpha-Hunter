@@ -20,10 +20,14 @@ on:
       - main
     paths:
       - 'alpha_hunter/strategy_engine.py'
+      - 'alpha_hunter/microstructure.py'
+      - 'alpha_hunter/strategy_persistence.py'
+      - 'alpha_hunter/bitget.py'
       - 'alpha_hunter/collector.py'
       - 'config.json'
       - 'app.py'
       - 'tests/test_multi_strategy_engine_v01.py'
+      - 'tests/test_strategy_microstructure_persistence_v01.py'
 
 permissions:
   contents: read
