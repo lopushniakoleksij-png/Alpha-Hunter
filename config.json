@@ -142,5 +142,20 @@
     "source": "BITGET_PUBLIC_READ_ONLY",
     "depth_limit": 15,
     "recent_trade_limit": 100
+  },
+  "catalyst_engine": {
+    "enabled": true,
+    "source": "BITGET_OFFICIAL_ANNOUNCEMENT_API",
+    "language": "en_US",
+    "freshness_hours": 48,
+    "future_tolerance_ms": 300000,
+    "per_category_limit": 10,
+    "official_bitget_categories": [
+      "coin_listings",
+      "symbol_delisting",
+      "product_updates",
+      "maintenance_system_updates",
+      "latest_news"
+    ]
   }
 }

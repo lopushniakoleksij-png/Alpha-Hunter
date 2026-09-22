@@ -190,3 +190,24 @@ Still required before P3 is complete:
 - higher-frequency evidence if true absorption is to be claimed
 - validated timestamped catalyst/news evidence binding for S9
 - forward outcome ledger for strategy instances
+
+
+## P3 execution increment — v0.1 official catalyst evidence
+
+Implemented:
+
+- read-only official Bitget announcement ingestion from the public announcements API
+- canonical announcement ID/title/type/subtype/timestamp/URL evidence
+- conservative symbol binding using exact futures symbol/pair forms or whole-token base-coin matching
+- freshness window and future-timestamp tolerance
+- S9 no longer invents sentiment direction from an announcement
+- when an official catalyst is fresh, S9 requires market-confirmed LONG/SHORT direction plus participation before becoming a shadow candidate
+- snapshot-level catalyst fetch/binding summary
+- mobile dashboard count of fresh official catalyst matches
+
+Still fail-closed:
+
+- no unofficial/social-media catalyst source is trusted
+- no announcement alone grants trade permission
+- stale or unmatched announcements cannot create an S9 shadow candidate
+- all S9 results remain shadow-only until forward evidence supports promotion

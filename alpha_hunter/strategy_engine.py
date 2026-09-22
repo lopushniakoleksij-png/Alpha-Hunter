@@ -890,41 +890,88 @@ def _s9_catalyst(record: dict[str, Any], previous: dict[str, Any] | None, config
         return _data_insufficient(
             strategy_id,
             strategy_name,
-            "No validated, timestamped catalyst/news evidence is bound to this canonical scan",
+            "No validated, timestamped official catalyst evidence is bound to this canonical scan",
         )
-    direction = str(catalyst.get("direction") or "").upper()
-    if direction not in {"LONG", "SHORT"}:
-        return _data_insufficient(strategy_id, strategy_name, "Catalyst direction is missing or invalid", evidence=catalyst)
+
+    raw_direction = str(catalyst.get("direction") or "").upper()
+    if raw_direction in {"LONG", "SHORT"}:
+        direction = raw_direction
+        direction_source = "CATALYST_EXPLICIT"
+    else:
+        direction = _direction_from_trends(record)
+        direction_source = "MARKET_CONFIRMED_TRENDS"
+
     price = _float(record.get("last_price"))
-    stop = _structural_stop(record, direction)
-    target = _structural_target(record, direction, price)
     freshness_ok = bool(catalyst.get("fresh") is True)
-    participation = str(_indicators(record).get("volume_anomaly", {}).get("state") or "") in {"ELEVATED", "HIGH"}
-    signal = freshness_ok and participation
-    score = 5.0 + (2.5 if freshness_ok else 0.0) + (2.5 if participation else 0.0)
+    participation = str(
+        _indicators(record).get(
+            "volume_anomaly",
+            {},
+        ).get(
+            "state"
+        )
+        or ""
+    ) in {"ELEVATED", "HIGH"}
+    direction_ok = direction in {"LONG", "SHORT"}
+
+    stop = _structural_stop(record, direction or "")
+    target = _structural_target(record, direction or "", price)
+    context_signal = freshness_ok
+    actionable_signal = bool(
+        freshness_ok
+        and participation
+        and direction_ok
+    )
+    score = (
+        3.0
+        + (2.0 if freshness_ok else 0.0)
+        + (2.0 if direction_ok else 0.0)
+        + (3.0 if participation else 0.0)
+    )
+
+    reasons: list[str] = []
+    if not freshness_ok:
+        reasons.append("Official catalyst is outside the configured freshness window")
+    if freshness_ok and not direction_ok:
+        reasons.append("Waiting for market-confirmed LONG/SHORT direction after the catalyst")
+    if freshness_ok and direction_ok and not participation:
+        reasons.append("Waiting for participation confirmation after the catalyst")
+
     return _finish(
         record=record,
         config=config,
         strategy_id=strategy_id,
         strategy_name=strategy_name,
         direction=direction,
-        signal=signal,
+        signal=context_signal,
         signal_score=score,
-        action="EXECUTE_NOW" if signal else "WAIT_FOR_TRIGGER",
-        entry=price,
+        action="EXECUTE_NOW" if actionable_signal else "WAIT_FOR_TRIGGER",
+        entry=price if direction_ok else None,
         stop=stop,
         target=target,
         evidence={
             "catalyst_id": catalyst.get("id"),
             "source": catalyst.get("source"),
+            "source_read_only": catalyst.get("source_read_only"),
+            "title": catalyst.get("title"),
+            "ann_type": catalyst.get("ann_type"),
+            "ann_sub_type": catalyst.get("ann_sub_type"),
             "published_at": catalyst.get("published_at"),
+            "age_ms": catalyst.get("age_ms"),
+            "matched_on": catalyst.get("matched_on"),
             "fresh": freshness_ok,
+            "direction_source": direction_source,
+            "market_direction": direction,
             "volume_participation": participation,
+            "note": "Announcement sentiment is not used to invent direction; direction is market-confirmed when not explicit",
         },
-        reasons=[] if signal else ["Catalyst is not both fresh and participation-confirmed"],
-        extra_checks={"catalyst_fresh": freshness_ok, "participation": participation},
+        reasons=reasons,
+        extra_checks={
+            "catalyst_fresh": freshness_ok,
+            "direction_confirmed": direction_ok,
+            "participation": participation,
+        },
     )
-
 
 def _s10_regime_beta(record: dict[str, Any], previous: dict[str, Any] | None, config: dict[str, Any]) -> dict[str, Any]:
     del previous
