@@ -1,0 +1,77 @@
+name: Alpha Hunter Realtime Profitability Test
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/test_engine.py'
+      - 'test_engine_job.py'
+      - 'test_engine_schema_v01.sql'
+      - '.github/workflows/alpha-hunter-realtime-profitability-test.yml'
+      - 'alpha_hunter/collector.py'
+      - 'alpha_hunter/strategy_engine.py'
+      - 'config.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alpha-hunter-realtime-profitability-test
+  cancel-in-progress: false
+
+jobs:
+  realtime-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GIT_COMMIT: ${{ github.sha }}
+      GIT_BRANCH: ${{ github.ref_name }}
+      ALPHA_HUNTER_PRODUCTION_VERSION: realtime-test-v0.1
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install production dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Verify required production evidence credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          echo "Supabase production evidence: configured"
+          echo "Bitget market data: public read-only endpoints"
+          echo "Order execution: disabled"
+
+      - name: Run current main against real Bitget market data
+        run: python run.py
+
+      - name: Evaluate and persist real-time profitability test
+        run: python test_engine_job.py
+
+      - name: Assert test runner remains paper-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F '"trade_permission": False' alpha_hunter/test_engine.py
+          grep -F '"paper_only": True' alpha_hunter/test_engine.py
+          grep -F '"order_path": "NONE"' alpha_hunter/test_engine.py
+          echo "Real-time test remains paper-only; no order authority."
