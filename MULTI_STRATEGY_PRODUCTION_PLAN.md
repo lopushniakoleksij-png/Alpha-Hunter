@@ -160,3 +160,33 @@ v0.1 intentionally starts with canonical scanner evidence already available on m
 S7 and S9 fail closed when their required evidence is absent. This is deliberate: Alpha Hunter must record that it cannot know something rather than convert missing data into a false signal.
 
 The existing Money Action / V7 execution path remains unchanged until forward evidence justifies a separate promotion decision.
+
+
+## P3 execution increment — v0.1 microstructure + persistence
+
+Implemented as the next production-development increment:
+
+- read-only Bitget futures merge-depth capture
+- read-only Bitget recent public transaction capture
+- compact canonical order-book depth imbalance
+- compact canonical recent-trade notional imbalance
+- source timestamp/skew evidence
+- snapshot-level microstructure coverage accounting
+- S7 acceptance evidence path using previous canonical levels + price acceptance + order-book/trade-flow alignment
+- S7 explicitly records `absorption_confirmed=false`; snapshot evidence is not mislabeled as true absorption
+- persistent per-strategy signal lifecycle across canonical scans:
+  - NEW
+  - CONTINUING
+  - CHANGED
+  - INACTIVE
+  - first seen
+  - consecutive scans
+  - prior status/action/direction/score/R:R
+  - deterministic strategy instance ID
+- dashboard microstructure coverage + persistence visibility
+
+Still required before P3 is complete:
+
+- higher-frequency evidence if true absorption is to be claimed
+- validated timestamped catalyst/news evidence binding for S9
+- forward outcome ledger for strategy instances
