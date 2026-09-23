@@ -23,6 +23,7 @@ declare
   o public.alpha_hunter_strategy_opportunity_status_v01%rowtype;
   k public.alpha_hunter_execution_cost_floor_status_v01%rowtype;
   q public.alpha_hunter_shadow_decision_quote_status_v01%rowtype;
+  sq public.alpha_hunter_sealed_decision_quote_status_v01%rowtype;
   v_now timestamptz := clock_timestamp();
   v_scan_age double precision;
   v_operational text[] := array[]::text[];
@@ -91,6 +92,11 @@ begin
 
   select x.* into q
   from public.alpha_hunter_shadow_decision_quote_status_v01 x
+  limit 1;
+
+  select x.* into sq
+  from public.alpha_hunter_sealed_decision_quote_status_v01 x
+  where x.spec_id=r.spec_id
   limit 1;
 
   v_scan_age := r.latest_live_scan_age_seconds::double precision;
@@ -273,6 +279,16 @@ begin
         q.p90_entry_cross_half_spread_bps,
       'decision_quote_scientific_status',q.scientific_status,
       'decision_quote_next_gate',q.next_gate,
+      'sealed_decision_quote_rows',sq.post_baseline_quote_rows,
+      'sealed_left_censored_quote_rows',sq.left_censored_quote_rows,
+      'sealed_eligible_quote_rows',sq.sealed_eligible_quote_rows,
+      'sealed_complete_quote_rows',sq.complete_sealed_eligible_quote_rows,
+      'sealed_execute_now_quote_rows',sq.sealed_execute_now_quote_rows,
+      'sealed_place_limit_quote_rows',sq.sealed_place_limit_quote_rows,
+      'sealed_quote_avg_half_spread_bps',
+        sq.avg_sealed_entry_cross_half_spread_bps,
+      'sealed_quote_p90_half_spread_bps',
+        sq.p90_sealed_entry_cross_half_spread_bps,
       'cost_scientific_status',k.scientific_status,
       'cost_next_gate',k.next_gate,
       'refresh_source','SUPABASE_PG_CRON'
