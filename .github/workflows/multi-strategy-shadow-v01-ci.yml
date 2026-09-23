@@ -18,6 +18,7 @@ on:
       - 'tests/test_canonical_previous_snapshot_continuity_v01.py'
       - 'tests/test_money_action_dashboard_v72.py'
       - 'tests/test_multi_strategy_dashboard_v01.py'
+      - 'tests/test_full_mover_early_entry_coverage_v01.py'
       - '.github/workflows/multi-strategy-shadow-v01-ci.yml'
   push:
     branches:
@@ -61,5 +62,6 @@ jobs:
             tests/test_canonical_previous_snapshot_continuity_v01.py \
             tests/test_money_action_dashboard_v72.py \
             tests/test_multi_strategy_dashboard_v01.py \
+            tests/test_full_mover_early_entry_coverage_v01.py \
             tests/test_production_gates_v03.py \
             tests/test_analysis.py
