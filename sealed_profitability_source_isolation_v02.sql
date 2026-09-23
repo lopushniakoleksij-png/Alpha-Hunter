@@ -238,7 +238,6 @@ cost_floor as (
 base as (
   select
     s.spec_id,
-    s.required_run_source,
     a.started_at_utc,
     o.episode_id,
     o.symbol,
@@ -365,11 +364,11 @@ select
       then 'VALIDATED_COST_MODEL_AVAILABLE'
     else 'NO_VALIDATED_REALISTIC_NET_MODEL'
   end as net_economic_status,
-  true as source_isolated,
   true as paper_only,
   false as trade_permission,
   false as production_promotion_permitted,
-  'NONE'::text as order_path
+  'NONE'::text as order_path,
+  true as source_isolated
 from gross g
 where g.gross_r_pre_cost is not null
   and g.risk_pct>0;
@@ -453,7 +452,6 @@ select
   sa.spec_id,
   sa.protocol_version,
   sa.frozen_git_commit,
-  sa.required_run_source,
   sa.baseline_run_id,
   sa.started_at_utc,
   sa.minimum_test_days,
@@ -543,12 +541,12 @@ select
     ) then 'NO_POSITIVE_NET_EDGE_DEMONSTRATED'
     else 'POSITIVE_NET_EDGE_DEMONSTRATED_IN_SEALED_PAPER_TEST'
   end as profitability_test_status,
-  true as run_source_isolated,
   false as live_money_claim_permitted,
   true as shadow_only,
   false as trade_permission,
   false as production_promotion_permitted,
-  'NONE'::text as order_path
+  'NONE'::text as order_path,
+  true as run_source_isolated
 from spec_activation sa
 left join drift d on d.spec_id=sa.spec_id
 left join econ e on e.spec_id=sa.spec_id
@@ -667,7 +665,6 @@ select
   s.preregistered_at_utc as real_test_requested_at_utc,
   s.started_at_utc as real_counted_baseline_started_at_utc,
   s.frozen_git_commit,
-  s.required_run_source,
   s.minimum_test_days,
   s.minimum_completed_paper_trades,
 
@@ -677,7 +674,6 @@ select
     as latest_live_scan_age_seconds,
   l.git_commit as latest_live_git_commit,
   l.config_sha256 as latest_live_config_sha256,
-  l.run_source as latest_live_run_source,
   l.previous_snapshot_source,
   l.catalyst_version,
   l.configured_strategy_count,
@@ -700,14 +696,14 @@ select
 
   'REAL_PRODUCTION_TIMESTAMPS'::text as clock_source,
   'FORWARD_ONLY_SOURCE_ISOLATED'::text as evidence_window,
-  true as run_source_isolated,
   false as historical_replay_counted,
   false as backtest_counted,
   true as paper_only,
   false as live_money_claim_permitted,
   false as trade_permission,
   false as production_promotion_permitted,
-  'NONE'::text as order_path
+  'NONE'::text as order_path,
+  true as run_source_isolated
 from spec s
 left join latest_scan l on l.spec_id=s.spec_id
 left join scan_counts sc on sc.spec_id=s.spec_id
