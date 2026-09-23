@@ -251,11 +251,24 @@ begin
     raise exception 'no mover outcome evidence available';
   end if;
 
-  select run_id, captured_at_utc into v_latest_run, v_latest_feature_at
-  from public.alpha_hunter_signal_features
-  order by captured_at_utc desc limit 1;
+  select sf.run_id, sf.captured_at_utc
+    into v_latest_run, v_latest_feature_at
+  from public.alpha_hunter_signal_features sf
+  join public.alpha_hunter_snapshots p
+    on p.run_id=sf.run_id
+  where p.payload->'validation_identity'->>'run_source'='RENDER'
+  order by sf.captured_at_utc desc
+  limit 1;
+
   if v_latest_run is null then
-    raise exception 'no live feature run available';
+    raise exception 'no canonical RENDER feature run available';
+  end if;
+
+  if clock_timestamp()-v_latest_feature_at > interval '90 minutes' then
+    raise exception
+      'canonical RENDER feature run is stale: run_id=%, captured_at=%',
+      v_latest_run,
+      v_latest_feature_at;
   end if;
 
   with labeled as (
@@ -408,7 +421,10 @@ begin
     'shadow_only',true,'trade_permission',false,'model_version',v_model_version,
     'latest_feature_run_id',v_latest_run,'latest_feature_at_utc',v_latest_feature_at,
     'latest_outcome_evidence_utc',v_outcome_latest,'training_end_utc',v_training_end,
-    'rows_upserted',v_inserted,'top_pre_mover_long',v_top_long,'top_pre_mover_short',v_top_short
+    'rows_upserted',v_inserted,
+    'feature_source','CANONICAL_RENDER_SIGNAL_FEATURES',
+    'feature_source_max_age_minutes',90,
+    'top_pre_mover_long',v_top_long,'top_pre_mover_short',v_top_short
   );
 end;
 $$;
