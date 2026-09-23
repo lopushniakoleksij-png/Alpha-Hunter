@@ -62,13 +62,21 @@ class SupabaseStorage:
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }
 
-    def load_latest_snapshot(self) -> dict[str, Any] | None:
+    def load_latest_snapshot(
+        self,
+        *,
+        expected_identity: dict[str, Any] | None = None,
+        require_strategy_context: bool = False,
+        search_limit: int = 25,
+    ) -> dict[str, Any] | None:
+        filtered = expected_identity is not None or require_strategy_context
+        limit = max(1, int(search_limit)) if filtered else 1
         response = self.session.get(
             f"{self.settings.url}/rest/v1/{self.settings.snapshot_table}",
             params={
                 "select": "run_id,collected_at_utc,payload",
                 "order": "collected_at_utc.desc",
-                "limit": "1",
+                "limit": str(limit),
             },
             headers=self.headers,
             timeout=self.settings.timeout_seconds,
@@ -90,22 +98,46 @@ class SupabaseStorage:
         if not isinstance(rows, list) or not rows:
             return None
 
-        row = rows[0]
-        if not isinstance(row, dict):
-            raise SupabaseStorageError(
-                "Supabase latest snapshot read returned invalid row schema"
-            )
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
 
-        payload = row.get("payload")
-        if not isinstance(payload, dict):
-            raise SupabaseStorageError(
-                "Supabase latest snapshot row is missing JSON payload"
-            )
+            payload = row.get("payload")
+            if not isinstance(payload, dict):
+                continue
 
-        snapshot = dict(payload)
-        snapshot.setdefault("run_id", row.get("run_id"))
-        snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
-        return snapshot
+            if require_strategy_context:
+                if not isinstance(payload.get("multi_strategy_summary"), dict):
+                    continue
+                if not isinstance(payload.get("microstructure_summary"), dict):
+                    continue
+                if not isinstance(payload.get("catalyst_summary"), dict):
+                    continue
+
+            if expected_identity is not None:
+                actual_identity = payload.get("validation_identity")
+                if not isinstance(actual_identity, dict):
+                    continue
+                for key in ("test_contract", "config_sha256", "run_source"):
+                    expected = expected_identity.get(key)
+                    if expected and actual_identity.get(key) != expected:
+                        break
+                else:
+                    snapshot = dict(payload)
+                    snapshot.setdefault("run_id", row.get("run_id"))
+                    snapshot.setdefault(
+                        "collected_at_utc",
+                        row.get("collected_at_utc"),
+                    )
+                    return snapshot
+                continue
+
+            snapshot = dict(payload)
+            snapshot.setdefault("run_id", row.get("run_id"))
+            snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
+            return snapshot
+
+        return None
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
         if not rows:
