@@ -24,6 +24,7 @@ declare
   k public.alpha_hunter_execution_cost_floor_status_v01%rowtype;
   q public.alpha_hunter_shadow_decision_quote_status_v01%rowtype;
   sq public.alpha_hunter_sealed_decision_quote_status_v01%rowtype;
+  pf public.alpha_hunter_private_fill_cost_readiness_v01%rowtype;
   v_now timestamptz := clock_timestamp();
   v_scan_age double precision;
   v_operational text[] := array[]::text[];
@@ -99,6 +100,11 @@ begin
   where x.spec_id=r.spec_id
   limit 1;
 
+  select x.* into pf
+  from public.alpha_hunter_private_fill_cost_readiness_v01 x
+  where x.spec_id=r.spec_id
+  limit 1;
+
   v_scan_age := r.latest_live_scan_age_seconds::double precision;
 
   if v_scan_age is null then
@@ -140,6 +146,23 @@ begin
   end if;
   if not coalesce(v.realistic_net_r_claim_permitted,false) then
     v_economic := array_append(v_economic,'REALISTIC_NET_R_CLAIM_NOT_PERMITTED');
+  end if;
+
+  if coalesce(pf.readiness_status,'MISSING')<>'READY_FOR_PROSPECTIVE_FILL_MATCHING' then
+    v_economic := array_append(
+      v_economic,
+      case coalesce(pf.readiness_status,'MISSING')
+        when 'BLOCKED_ACCOUNT_IDENTITY_UNPINNED'
+          then 'PRIVATE_FILL_ACCOUNT_IDENTITY_UNPINNED'
+        when 'BLOCKED_ACCOUNT_IDENTITY_MISMATCH'
+          then 'PRIVATE_FILL_ACCOUNT_IDENTITY_MISMATCH'
+        when 'BLOCKED_PRIVATE_ACCOUNT_NOT_CONNECTED'
+          then 'PRIVATE_FILL_ACCOUNT_NOT_CONNECTED'
+        when 'BLOCKED_FILL_TRACEABILITY_INCOMPLETE'
+          then 'PRIVATE_FILL_TRACEABILITY_INCOMPLETE'
+        else 'PRIVATE_FILL_READINESS_MISSING'
+      end
+    );
   end if;
 
   v_operational_status := case
@@ -289,6 +312,16 @@ begin
         sq.avg_sealed_entry_cross_half_spread_bps,
       'sealed_quote_p90_half_spread_bps',
         sq.p90_sealed_entry_cross_half_spread_bps,
+      'private_fill_readiness_status',pf.readiness_status,
+      'private_fill_account_status',pf.private_account_status,
+      'private_fill_account_mode',pf.account_mode,
+      'private_fill_account_is_subaccount',pf.account_is_subaccount,
+      'private_fill_identity_probe_status',pf.account_identity_probe_status,
+      'private_fill_identity_gate_met',pf.account_identity_gate_met,
+      'private_fill_traceability_status',pf.fill_traceability_status,
+      'private_fill_traceability_gate_met',pf.fill_traceability_gate_met,
+      'private_fill_count',pf.fill_count,
+      'private_fill_next_gate',pf.next_gate,
       'cost_scientific_status',k.scientific_status,
       'cost_next_gate',k.next_gate,
       'refresh_source','SUPABASE_PG_CRON'
