@@ -12,7 +12,7 @@ class FakeCloudStorage:
     def __init__(self, settings):
         self.settings = settings
 
-    def load_latest_snapshot(self):
+    def load_latest_snapshot(self, **kwargs):
         return self.snapshot
 
 
@@ -208,3 +208,65 @@ def test_supabase_storage_reads_latest_canonical_parent_snapshot():
     assert snapshot["symbols"][0]["symbol"] == "BTCUSDT"
     assert session.calls[0][1]["params"]["order"] == "collected_at_utc.desc"
     assert session.calls[0][1]["params"]["limit"] == "1"
+
+
+def modern_snapshot(run_id, collected_at, source="GITHUB_REALTIME_HOURLY"):
+    return {
+        "run_id": run_id,
+        "collected_at_utc": collected_at,
+        "validation_identity": {
+            "run_source": source,
+            "git_commit": "abc",
+            "git_branch": "main",
+            "config_sha256": collector.build_validation_identity(config())["config_sha256"],
+            "test_contract": "sealed-profitability-v0.1",
+        },
+        "multi_strategy_summary": {},
+        "microstructure_summary": {},
+        "catalyst_summary": {"version": "0.2"},
+        "symbols": [],
+    }
+
+
+def test_load_previous_snapshot_rejects_legacy_cloud_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
+    FakeCloudStorage.snapshot = {
+        "run_id": "legacy",
+        "collected_at_utc": "2026-09-23T05:55:00+00:00",
+        "symbols": [],
+    }
+    monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
+
+    previous, source = collector.load_previous_snapshot(
+        tmp_path / "config.json",
+        config(),
+        cloud_settings=cloud_settings(),
+    )
+
+    assert previous is None
+    assert source == "NONE"
+
+
+def test_load_previous_snapshot_rejects_different_run_source(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
+    FakeCloudStorage.snapshot = modern_snapshot(
+        "render-run",
+        "2026-09-23T05:55:00+00:00",
+        source="RENDER",
+    )
+    monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
+
+    previous, source = collector.load_previous_snapshot(
+        tmp_path / "config.json",
+        config(),
+        cloud_settings=cloud_settings(),
+    )
+
+    assert previous is None
+    assert source == "NONE"
+
+
+def test_validation_identity_contains_explicit_run_source(monkeypatch):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
+    identity = collector.build_validation_identity(config())
+    assert identity["run_source"] == "GITHUB_REALTIME_HOURLY"
