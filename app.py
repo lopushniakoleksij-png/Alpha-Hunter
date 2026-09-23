@@ -289,6 +289,82 @@ def build_money_action(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_strategy_money_action(strategy: dict[str, Any]) -> dict[str, Any] | None:
+    """Promote an S1-S10 SHADOW_CANDIDATE into the decision-support action queue.
+
+    This does not grant exchange/order authority. It only makes the strategy
+    engine's already-gated 5R candidate visible to the Money Action layer.
+    """
+    if str(strategy.get("status") or "") != "SHADOW_CANDIDATE":
+        return None
+
+    proposed = str(
+        strategy.get("action")
+        or strategy.get("proposed_action")
+        or ""
+    ).upper()
+    direction = str(strategy.get("direction") or "").upper()
+    entry = safe_optional_float(strategy.get("entry"))
+    stop = safe_optional_float(strategy.get("stop"))
+    target = safe_optional_float(strategy.get("target"))
+    rr = safe_optional_float(strategy.get("rr"))
+
+    if (
+        proposed not in {"EXECUTE_NOW", "PLACE_LIMIT"}
+        or direction not in {"LONG", "SHORT"}
+        or entry is None
+        or stop is None
+        or target is None
+        or rr is None
+        or rr < MINIMUM_EXECUTION_RR
+    ):
+        return None
+
+    if direction == "LONG":
+        geometry_ok = stop < entry < target
+    else:
+        geometry_ok = target < entry < stop
+    if not geometry_ok:
+        return None
+
+    execute_now = proposed == "EXECUTE_NOW"
+    return {
+        "status": (
+            "STRATEGY_READY_NOW"
+            if execute_now
+            else "STRATEGY_LIMIT_READY"
+        ),
+        "label": (
+            "READY SETUP — EXECUTE NOW"
+            if execute_now
+            else "READY SETUP — PLACE LIMIT"
+        ),
+        "priority": 4 if execute_now else 3,
+        "direction": direction,
+        "entry": entry,
+        "stop": stop,
+        "target": target,
+        "rr": rr,
+        "minimum_rr": MINIMUM_EXECUTION_RR,
+        "distance_pct": safe_optional_float(
+            strategy.get("distance_to_entry_pct")
+        ) or 0.0,
+        "reason": (
+            f"{strategy.get('strategy_id','S?')} "
+            f"{strategy.get('strategy_name','strategy')} passed its signal, "
+            "shared safety/data gates, valid geometry and the configured 5R minimum. "
+            "Decision support only; order authority remains disabled."
+        ),
+        "cancel": (
+            "Cancel if direction, participation, liquidity/funding safety, "
+            "or structural invalidation changes before entry."
+        ),
+        "strategy_id": strategy.get("strategy_id"),
+        "strategy_name": strategy.get("strategy_name"),
+        "execution_authority": False,
+    }
+
+
 def dashboard_payload(
     snapshot: dict[str, Any],
     test_engine: dict[str, Any] | None = None,
@@ -350,6 +426,22 @@ def dashboard_payload(
         reverse=True,
     )
 
+    strategy_ready = []
+    for item in strategy_shadow:
+        action = build_strategy_money_action(item)
+        if action is None:
+            continue
+        strategy_ready.append({
+            "symbol": item.get("symbol"),
+            "last_price": item.get("price"),
+            "state": item.get("status"),
+            "_strategy": True,
+            "_score": safe_float(item.get("signal_score")),
+            "_behaviour": 0.0,
+            "_action": action,
+            "_strategy_payload": item,
+        })
+
     actionable = sorted(
         [row for row in discovery_symbols if row["_action"]["priority"] > 0],
         key=lambda row: (
@@ -373,7 +465,18 @@ def dashboard_payload(
 
     trade_ready = [row for row in actionable if row["_action"]["status"] == "READY_NOW"]
     retest_plans = [row for row in actionable if row["_action"]["status"] == "RETEST_PLAN"]
-    best_action = actionable[0] if actionable else None
+
+    combined_actionable = sorted(
+        actionable + strategy_ready,
+        key=lambda row: (
+            row["_action"]["priority"],
+            -safe_float(row["_action"].get("distance_pct")),
+            safe_float(row.get("_behaviour")),
+            safe_float(row.get("_score")),
+        ),
+        reverse=True,
+    )
+    best_action = combined_actionable[0] if combined_actionable else None
 
     account = snapshot.get("private_account", {})
     universe = snapshot.get("universe", {})
@@ -403,8 +506,9 @@ def dashboard_payload(
     return {
         "snapshot": snapshot,
         "best_action": best_action,
-        "actionable": actionable[:10],
+        "actionable": combined_actionable[:10],
         "trade_ready": trade_ready,
+        "strategy_ready": strategy_ready[:10],
         "retest_plans": retest_plans,
         "research": ranked_research[:25],
         "strategy_shadow": strategy_shadow[:60],
@@ -538,8 +642,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   {% if data.best_action %}
     {% set row=data.best_action %}{% set a=row._action %}
-    <div class="panel {{ 'action-ready' if a.status=='READY_NOW' else 'action-retest' }}">
-      <div class="action-title {{ 'ready' if a.status=='READY_NOW' else 'retest' }}">🟢 MONEY ACTION NOW — {{ a.label }}</div>
+    <div class="panel {{ 'action-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'action-retest' }}">
+      <div class="action-title {{ 'ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'retest' }}">🟢 MONEY ACTION NOW — {{ a.label }}</div>
       <h2 style="margin:8px 0 0">{{ row.symbol }} {{ a.direction }}</h2>
       <div class="action-grid">
         <div class="metric"><span class="label">Status</span><b>{{ a.status }}</b></div>
@@ -561,7 +665,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   <div class="panel">
     <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
-    <div class="small" style="margin-bottom:10px">Research architecture only. These strategy results cannot grant trade permission or change the Money Action block. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
+    <div class="small" style="margin-bottom:10px">S1-S10 candidates can now feed the Money Action decision-support queue when they pass their strategy gates, valid geometry and the configured 5R minimum. They still cannot grant exchange/order authority. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
     <div class="toolbar" style="margin-bottom:12px">
       {% for row in data.strategy_coverage %}
       <span class="badge badge-research">{{ row.strategy_id }}: {{ row.evaluations }} eval / {{ row.candidates }} cand</span>
@@ -600,7 +704,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% if data.actionable %}
         <table><thead><tr><th>Symbol</th><th>Action</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Distance</th></tr></thead><tbody>
         {% for row in data.actionable %}{% set a=row._action %}
-        <tr><td><b>{{ row.symbol }}</b></td><td><span class="badge {{ 'badge-ready' if a.status=='READY_NOW' else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td></tr>
+        <tr><td><b>{{ row.symbol }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td></tr>
         {% endfor %}</tbody></table>
         {% else %}<div class="empty">No executable or valid retest plan in the current snapshot.</div>{% endif %}
       </div>
@@ -622,7 +726,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
     <aside>
       <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
-      <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>READY NOW requires the existing execution permission.<br><br>RETEST PLAN requires direction + structure + momentum + participation + funding + integrity, with only price/R:R still needing improvement.<br><br>No threshold is relaxed.</div></div>
+      <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>READY NOW keeps the existing V7 execution permission. S1-S10 READY SETUP means the strategy candidate passed its own safety/data gates, valid geometry and the configured 5R minimum; it is decision support, not order authority.<br><br>RETEST PLAN requires direction + structure + momentum + participation + funding + integrity, with only price/R:R still needing improvement.<br><br>No threshold is relaxed.</div></div>
     </aside>
   </div>
 </div>

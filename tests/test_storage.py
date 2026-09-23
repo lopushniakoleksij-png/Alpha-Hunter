@@ -46,9 +46,13 @@ def test_supabase_writes_parent_and_children():
     )
     run_id = storage.save_snapshot(sample_snapshot())
     assert len(run_id) == 32
-    assert len(session.calls) == 2
+    assert len(session.calls) == 4
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id,symbol"}
+    assert session.calls[2][1]["params"] == {"on_conflict": "signal_id"}
+    assert session.calls[3][1]["params"] == {"on_conflict": "signal_id"}
+    assert session.calls[2][0].endswith("/rest/v1/alpha_hunter_signals")
+    assert session.calls[3][0].endswith("/rest/v1/alpha_hunter_signal_features")
 
 
 def test_seconds_until_next_hour():
@@ -76,3 +80,24 @@ def test_env_file_loader(tmp_path, monkeypatch):
     import os
     assert os.environ["SUPABASE_URL"] == "https://demo.supabase.co"
     assert os.environ["SUPABASE_SERVICE_ROLE_KEY"] == "test-key"
+
+
+def test_canonical_signal_and_feature_rows_share_same_signal_id():
+    import json
+
+    session = FakeSession()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=session,
+    )
+    run_id = storage.save_snapshot(sample_snapshot())
+
+    signal_rows = json.loads(session.calls[2][1]["data"])
+    feature_rows = json.loads(session.calls[3][1]["data"])
+
+    assert signal_rows[0]["run_id"] == run_id
+    assert feature_rows[0]["run_id"] == run_id
+    assert signal_rows[0]["signal_id"] == feature_rows[0]["signal_id"]
+    assert signal_rows[0]["symbol"] == "SUIUSDT"
+    assert feature_rows[0]["symbol"] == "SUIUSDT"
+    assert signal_rows[0]["trade_permission"] is False
