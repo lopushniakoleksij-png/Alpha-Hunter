@@ -73,3 +73,17 @@ def test_db_refresh_prefers_active_non_invalidated_cohort():
     ]
     for marker in required:
         assert marker in SQL
+
+
+def test_db_refresh_surfaces_private_fill_identity_blocker():
+    required = [
+        "alpha_hunter_private_fill_cost_readiness_v01",
+        "private_fill_account_identity_unpinned",
+        "private_fill_account_identity_mismatch",
+        "private_fill_traceability_incomplete",
+        "private_fill_readiness_status",
+        "private_fill_identity_gate_met",
+        "private_fill_traceability_gate_met",
+    ]
+    for marker in required:
+        assert marker in SQL
