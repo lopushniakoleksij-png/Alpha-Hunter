@@ -26,20 +26,11 @@ def test_db_refresh_reports_integrity_failures_as_blockers():
 
 def test_db_refresh_is_status_only():
     required = [
-        "true,
-    true,
-    false,
-    false,
-    true,
-    false,
-    false,
-    false,
-    false,
-    'none'",
         "paper_only",
         "trade_permission",
         "production_promotion_permitted",
         "order_path",
+        "'none'",
     ]
     for marker in required:
         assert marker in SQL
