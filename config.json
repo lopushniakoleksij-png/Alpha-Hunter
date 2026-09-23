@@ -9,7 +9,7 @@
   ],
   "universe_scan": {
     "enabled": true,
-    "deep_scan_limit": 30,
+    "deep_scan_limit": 60,
     "crypto_only": true,
     "reject_rwa": true,
     "reject_reality": true,
@@ -28,7 +28,12 @@
     "preferred_24h_move_max_pct": 15,
     "quiet_24h_abs_change_max_pct": 3,
     "early_ignition_min_abs_change_pct": 1,
-    "early_ignition_max_abs_change_pct": 15
+    "early_ignition_max_abs_change_pct": 15,
+    "mandatory_mover_abs_change_min_pct": 8,
+    "mandatory_mover_limit": 40,
+    "pre_move_bucket_size": 20,
+    "pre_move_min_abs_change_pct": 1,
+    "pre_move_max_abs_change_pct": 8
   },
   "candidate_quality": {
     "enabled": true,
