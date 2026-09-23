@@ -22,6 +22,7 @@ declare
   f public.alpha_hunter_strategy_forward_status_v01%rowtype;
   o public.alpha_hunter_strategy_opportunity_status_v01%rowtype;
   k public.alpha_hunter_execution_cost_floor_status_v01%rowtype;
+  q public.alpha_hunter_shadow_decision_quote_status_v01%rowtype;
   v_now timestamptz := clock_timestamp();
   v_scan_age double precision;
   v_operational text[] := array[]::text[];
@@ -71,6 +72,10 @@ begin
   select x.* into k
   from public.alpha_hunter_execution_cost_floor_status_v01 x
   where x.cost_scope='ALL'
+  limit 1;
+
+  select x.* into q
+  from public.alpha_hunter_shadow_decision_quote_status_v01 x
   limit 1;
 
   v_scan_age := r.latest_live_scan_age_seconds::double precision;
@@ -244,6 +249,15 @@ begin
         s.post_baseline_24h_outcome_rows,
       'post_baseline_24h_economic_eligible',
         s.post_baseline_24h_economic_eligible_rows,
+      'decision_quote_count',q.captured_candidate_quotes,
+      'decision_quote_complete_count',q.complete_candidate_quotes,
+      'decision_quote_incomplete_count',q.incomplete_candidate_quotes,
+      'decision_quote_avg_half_spread_bps',
+        q.avg_entry_cross_half_spread_bps,
+      'decision_quote_p90_half_spread_bps',
+        q.p90_entry_cross_half_spread_bps,
+      'decision_quote_scientific_status',q.scientific_status,
+      'decision_quote_next_gate',q.next_gate,
       'cost_scientific_status',k.scientific_status,
       'cost_next_gate',k.next_gate,
       'refresh_source','SUPABASE_PG_CRON'
