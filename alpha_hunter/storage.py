@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from .feature_capture import extract_feature_rows
+
 
 class SupabaseStorageError(RuntimeError):
     """Raised when configured Supabase persistence or retrieval fails."""
@@ -190,6 +192,62 @@ class SupabaseStorage:
                 "payload": item,
             })
 
+        signal_rows: list[dict[str, Any]] = []
+        for item in valid_symbols:
+            symbol = str(item.get("symbol") or "")
+            if not symbol:
+                continue
+            setup = item.get("execution_setup", {})
+            if not isinstance(setup, dict):
+                setup = {}
+            intel = item.get("intelligence", {})
+            if not isinstance(intel, dict):
+                intel = {}
+            reference_price = item.get("last_price")
+            if reference_price is None:
+                continue
+            signal_id = hashlib.sha256(
+                f"{run_id}|{symbol}".encode("utf-8")
+            ).hexdigest()[:32]
+            signal_rows.append({
+                "signal_id": signal_id,
+                "run_id": run_id,
+                "symbol": symbol,
+                "detected_at_utc": snapshot.get("collected_at_utc"),
+                "state": item.get("state"),
+                "direction": setup.get("direction") or item.get("direction"),
+                "trade_permission": bool(item.get("trade_permission", False)),
+                "huge_rr_score": intel.get("huge_rr_score"),
+                "confidence_estimate_pct": intel.get("confidence_estimate_pct"),
+                "reward_risk": setup.get("rr"),
+                "entry_price": setup.get("entry"),
+                "stop_loss": setup.get("stop"),
+                "take_profit": setup.get("target"),
+                "reference_price": reference_price,
+                "payload": item,
+            })
+
+        feature_rows = extract_feature_rows(snapshot)
+        signal_id_by_symbol = {
+            row["symbol"]: row["signal_id"]
+            for row in signal_rows
+        }
+        canonical_feature_rows: list[dict[str, Any]] = []
+        for row in feature_rows:
+            symbol = str(row.get("symbol") or "")
+            signal_id = signal_id_by_symbol.get(symbol)
+            if signal_id is None:
+                continue
+            canonical = dict(row)
+            canonical["signal_id"] = signal_id
+            canonical_feature_rows.append(canonical)
+
         self._upsert(self.settings.snapshot_table, parent, "run_id")
         self._upsert(self.settings.symbol_table, children, "run_id,symbol")
+        self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
+        self._upsert(
+            "alpha_hunter_signal_features",
+            canonical_feature_rows,
+            "signal_id",
+        )
         return run_id
