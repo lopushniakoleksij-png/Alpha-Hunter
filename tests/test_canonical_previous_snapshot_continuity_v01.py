@@ -50,11 +50,11 @@ def cloud_settings():
 
 
 def test_cloud_snapshot_is_used_when_local_is_missing(tmp_path, monkeypatch):
-    FakeCloudStorage.snapshot = {
-        "run_id": "cloud-1",
-        "collected_at_utc": "2026-09-22T19:00:00+00:00",
-        "symbols": [],
-    }
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
+    FakeCloudStorage.snapshot = modern_snapshot(
+        "cloud-1",
+        "2026-09-22T19:00:00+00:00",
+    )
     monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
 
     previous, source = collector.load_previous_snapshot(
@@ -68,19 +68,18 @@ def test_cloud_snapshot_is_used_when_local_is_missing(tmp_path, monkeypatch):
 
 
 def test_newer_cloud_snapshot_wins_over_stale_local(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
     write_local_snapshot(
         tmp_path,
-        {
-            "run_id": "local-old",
-            "collected_at_utc": "2026-09-22T18:00:00+00:00",
-            "symbols": [],
-        },
+        modern_snapshot(
+            "local-old",
+            "2026-09-22T18:00:00+00:00",
+        ),
     )
-    FakeCloudStorage.snapshot = {
-        "run_id": "cloud-new",
-        "collected_at_utc": "2026-09-22T19:00:00+00:00",
-        "symbols": [],
-    }
+    FakeCloudStorage.snapshot = modern_snapshot(
+        "cloud-new",
+        "2026-09-22T19:00:00+00:00",
+    )
     monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
 
     previous, source = collector.load_previous_snapshot(
@@ -94,19 +93,18 @@ def test_newer_cloud_snapshot_wins_over_stale_local(tmp_path, monkeypatch):
 
 
 def test_newer_local_snapshot_wins_over_cloud(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
     write_local_snapshot(
         tmp_path,
-        {
-            "run_id": "local-new",
-            "collected_at_utc": "2026-09-22T20:00:00+00:00",
-            "symbols": [],
-        },
+        modern_snapshot(
+            "local-new",
+            "2026-09-22T20:00:00+00:00",
+        ),
     )
-    FakeCloudStorage.snapshot = {
-        "run_id": "cloud-old",
-        "collected_at_utc": "2026-09-22T19:00:00+00:00",
-        "symbols": [],
-    }
+    FakeCloudStorage.snapshot = modern_snapshot(
+        "cloud-old",
+        "2026-09-22T19:00:00+00:00",
+    )
     monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
 
     previous, source = collector.load_previous_snapshot(
