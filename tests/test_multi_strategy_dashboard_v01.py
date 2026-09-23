@@ -1,4 +1,4 @@
-from app import dashboard_payload
+from app import build_strategy_money_action, dashboard_payload
 
 
 def legacy_blocked_row():
@@ -55,7 +55,7 @@ def legacy_blocked_row():
     }
 
 
-def test_shadow_strategy_candidate_never_leaks_into_money_action():
+def test_shadow_strategy_candidate_feeds_money_action_decision_support():
     snapshot = {
         "symbols": [legacy_blocked_row()],
         "universe": {"selected_count": 1},
@@ -72,9 +72,46 @@ def test_shadow_strategy_candidate_never_leaks_into_money_action():
 
     data = dashboard_payload(snapshot)
 
-    assert data["best_action"] is None
-    assert data["actionable"] == []
+    assert data["best_action"] is not None
+    assert data["best_action"]["symbol"] == "TESTUSDT"
+    action = data["best_action"]["_action"]
+    assert action["status"] == "STRATEGY_LIMIT_READY"
+    assert action["entry"] == 102.0
+    assert action["stop"] == 100.0
+    assert action["target"] == 130.0
+    assert action["rr"] == 14.0
+    assert action["execution_authority"] is False
+    assert len(data["strategy_ready"]) == 1
+    assert data["trade_ready"] == []
     assert data["strategy_shadow"][0]["strategy_id"] == "S3"
     assert data["strategy_shadow"][0]["status"] == "SHADOW_CANDIDATE"
     assert data["strategy_summary"]["configured_strategy_count"] == 10
     assert len(data["strategy_coverage"]) == 10
+
+
+def test_watch_strategy_never_promotes_to_money_action():
+    strategy = dict(legacy_blocked_row()["multi_strategy_engine"]["strategies"][0])
+    strategy["status"] = "WATCH"
+    strategy["action"] = "WAIT_FOR_TRIGGER"
+    assert build_strategy_money_action(strategy) is None
+
+
+def test_shadow_candidate_below_five_r_never_promotes():
+    strategy = dict(legacy_blocked_row()["multi_strategy_engine"]["strategies"][0])
+    strategy["rr"] = 4.99
+    assert build_strategy_money_action(strategy) is None
+
+
+def test_shadow_candidate_invalid_geometry_never_promotes():
+    strategy = dict(legacy_blocked_row()["multi_strategy_engine"]["strategies"][0])
+    strategy["stop"] = 103.0
+    assert build_strategy_money_action(strategy) is None
+
+
+def test_execute_now_shadow_candidate_becomes_ready_decision_support_only():
+    strategy = dict(legacy_blocked_row()["multi_strategy_engine"]["strategies"][0])
+    strategy["action"] = "EXECUTE_NOW"
+    action = build_strategy_money_action(strategy)
+    assert action is not None
+    assert action["status"] == "STRATEGY_READY_NOW"
+    assert action["execution_authority"] is False
