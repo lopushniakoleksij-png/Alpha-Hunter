@@ -56,7 +56,10 @@ eligible as (
     o.direction,
     o.status as strategy_status,
     o.action as strategy_action,
-    o.proposed_action,
+    coalesce(
+      o.strategy_payload->>'proposed_action',
+      o.action
+    ) as proposed_action,
     o.signal_score,
     o.score_is_calibrated,
     o.reference_price,
