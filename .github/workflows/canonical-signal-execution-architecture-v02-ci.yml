@@ -1,0 +1,65 @@
+name: Canonical Signal Execution Architecture v0.2 CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/storage.py'
+      - 'app.py'
+      - 'tests/test_storage.py'
+      - 'tests/test_multi_strategy_dashboard_v01.py'
+      - '.github/workflows/canonical-signal-execution-architecture-v02-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/storage.py'
+      - 'app.py'
+      - 'tests/test_storage.py'
+      - 'tests/test_multi_strategy_dashboard_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+      - name: Compile architecture
+        run: python -m py_compile alpha_hunter/storage.py alpha_hunter/feature_capture.py app.py
+      - name: Run canonical persistence and action-path regressions
+        run: |
+          python -m pytest -q \
+            tests/test_storage.py \
+            tests/test_multi_strategy_dashboard_v01.py \
+            tests/test_money_action_dashboard_v72.py \
+            tests/test_multi_strategy_engine_v01.py \
+            tests/test_production_gates_v03.py
+      - name: Enforce no order authority
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = "\n".join(
+              Path(p).read_text(encoding="utf-8").lower()
+              for p in (
+                  "alpha_hunter/storage.py",
+                  "app.py",
+              )
+          )
+          forbidden = [
+              "place_order(",
+              "cancel_order(",
+              "modify_order(",
+              "set_leverage(",
+          ]
+          hits = [item for item in forbidden if item in text]
+          if hits:
+              raise SystemExit(f"forbidden order authority path(s): {hits}")
+          PY
