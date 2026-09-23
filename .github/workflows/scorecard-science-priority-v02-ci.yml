@@ -28,4 +28,5 @@ jobs:
           tests/test_geometry_forward_science_view_v02.py
           tests/test_geometry_scope_alignment_v022.py
           tests/test_production_gates_v03.py
+          tests/test_strategy_ready_setups_v01.py
           tests/test_big_mover_fresh_canonical_source_v01.py
