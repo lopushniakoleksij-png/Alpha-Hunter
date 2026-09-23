@@ -8,11 +8,13 @@ on:
       - 'sealed_profitability_cadence_staleness_v03.sql'
       - 'sealed_profitability_integrity_gate_v04.sql'
       - 'realtime_test_engine_db_refresh_v02.sql'
+      - 'execution_cost_benchmark_collection_v03.sql'
       - 'tests/test_realtime_profitability_monitor_performance_v02.py'
       - 'tests/test_sealed_profitability_audit_source_scope_v02.py'
       - 'tests/test_sealed_profitability_cadence_staleness_v03.py'
       - 'tests/test_sealed_profitability_integrity_gate_v04.py'
       - 'tests/test_realtime_test_engine_db_refresh_v02.py'
+      - 'tests/test_execution_cost_benchmark_collection_v03.py'
       - '.github/workflows/sealed-profitability-audit-v04-ci.yml'
 
 permissions:
@@ -35,7 +37,8 @@ jobs:
             tests/test_sealed_profitability_audit_source_scope_v02.py \
             tests/test_sealed_profitability_cadence_staleness_v03.py \
             tests/test_sealed_profitability_integrity_gate_v04.py \
-            tests/test_realtime_test_engine_db_refresh_v02.py
+            tests/test_realtime_test_engine_db_refresh_v02.py \
+            tests/test_execution_cost_benchmark_collection_v03.py
       - name: Reject execution authority
         run: |
           python - <<'PY'
@@ -46,6 +49,7 @@ jobs:
               "sealed_profitability_cadence_staleness_v03.sql",
               "sealed_profitability_integrity_gate_v04.sql",
               "realtime_test_engine_db_refresh_v02.sql",
+              "execution_cost_benchmark_collection_v03.sql",
           ]
           text = "\n".join(
               Path(p).read_text(encoding="utf-8").lower() for p in paths
