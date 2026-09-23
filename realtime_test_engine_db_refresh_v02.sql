@@ -35,7 +35,22 @@ declare
 begin
   select m.* into r
   from public.alpha_hunter_realtime_profitability_monitor_v01 m
-  order by m.real_test_requested_at_utc desc
+  left join public.alpha_hunter_profitability_validation_status_v01 vs
+    on vs.spec_id=m.spec_id
+  order by
+    case
+      when m.real_counted_baseline_started_at_utc is not null
+       and coalesce(vs.profitability_test_status,'')
+         not like 'INVALIDATED_%'
+        then 0
+      when m.real_counted_baseline_started_at_utc is null
+        then 1
+      else 2
+    end,
+    coalesce(
+      m.real_counted_baseline_started_at_utc,
+      m.real_test_requested_at_utc
+    ) desc
   limit 1;
 
   if r.spec_id is null then
