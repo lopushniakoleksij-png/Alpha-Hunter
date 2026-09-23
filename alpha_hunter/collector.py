@@ -964,6 +964,9 @@ def load_previous_snapshot(
         except SupabaseStorageError:
             cloud_snapshot = None
 
+    if cloud_snapshot is not None and not compatible(cloud_snapshot):
+        cloud_snapshot = None
+
     local_time = _snapshot_timestamp(
         local_snapshot
     )
