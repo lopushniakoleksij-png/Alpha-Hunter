@@ -13,6 +13,7 @@ on:
       - 'test_engine_authoritative_latest_v03.sql'
       - 'sealed_decision_quote_status_v01.sql'
       - 'private_fill_cost_readiness_v01.sql'
+      - 'sealed_profitability_sample_integrity_performance_v03.sql'
       - 'tests/test_realtime_profitability_monitor_performance_v02.py'
       - 'tests/test_sealed_profitability_audit_source_scope_v02.py'
       - 'tests/test_sealed_profitability_cadence_staleness_v03.py'
@@ -23,6 +24,7 @@ on:
       - 'tests/test_test_engine_authoritative_latest_v03.py'
       - 'tests/test_sealed_decision_quote_status_v01.py'
       - 'tests/test_private_fill_cost_readiness_v01.py'
+      - 'tests/test_sealed_profitability_sample_integrity_performance_v03.py'
       - '.github/workflows/sealed-profitability-audit-v04-ci.yml'
 
 permissions:
@@ -50,7 +52,8 @@ jobs:
             tests/test_shadow_decision_quote_ledger_v01.py \
             tests/test_test_engine_authoritative_latest_v03.py \
             tests/test_sealed_decision_quote_status_v01.py \
-            tests/test_private_fill_cost_readiness_v01.py
+            tests/test_private_fill_cost_readiness_v01.py \
+            tests/test_sealed_profitability_sample_integrity_performance_v03.py
       - name: Reject execution authority
         run: |
           python - <<'PY'
@@ -66,6 +69,7 @@ jobs:
               "test_engine_authoritative_latest_v03.sql",
               "sealed_decision_quote_status_v01.sql",
               "private_fill_cost_readiness_v01.sql",
+              "sealed_profitability_sample_integrity_performance_v03.sql",
           ]
           text = "\n".join(
               Path(p).read_text(encoding="utf-8").lower() for p in paths
