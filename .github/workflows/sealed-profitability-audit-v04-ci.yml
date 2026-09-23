@@ -10,6 +10,7 @@ on:
       - 'realtime_test_engine_db_refresh_v02.sql'
       - 'execution_cost_benchmark_collection_v03.sql'
       - 'shadow_decision_quote_ledger_v01.sql'
+      - 'test_engine_authoritative_latest_v03.sql'
       - 'tests/test_realtime_profitability_monitor_performance_v02.py'
       - 'tests/test_sealed_profitability_audit_source_scope_v02.py'
       - 'tests/test_sealed_profitability_cadence_staleness_v03.py'
@@ -17,6 +18,7 @@ on:
       - 'tests/test_realtime_test_engine_db_refresh_v02.py'
       - 'tests/test_execution_cost_benchmark_collection_v03.py'
       - 'tests/test_shadow_decision_quote_ledger_v01.py'
+      - 'tests/test_test_engine_authoritative_latest_v03.py'
       - '.github/workflows/sealed-profitability-audit-v04-ci.yml'
 
 permissions:
@@ -41,7 +43,8 @@ jobs:
             tests/test_sealed_profitability_integrity_gate_v04.py \
             tests/test_realtime_test_engine_db_refresh_v02.py \
             tests/test_execution_cost_benchmark_collection_v03.py \
-            tests/test_shadow_decision_quote_ledger_v01.py
+            tests/test_shadow_decision_quote_ledger_v01.py \
+            tests/test_test_engine_authoritative_latest_v03.py
       - name: Reject execution authority
         run: |
           python - <<'PY'
@@ -54,6 +57,7 @@ jobs:
               "realtime_test_engine_db_refresh_v02.sql",
               "execution_cost_benchmark_collection_v03.sql",
               "shadow_decision_quote_ledger_v01.sql",
+              "test_engine_authoritative_latest_v03.sql",
           ]
           text = "\n".join(
               Path(p).read_text(encoding="utf-8").lower() for p in paths
