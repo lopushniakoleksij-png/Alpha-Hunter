@@ -22,6 +22,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_TABLE = os.getenv("ALPHA_HUNTER_SNAPSHOT_TABLE", "alpha_hunter_snapshots")
 APP_VERSION = os.getenv("ALPHA_HUNTER_VERSION", "7.2")
+CANONICAL_RUN_SOURCE = os.getenv(
+    "ALPHA_HUNTER_CANONICAL_RUN_SOURCE",
+    "RENDER",
+).strip().upper()
 SERVICE_STARTED_AT_UTC = datetime.now(timezone.utc).isoformat()
 
 REFERENCE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"}
@@ -95,21 +99,42 @@ def latest_snapshot() -> dict[str, Any]:
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError("Supabase environment variables are not configured")
 
+    params = {
+        "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
+        "order": "collected_at_utc.desc",
+        "limit": "1",
+    }
+    if CANONICAL_RUN_SOURCE:
+        params["payload->validation_identity->>run_source"] = (
+            f"eq.{CANONICAL_RUN_SOURCE}"
+        )
+
     response = requests.get(
         f"{SUPABASE_URL}/rest/v1/{SNAPSHOT_TABLE}",
-        params={
-            "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
-            "order": "collected_at_utc.desc",
-            "limit": "1",
-        },
+        params=params,
         headers=supabase_headers(),
         timeout=15,
     )
     response.raise_for_status()
     rows = response.json()
     if not rows:
-        raise RuntimeError("No Alpha Hunter snapshots found")
-    return rows[0].get("payload") or {}
+        raise RuntimeError(
+            "No Alpha Hunter snapshots found for canonical run source "
+            f"{CANONICAL_RUN_SOURCE or '<ANY>'}"
+        )
+
+    payload = rows[0].get("payload") or {}
+    if CANONICAL_RUN_SOURCE:
+        identity = payload.get("validation_identity")
+        if not isinstance(identity, dict):
+            raise RuntimeError("Canonical snapshot is missing validation identity")
+        actual_source = str(identity.get("run_source") or "").upper()
+        if actual_source != CANONICAL_RUN_SOURCE:
+            raise RuntimeError(
+                "Canonical snapshot source mismatch: "
+                f"expected {CANONICAL_RUN_SOURCE}, got {actual_source or '<NONE>'}"
+            )
+    return payload
 
 
 def latest_test_engine_status() -> dict[str, Any]:
