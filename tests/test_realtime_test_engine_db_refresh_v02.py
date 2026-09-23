@@ -63,3 +63,13 @@ def test_db_refresh_exposes_sealed_sample_counts():
     ]
     for marker in required:
         assert marker in SQL
+
+
+def test_db_refresh_prefers_active_non_invalidated_cohort():
+    required = [
+        "real_counted_baseline_started_at_utc is not null",
+        "not like 'invalidated_%'",
+        "real_counted_baseline_started_at_utc is null",
+    ]
+    for marker in required:
+        assert marker in SQL
