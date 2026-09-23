@@ -57,7 +57,20 @@ def build_validation_identity(
         sort_keys=True,
         separators=(",", ":"),
     )
+    run_source = (
+        os.getenv("ALPHA_HUNTER_RUN_SOURCE")
+        or (
+            "RENDER"
+            if (
+                os.getenv("RENDER_SERVICE_ID")
+                or os.getenv("RENDER")
+            )
+            else "UNSPECIFIED"
+        )
+    )
+
     return {
+        "run_source": run_source,
         "git_commit": (
             os.getenv("RENDER_GIT_COMMIT")
             or os.getenv("GIT_COMMIT")
@@ -918,13 +931,36 @@ def load_previous_snapshot(
         ):
             local_snapshot = None
 
+    expected_identity = build_validation_identity(config)
+
+    def compatible(snapshot: dict[str, Any] | None) -> bool:
+        if not isinstance(snapshot, dict):
+            return False
+        identity = snapshot.get("validation_identity")
+        if not isinstance(identity, dict):
+            return False
+        for key in ("test_contract", "config_sha256", "run_source"):
+            if identity.get(key) != expected_identity.get(key):
+                return False
+        return (
+            isinstance(snapshot.get("multi_strategy_summary"), dict)
+            and isinstance(snapshot.get("microstructure_summary"), dict)
+            and isinstance(snapshot.get("catalyst_summary"), dict)
+        )
+
+    if local_snapshot is not None and not compatible(local_snapshot):
+        local_snapshot = None
+
     cloud_snapshot: dict[str, Any] | None = None
 
     if cloud_settings is not None:
         try:
             cloud_snapshot = SupabaseStorage(
                 cloud_settings
-            ).load_latest_snapshot()
+            ).load_latest_snapshot(
+                expected_identity=expected_identity,
+                require_strategy_context=True,
+            )
         except SupabaseStorageError:
             cloud_snapshot = None
 
@@ -3572,6 +3608,13 @@ def main() -> int:
             "collected_at_utc":
                 (
                     previous_snapshot.get("collected_at_utc")
+                    if previous_snapshot
+                    else None
+                ),
+
+            "run_source":
+                (
+                    previous_snapshot.get("validation_identity", {}).get("run_source")
                     if previous_snapshot
                     else None
                 ),
