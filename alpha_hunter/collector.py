@@ -1305,6 +1305,95 @@ def select_market_universe(
 
     selected: list[str] = []
 
+    mandatory_mover_min = float(
+        settings.get(
+            "mandatory_mover_abs_change_min_pct",
+            8,
+        )
+    )
+
+    mandatory_mover_limit = int(
+        settings.get(
+            "mandatory_mover_limit",
+            40,
+        )
+    )
+
+    mandatory_movers = [
+        row
+        for row
+        in candidates
+        if abs(
+            row[
+                "change_24h_pct"
+            ]
+        ) >= mandatory_mover_min
+    ]
+
+    mandatory_movers.sort(
+        key=lambda row: (
+            abs(
+                row[
+                    "change_24h_pct"
+                ]
+            ),
+            row[
+                "quote_volume"
+            ],
+        ),
+        reverse=True,
+    )
+
+    pre_move_limit = int(
+        settings.get(
+            "pre_move_bucket_size",
+            20,
+        )
+    )
+
+    pre_move_min = float(
+        settings.get(
+            "pre_move_min_abs_change_pct",
+            1,
+        )
+    )
+
+    pre_move_max = float(
+        settings.get(
+            "pre_move_max_abs_change_pct",
+            mandatory_mover_min,
+        )
+    )
+
+    pre_move = [
+        row
+        for row
+        in candidates
+        if (
+            pre_move_min
+            <= abs(
+                row[
+                    "change_24h_pct"
+                ]
+            )
+            < pre_move_max
+        )
+    ]
+
+    pre_move.sort(
+        key=lambda row: (
+            abs(
+                row[
+                    "change_24h_pct"
+                ]
+            ),
+            row[
+                "quote_volume"
+            ],
+        ),
+        reverse=True,
+    )
+
     def add_symbol(
         symbol: str,
     ) -> None:
@@ -1319,6 +1408,24 @@ def select_market_universe(
             selected.append(
                 symbol
             )
+
+    for row in mandatory_movers[
+        :mandatory_mover_limit
+    ]:
+        add_symbol(
+            row[
+                "symbol"
+            ]
+        )
+
+    for row in pre_move[
+        :pre_move_limit
+    ]:
+        add_symbol(
+            row[
+                "symbol"
+            ]
+        )
 
     if (
         settings.get(
@@ -1512,6 +1619,49 @@ def select_market_universe(
 
         "ticker_count":
             len(tickers),
+
+        "mandatory_mover_min_abs_change_pct":
+            mandatory_mover_min,
+
+        "mandatory_mover_candidate_count":
+            len(
+                mandatory_movers
+            ),
+
+        "mandatory_mover_selected_count":
+            len([
+                symbol
+                for symbol
+                in selected
+                if symbol
+                in {
+                    row["symbol"]
+                    for row
+                    in mandatory_movers[
+                        :mandatory_mover_limit
+                    ]
+                }
+            ]),
+
+        "pre_move_candidate_count":
+            len(
+                pre_move
+            ),
+
+        "pre_move_selected_count":
+            len([
+                symbol
+                for symbol
+                in selected
+                if symbol
+                in {
+                    row["symbol"]
+                    for row
+                    in pre_move[
+                        :pre_move_limit
+                    ]
+                }
+            ]),
 
         "eligible_count":
             len(candidates),
