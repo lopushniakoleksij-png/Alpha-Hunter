@@ -60,3 +60,15 @@ def test_db_refresh_is_cron_backed_not_market_scan():
     assert "*/10 * * * *" in SQL
     assert "alpha-hunter-test-engine-db-refresh-v02" in SQL
     assert "api.bitget.com" not in SQL
+
+
+def test_db_refresh_exposes_sealed_sample_counts():
+    required = [
+        "post_baseline_candidate_observations",
+        "left_censored_candidate_observations",
+        "post_baseline_candidate_episodes",
+        "post_baseline_24h_outcomes",
+        "post_baseline_24h_economic_eligible",
+    ]
+    for marker in required:
+        assert marker in SQL
