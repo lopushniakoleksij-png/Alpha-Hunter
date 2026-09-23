@@ -35,6 +35,7 @@ jobs:
       GIT_COMMIT: ${{ github.sha }}
       GIT_BRANCH: ${{ github.ref_name }}
       ALPHA_HUNTER_PRODUCTION_VERSION: realtime-test-v0.1
+      ALPHA_HUNTER_RUN_SOURCE: GITHUB_REALTIME_HOURLY
 
     steps:
       - uses: actions/checkout@v4
