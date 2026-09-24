@@ -14,7 +14,7 @@ from .collector import build_instrument_map, instrument_is_allowed
 from .storage import SupabaseConfig
 
 TABLE = "alpha_hunter_universe_hourly"
-MODEL_VERSION = "7.9-universe-ledger-v1"
+MODEL_VERSION = "7.9-universe-ledger-v2-scan"
 FEE_RATE_SOURCE = "BITGET_V3_INSTRUMENT_PUBLIC"
 
 
@@ -22,8 +22,12 @@ def _bucket(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
-def _observation_id(symbol: str, bucket: datetime) -> str:
-    raw = f"{symbol.upper()}|{MODEL_VERSION}|{bucket.isoformat()}".encode("utf-8")
+def _observation_id(symbol: str, selection_run_id: str) -> str:
+    """One immutable universe observation per symbol per canonical scanner run."""
+    run_id = str(selection_run_id or "").strip()
+    if not run_id:
+        raise ValueError("selection_run_id is required for universe persistence")
+    raw = f"{symbol.upper()}|{MODEL_VERSION}|{run_id}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:24]
 
 
@@ -130,7 +134,7 @@ def build_rows_from_existing_scan(
             reason = "ELIGIBLE_NOT_SELECTED"
 
         rows.append({
-            "observation_id": _observation_id(symbol, bucket),
+            "observation_id": _observation_id(symbol, selection_run_id),
             "observed_at_utc": observed_at.isoformat(),
             "hour_bucket_utc": bucket.isoformat(),
             "symbol": symbol,
@@ -151,7 +155,7 @@ def build_rows_from_existing_scan(
             "public_taker_fee_bps": taker_fee_bps,
             "fee_rate_source": fee_rate_source,
             "source": "PRIMARY_SCANNER_CACHED_TICKERS",
-            "measurement_quality": "HOURLY_TICKER_SNAPSHOT",
+            "measurement_quality": "CANONICAL_SCAN_TICKER_SNAPSHOT",
             "trade_permission": False,
             "selection_snapshot_at_utc": selection_snapshot_at_utc,
             "selection_run_id": selection_run_id,
@@ -161,7 +165,7 @@ def build_rows_from_existing_scan(
 
 
 def persist_rows(settings: SupabaseConfig, rows: list[dict[str, Any]]) -> int:
-    """Append the current hour once; never overwrite prior observations."""
+    """Append the current canonical scan once; never overwrite prior observations."""
     if not rows:
         raise RuntimeError("Universe persistence refused: scanner payload produced no rows")
     headers = {
