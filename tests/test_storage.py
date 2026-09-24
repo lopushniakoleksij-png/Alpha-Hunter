@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, build_run_id
-from hourly import seconds_until_next_hour
+from hourly import next_scan_at, seconds_until_next_hour, seconds_until_next_interval
 
 
 class FakeResponse:
@@ -58,6 +58,32 @@ def test_supabase_writes_parent_and_children():
 def test_seconds_until_next_hour():
     now = datetime(2026, 7, 26, 18, 45, 30, tzinfo=timezone.utc)
     assert seconds_until_next_hour(now) == 870
+
+
+def test_twenty_minute_scanner_alignment():
+    now = datetime(2026, 7, 26, 18, 2, 0, tzinfo=timezone.utc)
+    assert next_scan_at(now, 20) == datetime(
+        2026, 7, 26, 18, 20, 0, tzinfo=timezone.utc
+    )
+    assert seconds_until_next_interval(now, 20) == 1080
+
+
+def test_exact_boundary_advances_instead_of_double_running():
+    now = datetime(2026, 7, 26, 18, 20, 0, tzinfo=timezone.utc)
+    assert next_scan_at(now, 20) == datetime(
+        2026, 7, 26, 18, 40, 0, tzinfo=timezone.utc
+    )
+    assert seconds_until_next_interval(now, 20) == 1200
+
+
+def test_invalid_interval_is_rejected():
+    import pytest
+
+    with pytest.raises(ValueError):
+        next_scan_at(
+            datetime(2026, 7, 26, 18, 2, 0, tzinfo=timezone.utc),
+            17,
+        )
 
 
 def test_hourly_lock_prevents_overlap(tmp_path):
