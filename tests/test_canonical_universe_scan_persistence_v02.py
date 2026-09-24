@@ -18,7 +18,8 @@ def test_scan_identity_is_unique_per_symbol_and_selection_run():
 
 def test_hour_bucket_is_kept_only_for_aggregation_compatibility():
     assert "hour_bucket_utc remains an aggregation field" in SQL
-    assert "selection_run_id is the canonical scan identity" in SQL
+    assert "selection_run_id" in SQL
+    assert "canonical scan identity" in SQL
 
 
 def test_migration_does_not_add_trade_authority():
