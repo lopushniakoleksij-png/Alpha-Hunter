@@ -2,6 +2,10 @@ name: Scorecard Science Priority v0.2 CI
 
 on:
   pull_request:
+    paths:
+      - 'sealed_profitability_cadence_contract_v02.sql'
+      - 'tests/test_sealed_profitability_cadence_contract_v02.py'
+      - '.github/workflows/scorecard-science-priority-v02-ci.yml'
     branches:
       - main
   workflow_dispatch:
