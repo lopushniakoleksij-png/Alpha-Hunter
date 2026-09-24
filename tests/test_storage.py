@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
 
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, build_run_id
-from hourly import next_scan_at, seconds_until_next_hour, seconds_until_next_interval
+from hourly import (
+    next_scan_at,
+    remaining_burst_boundaries,
+    render_cron_burst_enabled,
+    seconds_until_next_hour,
+    seconds_until_next_interval,
+)
 
 
 class FakeResponse:
@@ -84,6 +90,39 @@ def test_invalid_interval_is_rejected():
             datetime(2026, 7, 26, 18, 2, 0, tzinfo=timezone.utc),
             17,
         )
+
+
+def test_render_cron_auto_enables_burst_but_web_service_does_not():
+    assert render_cron_burst_enabled({
+        "RENDER_SERVICE_NAME": "alpha-hunter-hourly",
+    }) is True
+    assert render_cron_burst_enabled({
+        "RENDER_SERVICE_NAME": "alpha-hunter-j5i3",
+        "PORT": "10000",
+    }) is False
+
+
+def test_render_burst_override_is_explicit():
+    assert render_cron_burst_enabled({
+        "ALPHA_HUNTER_RENDER_BURST_MODE": "1",
+    }) is True
+    assert render_cron_burst_enabled({
+        "RENDER_SERVICE_NAME": "alpha-hunter-hourly",
+        "ALPHA_HUNTER_RENDER_BURST_MODE": "0",
+    }) is False
+
+
+def test_remaining_render_burst_boundaries_are_aligned():
+    now = datetime(2026, 7, 26, 18, 4, 0, tzinfo=timezone.utc)
+    assert remaining_burst_boundaries(now, 20) == [
+        datetime(2026, 7, 26, 18, 20, 0, tzinfo=timezone.utc),
+        datetime(2026, 7, 26, 18, 40, 0, tzinfo=timezone.utc),
+    ]
+
+    late = datetime(2026, 7, 26, 18, 25, 0, tzinfo=timezone.utc)
+    assert remaining_burst_boundaries(late, 20) == [
+        datetime(2026, 7, 26, 18, 40, 0, tzinfo=timezone.utc),
+    ]
 
 
 def test_hourly_lock_prevents_overlap(tmp_path):
