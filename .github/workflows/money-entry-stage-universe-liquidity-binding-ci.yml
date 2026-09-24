@@ -4,8 +4,12 @@ on:
   pull_request:
     paths:
       - 'money_entry_stage_universe_liquidity_binding_v01.sql'
+      - 'money_entry_stage_universe_liquidity_binding_v02.sql'
+      - 'money_entry_stage_universe_liquidity_binding_v03.sql'
       - 'money_entry_stage_single_writer.sql'
       - 'tests/test_money_entry_stage_universe_liquidity_binding_v01.py'
+      - 'tests/test_money_entry_stage_universe_liquidity_binding_v02.py'
+      - 'tests/test_money_entry_stage_universe_liquidity_binding_v03.py'
       - '.github/workflows/money-entry-stage-universe-liquidity-binding-ci.yml'
 
 permissions:
@@ -21,4 +25,9 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install --disable-pip-version-check pytest
       - name: Verify forward-only fail-closed universe binding contract
-        run: python -m pytest -q tests/test_money_entry_stage_universe_liquidity_binding_v01.py tests/test_production_gates_v03.py
+        run: >-
+          python -m pytest -q
+          tests/test_money_entry_stage_universe_liquidity_binding_v01.py
+          tests/test_money_entry_stage_universe_liquidity_binding_v02.py
+          tests/test_money_entry_stage_universe_liquidity_binding_v03.py
+          tests/test_production_gates_v03.py
