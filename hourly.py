@@ -7,9 +7,12 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Mapping
 
 
 DEFAULT_SCAN_INTERVAL_MINUTES = 20
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 def _validated_interval_minutes(value: int) -> int:
@@ -21,21 +24,19 @@ def _validated_interval_minutes(value: int) -> int:
     return interval
 
 
+def _utc(value: datetime | None = None) -> datetime:
+    current = value or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    return current.astimezone(timezone.utc)
+
+
 def next_scan_at(
     now: datetime | None = None,
     interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
 ) -> datetime:
-    """Return the next aligned UTC scanner boundary.
-
-    A 20-minute cadence produces :00, :20 and :40. The function always returns
-    a future boundary, including when called exactly on one, so the daemon
-    cannot immediately double-run after completing a scan.
-    """
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    current = current.astimezone(timezone.utc)
-
+    """Return the next aligned UTC scanner boundary."""
+    current = _utc(now)
     interval = _validated_interval_minutes(interval_minutes)
     minute_bucket = (current.minute // interval) * interval
     boundary = current.replace(
@@ -52,10 +53,7 @@ def seconds_until_next_interval(
     now: datetime | None = None,
     interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
 ) -> float:
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    current = current.astimezone(timezone.utc)
+    current = _utc(now)
     return max(
         0.0,
         (next_scan_at(current, interval_minutes) - current).total_seconds(),
@@ -65,6 +63,55 @@ def seconds_until_next_interval(
 def seconds_until_next_hour(now: datetime | None = None) -> float:
     """Backward-compatible helper retained for existing tooling/tests."""
     return seconds_until_next_interval(now, 60)
+
+
+def render_cron_burst_enabled(
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    """Detect the Render cron job without enabling burst mode in the web app.
+
+    The production Render cron job historically runs:
+        python3 hourly.py --once
+
+    Render cron jobs expose RENDER_SERVICE_NAME but do not need a web PORT.
+    The dashboard web service has PORT, so it must remain single-scan when a
+    human presses Run Fresh Scan.
+
+    ALPHA_HUNTER_RENDER_BURST_MODE explicitly overrides auto-detection.
+    """
+    env = environ if environ is not None else os.environ
+    override = str(
+        env.get("ALPHA_HUNTER_RENDER_BURST_MODE", "")
+    ).strip().lower()
+
+    if override in _TRUE_VALUES:
+        return True
+    if override in _FALSE_VALUES:
+        return False
+
+    return bool(env.get("RENDER_SERVICE_NAME")) and not bool(env.get("PORT"))
+
+
+def remaining_burst_boundaries(
+    now: datetime | None = None,
+    interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
+) -> list[datetime]:
+    """Return remaining aligned boundaries in the current UTC hour.
+
+    The initial Render cron invocation performs the first full scan immediately.
+    This helper returns only later boundaries, e.g. :20 and :40 for a 20-minute
+    cadence. Missed boundaries are never backfilled with a late duplicate scan.
+    """
+    current = _utc(now)
+    interval = _validated_interval_minutes(interval_minutes)
+    hour = current.replace(minute=0, second=0, microsecond=0)
+
+    boundaries: list[datetime] = []
+    for minute in range(interval, 60, interval):
+        candidate = hour + timedelta(minutes=minute)
+        if candidate > current:
+            boundaries.append(candidate)
+    return boundaries
 
 
 def acquire_lock(lock_path: Path) -> bool:
@@ -93,11 +140,9 @@ def run_once(
 ) -> int:
     """Run one canonical scanner cycle.
 
-    Intermediate 20-minute cycles run only run.py. The top-of-hour cycle keeps
-    the existing performance/feature/outcome auxiliary jobs. run.py already
-    persists canonical snapshots, signals and signal features, so intermediate
-    cycles still provide the full discovery/S1-S10 evidence surface without
-    multiplying slower downstream maintenance work.
+    Intermediate 20-minute cycles run only run.py. The first/top-of-hour cycle
+    keeps the existing performance/feature/outcome auxiliary jobs. run.py
+    persists canonical snapshots, signals and signal features on every cycle.
     """
     lock_path = project_root / ".alpha-hunter.lock"
     if not acquire_lock(lock_path):
@@ -126,7 +171,7 @@ def run_once(
         if not run_auxiliary_jobs:
             print(
                 "Fast canonical scan complete; hourly auxiliary jobs deferred "
-                "to the :00 cycle.",
+                "to the first cycle.",
                 flush=True,
             )
             return 0
@@ -173,6 +218,57 @@ def run_once(
         release_lock(lock_path)
 
 
+def run_render_cron_burst(
+    project_root: Path,
+    config: str,
+    *,
+    interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
+) -> int:
+    """Use one hourly Render cron invocation to produce :00/:20/:40 scans.
+
+    The external Render schedule can remain hourly. The cron process stays
+    alive for the current hour, runs the initial full cycle immediately, then
+    scanner-only cycles at the remaining aligned boundaries. It exits before
+    the next hourly invocation, avoiding overlap.
+
+    A failed intermediate scan does not prevent later boundaries from running;
+    the first non-zero return code is returned at the end for cron visibility.
+    """
+    interval = _validated_interval_minutes(interval_minutes)
+    first_code = run_once(
+        project_root,
+        config,
+        run_auxiliary_jobs=True,
+    )
+    overall_code = first_code
+
+    for scheduled_at in remaining_burst_boundaries(
+        datetime.now(timezone.utc),
+        interval,
+    ):
+        delay = max(
+            0.0,
+            (scheduled_at - datetime.now(timezone.utc)).total_seconds(),
+        )
+        print(
+            "Render cron burst next canonical scan at "
+            f"{scheduled_at.isoformat()} "
+            f"(in {delay:.0f} seconds)",
+            flush=True,
+        )
+        time.sleep(delay)
+
+        code = run_once(
+            project_root,
+            config,
+            run_auxiliary_jobs=False,
+        )
+        if overall_code == 0 and code != 0:
+            overall_code = code
+
+    return overall_code
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -184,7 +280,10 @@ def main() -> int:
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Run one full scanner + auxiliary cycle and exit",
+        help=(
+            "Run once and exit outside Render cron. In the Render cron runtime, "
+            "automatically hold the job for aligned :20/:40 scanner-only cycles."
+        ),
     )
     parser.add_argument(
         "--interval-minutes",
@@ -198,13 +297,6 @@ def main() -> int:
     args = parser.parse_args()
     project_root = Path(__file__).resolve().parent
 
-    if args.once:
-        return run_once(
-            project_root,
-            args.config,
-            run_auxiliary_jobs=True,
-        )
-
     configured_interval = (
         args.interval_minutes
         if args.interval_minutes is not None
@@ -216,6 +308,25 @@ def main() -> int:
         )
     )
     interval = _validated_interval_minutes(configured_interval)
+
+    if args.once:
+        if render_cron_burst_enabled():
+            print(
+                "Render cron runtime detected: enabling aligned "
+                f"{interval}-minute canonical burst.",
+                flush=True,
+            )
+            return run_render_cron_burst(
+                project_root,
+                args.config,
+                interval_minutes=interval,
+            )
+
+        return run_once(
+            project_root,
+            args.config,
+            run_auxiliary_jobs=True,
+        )
 
     while True:
         now = datetime.now(timezone.utc)
@@ -229,8 +340,6 @@ def main() -> int:
         )
         time.sleep(delay)
 
-        # Preserve expensive auxiliary maintenance at the protected top-of-hour
-        # cycle while giving discovery/S1-S10 a 20-minute observation cadence.
         run_auxiliary = scheduled_at.minute == 0
         code = run_once(
             project_root,
