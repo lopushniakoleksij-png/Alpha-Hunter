@@ -1,0 +1,57 @@
+name: Render Canonical Scan Cadence v0.1 CI
+
+on:
+  pull_request:
+    paths:
+      - 'hourly.py'
+      - 'tests/test_storage.py'
+      - '.github/workflows/render-canonical-scan-cadence-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'hourly.py'
+      - 'tests/test_storage.py'
+      - '.github/workflows/render-canonical-scan-cadence-v01-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Compile scheduler
+        run: python -m py_compile hourly.py
+      - name: Run cadence and storage regressions
+        run: python -m pytest -q tests/test_storage.py
+      - name: Verify production cadence contract
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("hourly.py").read_text(encoding="utf-8")
+          required = [
+              "DEFAULT_SCAN_INTERVAL_MINUTES = 20",
+              "run_auxiliary = scheduled_at.minute == 0",
+              "run_auxiliary_jobs=run_auxiliary",
+              "Fast canonical scan complete",
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit(f"missing cadence contract: {missing}")
+          forbidden = [
+              "place_order(",
+              "cancel_order(",
+              "modify_order(",
+              "set_leverage(",
+          ]
+          hits = [item for item in forbidden if item.lower() in text.lower()]
+          if hits:
+              raise SystemExit(f"scheduler must not gain order authority: {hits}")
+          PY
