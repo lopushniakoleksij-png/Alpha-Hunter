@@ -387,8 +387,14 @@ def test_signal_and_feature_payloads_are_compact_not_full_symbol_copies():
     assert "multi_strategy_engine" in child_rows[0]["payload"]
 
     parent_rows = json.loads(session.calls[0][1]["data"])
-    assert "symbols" not in parent_rows[0]["payload"]
-    assert parent_rows[0]["payload"]["_storage_contract"] == "snapshot-parent-v0.2"
+    parent_payload = parent_rows[0]["payload"]
+    assert parent_payload["_storage_contract"] == "snapshot-parent-v0.2"
+    assert len(parent_payload["symbols"]) == 1
+    assert parent_payload["symbols"][0]["symbol"] == "SUIUSDT"
+    assert parent_payload["symbols"][0]["market_phase"] == "IGNITION"
+    assert "timeframes" not in parent_payload["symbols"][0]
+    assert "multi_strategy_engine" not in parent_payload["symbols"][0]
+    assert "microstructure" not in parent_payload["symbols"][0]
 
     readiness_rows = json.loads(session.calls[4][1]["data"])
     assert readiness_rows[0]["symbol"] == "SUIUSDT"
