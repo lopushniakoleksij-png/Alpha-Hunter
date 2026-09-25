@@ -25,6 +25,7 @@ class SupabaseConfig:
     key: str
     snapshot_table: str = "alpha_hunter_snapshots"
     symbol_table: str = "alpha_hunter_symbol_snapshots"
+    readiness_table: str = "alpha_hunter_readiness_observations_v01"
     timeout_seconds: int = 15
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
@@ -43,6 +44,10 @@ class SupabaseConfig:
             key=key,
             snapshot_table=storage.get("snapshot_table", "alpha_hunter_snapshots"),
             symbol_table=storage.get("symbol_table", "alpha_hunter_symbol_snapshots"),
+            readiness_table=storage.get(
+                "readiness_table",
+                "alpha_hunter_readiness_observations_v01",
+            ),
             timeout_seconds=int(storage.get("timeout_seconds", 15)),
             max_retries=max(0, int(storage.get("max_retries", 2))),
             retry_backoff_seconds=max(
@@ -50,6 +55,17 @@ class SupabaseConfig:
                 float(storage.get("retry_backoff_seconds", 1.0)),
             ),
         )
+
+
+PARENT_STORAGE_CONTRACT = "snapshot-parent-v0.2"
+
+
+def compact_parent_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Store top-level run evidence once; symbol evidence lives in child rows."""
+    payload = dict(snapshot)
+    payload.pop("symbols", None)
+    payload["_storage_contract"] = PARENT_STORAGE_CONTRACT
+    return payload
 
 
 def build_run_id(snapshot: dict[str, Any]) -> str:
@@ -176,21 +192,64 @@ class SupabaseStorage:
                     if expected and actual_identity.get(key) != expected:
                         break
                 else:
-                    snapshot = dict(payload)
-                    snapshot.setdefault("run_id", row.get("run_id"))
-                    snapshot.setdefault(
-                        "collected_at_utc",
-                        row.get("collected_at_utc"),
-                    )
-                    return snapshot
+                    return self._hydrate_snapshot(row, payload)
                 continue
 
-            snapshot = dict(payload)
-            snapshot.setdefault("run_id", row.get("run_id"))
-            snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
-            return snapshot
+            return self._hydrate_snapshot(row, payload)
 
         return None
+
+    def _hydrate_snapshot(
+        self,
+        row: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        snapshot = dict(payload)
+        snapshot.setdefault("run_id", row.get("run_id"))
+        snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
+
+        if isinstance(snapshot.get("symbols"), list):
+            return snapshot
+
+        run_id = str(snapshot.get("run_id") or "")
+        if not run_id:
+            raise SupabaseStorageError(
+                "Compact snapshot parent is missing run_id"
+            )
+
+        response = self.request_with_retry(
+            "get",
+            f"{self.settings.url}/rest/v1/{self.settings.symbol_table}",
+            params={
+                "select": "symbol,payload",
+                "run_id": f"eq.{run_id}",
+                "order": "symbol.asc",
+                "limit": "2000",
+            },
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code != 200:
+            body = response.text[:500]
+            raise SupabaseStorageError(
+                "Supabase snapshot hydration failed: "
+                f"HTTP {response.status_code}: {body}"
+            )
+
+        try:
+            rows = response.json()
+        except ValueError as exc:
+            raise SupabaseStorageError(
+                "Supabase snapshot hydration returned invalid JSON"
+            ) from exc
+
+        snapshot["symbols"] = [
+            child.get("payload")
+            for child in rows
+            if isinstance(child, dict)
+            and isinstance(child.get("payload"), dict)
+        ]
+        return snapshot
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
         if not rows:
@@ -222,7 +281,7 @@ class SupabaseStorage:
             "product_type": snapshot.get("product_type"),
             "symbol_count": len(snapshot.get("symbols", [])),
             "error_count": error_count,
-            "payload": snapshot,
+            "payload": compact_parent_snapshot(snapshot),
         }]
         children = []
         for item in snapshot.get("symbols", []):
@@ -284,6 +343,34 @@ class SupabaseStorage:
             row["symbol"]: row["signal_id"]
             for row in signal_rows
         }
+        readiness_rows: list[dict[str, Any]] = []
+        for item in valid_symbols:
+            symbol = str(item.get("symbol") or "")
+            if not symbol:
+                continue
+            setup = item.get("execution_setup", {})
+            if not isinstance(setup, dict):
+                setup = {}
+            readiness_rows.append({
+                "run_id": run_id,
+                "symbol": symbol,
+                "observed_at_utc": snapshot.get("collected_at_utc"),
+                "state": item.get("state"),
+                "direction": setup.get("direction") or item.get("direction"),
+                "trade_permission": bool(item.get("trade_permission", False)),
+                "v7_trade_ready": bool(item.get("v7_trade_ready", False)),
+                "reference_price": item.get("last_price"),
+                "entry_price": setup.get("entry"),
+                "stop_loss": setup.get("stop"),
+                "take_profit": setup.get("target"),
+                "reward_risk": setup.get("rr"),
+                "lifecycle_id": item.get("lifecycle_id") or item.get("episode_id"),
+                "t1_id": item.get("t1_id"),
+                "lifecycle_stage": item.get("lifecycle_stage") or item.get("state"),
+                "archetype": item.get("archetype"),
+                "capital_risk_status": item.get("capital_risk_status"),
+            })
+
         canonical_feature_rows: list[dict[str, Any]] = []
         for row in feature_rows:
             symbol = str(row.get("symbol") or "")
@@ -301,5 +388,10 @@ class SupabaseStorage:
             "alpha_hunter_signal_features",
             canonical_feature_rows,
             "signal_id",
+        )
+        self._upsert(
+            self.settings.readiness_table,
+            readiness_rows,
+            "run_id,symbol",
         )
         return run_id
