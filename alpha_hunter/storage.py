@@ -60,10 +60,45 @@ class SupabaseConfig:
 PARENT_STORAGE_CONTRACT = "snapshot-parent-v0.2"
 
 
+def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
+    setup = item.get("execution_setup", {})
+    if not isinstance(setup, dict):
+        setup = {}
+    return {
+        "symbol": item.get("symbol"),
+        "state": item.get("state"),
+        "direction": setup.get("direction") or item.get("direction"),
+        "trade_permission": bool(item.get("trade_permission", False)),
+        "v7_trade_ready": bool(item.get("v7_trade_ready", False)),
+        "last_price": item.get("last_price"),
+        "execution_setup": {
+            "direction": setup.get("direction"),
+            "entry": setup.get("entry"),
+            "stop": setup.get("stop"),
+            "target": setup.get("target"),
+            "targets": setup.get("targets"),
+            "rr": setup.get("rr"),
+        },
+        "lifecycle_id": item.get("lifecycle_id") or item.get("episode_id"),
+        "t1_id": item.get("t1_id"),
+        "lifecycle_stage": item.get("lifecycle_stage") or item.get("state"),
+        "archetype": item.get("archetype"),
+        "capital_risk_status": item.get("capital_risk_status"),
+    }
+
+
 def compact_parent_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Store top-level run evidence once; symbol evidence lives in child rows."""
+    """Store run metadata plus a tiny 7-day traceability projection.
+
+    Full per-symbol science evidence remains in the short-lived child stream.
+    """
     payload = dict(snapshot)
-    payload.pop("symbols", None)
+    symbols = payload.pop("symbols", [])
+    payload["readiness_records"] = [
+        compact_readiness_record(item)
+        for item in symbols
+        if isinstance(item, dict) and not item.get("error")
+    ]
     payload["_storage_contract"] = PARENT_STORAGE_CONTRACT
     return payload
 
