@@ -285,3 +285,63 @@ def test_canonical_signal_and_feature_rows_share_same_signal_id():
     assert signal_rows[0]["symbol"] == "SUIUSDT"
     assert feature_rows[0]["symbol"] == "SUIUSDT"
     assert signal_rows[0]["trade_permission"] is False
+
+
+def test_signal_and_feature_payloads_are_compact_not_full_symbol_copies():
+    import json
+
+    snapshot = sample_snapshot()
+    symbol = snapshot["symbols"][0]
+    symbol.update({
+        "collected_at_utc": snapshot["collected_at_utc"],
+        "change_24h_pct": 2.5,
+        "market_phase": "IGNITION",
+        "opportunity_timing": "EARLY",
+        "execution_setup": {
+            "direction": "LONG",
+            "rr": 6.0,
+            "entry": 0.75,
+            "stop": 0.70,
+            "target": 1.05,
+        },
+        "behaviour": {"score": 81.0, "spread_pct": 0.03},
+        "timeframes": {"1H": {"indicators": {"rsi": 55}, "latest_candle": {"close": 0.75}}},
+        "multi_strategy_engine": {
+            "strategies": [
+                {"strategy_id": "S1", "evidence": {"large": "x" * 5000}}
+            ]
+        },
+        "microstructure": {"depth": {"large": "y" * 5000}},
+        "catalyst": {"notices": [{"large": "z" * 5000}]},
+    })
+
+    session = FakeSession()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=session,
+    )
+    storage.save_snapshot(snapshot)
+
+    signal_rows = json.loads(session.calls[2][1]["data"])
+    feature_rows = json.loads(session.calls[3][1]["data"])
+    signal_payload = signal_rows[0]["payload"]
+    feature_source = feature_rows[0]["source_payload"]
+
+    for compact in (signal_payload, feature_source):
+        assert compact["_storage_contract"] == "signal-source-v0.2"
+        assert compact["symbol"] == "SUIUSDT"
+        assert compact["change_24h_pct"] == 2.5
+        assert compact["market_phase"] == "IGNITION"
+        assert compact["opportunity_timing"] == "EARLY"
+        assert compact["execution_setup"]["rr"] == 6.0
+        assert compact["behaviour"]["score"] == 81.0
+        assert "timeframes" not in compact
+        assert "multi_strategy_engine" not in compact
+        assert "microstructure" not in compact
+        assert "catalyst" not in compact
+
+    # The canonical symbol snapshot remains complete for near-term science,
+    # while duplicated long-lived ledgers stay compact.
+    child_rows = json.loads(session.calls[1][1]["data"])
+    assert "timeframes" in child_rows[0]["payload"]
+    assert "multi_strategy_engine" in child_rows[0]["payload"]
