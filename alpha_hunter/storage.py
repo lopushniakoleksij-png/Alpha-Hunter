@@ -66,18 +66,28 @@ def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
         setup = {}
     return {
         "symbol": item.get("symbol"),
+        "error": item.get("error"),
         "state": item.get("state"),
         "direction": setup.get("direction") or item.get("direction"),
         "trade_permission": bool(item.get("trade_permission", False)),
         "v7_trade_ready": bool(item.get("v7_trade_ready", False)),
         "last_price": item.get("last_price"),
+        "behaviour_score": item.get("behaviour_score"),
+        "market_phase": item.get("market_phase"),
+        "opportunity_timing": item.get("opportunity_timing"),
+        "candidate_quality_status": item.get("candidate_quality_status"),
+        "rejection_reasons": item.get("rejection_reasons", []),
         "execution_setup": {
             "direction": setup.get("direction"),
             "entry": setup.get("entry"),
             "stop": setup.get("stop"),
             "target": setup.get("target"),
             "targets": setup.get("targets"),
+            "risk": setup.get("risk"),
+            "reward": setup.get("reward"),
             "rr": setup.get("rr"),
+            "reason": setup.get("reason"),
+            "checks": setup.get("checks", {}),
         },
         "lifecycle_id": item.get("lifecycle_id") or item.get("episode_id"),
         "t1_id": item.get("t1_id"),
@@ -85,7 +95,6 @@ def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
         "archetype": item.get("archetype"),
         "capital_risk_status": item.get("capital_risk_status"),
     }
-
 
 def compact_parent_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Store run metadata plus a tiny 7-day traceability projection.
@@ -97,7 +106,7 @@ def compact_parent_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     payload["readiness_records"] = [
         compact_readiness_record(item)
         for item in symbols
-        if isinstance(item, dict) and not item.get("error")
+        if isinstance(item, dict)
     ]
     payload["_storage_contract"] = PARENT_STORAGE_CONTRACT
     return payload
