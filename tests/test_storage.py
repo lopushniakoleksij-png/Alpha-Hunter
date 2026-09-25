@@ -85,13 +85,15 @@ def test_supabase_writes_parent_and_children():
     )
     run_id = storage.save_snapshot(sample_snapshot())
     assert len(run_id) == 32
-    assert len(session.calls) == 4
+    assert len(session.calls) == 5
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id,symbol"}
     assert session.calls[2][1]["params"] == {"on_conflict": "signal_id"}
     assert session.calls[3][1]["params"] == {"on_conflict": "signal_id"}
     assert session.calls[2][0].endswith("/rest/v1/alpha_hunter_signals")
     assert session.calls[3][0].endswith("/rest/v1/alpha_hunter_signal_features")
+    assert session.calls[4][0].endswith("/rest/v1/alpha_hunter_readiness_observations_v01")
+    assert session.calls[4][1]["params"] == {"on_conflict": "run_id,symbol"}
 
 
 def test_supabase_read_retries_transient_status_then_succeeds():
@@ -153,7 +155,7 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
     run_id = storage.save_snapshot(sample_snapshot())
 
     assert len(run_id) == 32
-    assert len(session.calls) == 5
+    assert len(session.calls) == 6
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id"}
 
@@ -178,6 +180,44 @@ def test_supabase_request_exhaustion_remains_fail_closed():
         storage.load_latest_snapshot()
 
     assert len(session.calls) == 3
+
+
+def test_compact_parent_snapshot_hydrates_from_symbol_rows():
+    parent = StatusResponse(
+        200,
+        payload=[{
+            "run_id": "run-1",
+            "collected_at_utc": "2026-09-25T12:00:00+00:00",
+            "payload": {
+                "version": "0.7.1",
+                "product_type": "usdt-futures",
+                "_storage_contract": "snapshot-parent-v0.2",
+            },
+        }],
+    )
+    children = StatusResponse(
+        200,
+        payload=[
+            {"symbol": "BTCUSDT", "payload": {"symbol": "BTCUSDT", "last_price": 100.0}},
+            {"symbol": "ETHUSDT", "payload": {"symbol": "ETHUSDT", "last_price": 50.0}},
+        ],
+    )
+    session = SequencedSession([parent, children])
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url="https://example.supabase.co",
+            key="secret",
+            retry_backoff_seconds=0,
+        ),
+        session=session,
+    )
+
+    snapshot = storage.load_latest_snapshot()
+
+    assert snapshot is not None
+    assert snapshot["run_id"] == "run-1"
+    assert [row["symbol"] for row in snapshot["symbols"]] == ["BTCUSDT", "ETHUSDT"]
+    assert session.calls[1][1]["params"]["run_id"] == "eq.run-1"
 
 
 def test_seconds_until_next_hour():
@@ -345,3 +385,12 @@ def test_signal_and_feature_payloads_are_compact_not_full_symbol_copies():
     child_rows = json.loads(session.calls[1][1]["data"])
     assert "timeframes" in child_rows[0]["payload"]
     assert "multi_strategy_engine" in child_rows[0]["payload"]
+
+    parent_rows = json.loads(session.calls[0][1]["data"])
+    assert "symbols" not in parent_rows[0]["payload"]
+    assert parent_rows[0]["payload"]["_storage_contract"] == "snapshot-parent-v0.2"
+
+    readiness_rows = json.loads(session.calls[4][1]["data"])
+    assert readiness_rows[0]["symbol"] == "SUIUSDT"
+    assert readiness_rows[0]["v7_trade_ready"] is False
+    assert readiness_rows[0]["reward_risk"] == 6.0
