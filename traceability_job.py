@@ -107,7 +107,11 @@ def rebuild_ready_episodes(
 ) -> list[ReadyEpisode]:
     episodes: list[ReadyEpisode] = []
     for snapshot in snapshots:
-        symbols = snapshot.get("symbols") or []
+        symbols = (
+            snapshot.get("readiness_records")
+            or snapshot.get("symbols")
+            or []
+        )
         if not isinstance(symbols, list):
             continue
         update_ready_ledger(
