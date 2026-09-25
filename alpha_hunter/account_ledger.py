@@ -4,9 +4,7 @@ import hashlib
 import json
 from typing import Any
 
-import requests
-
-from .storage import SupabaseConfig
+from .storage import SupabaseConfig, SupabaseStorage
 
 ACCOUNT_TABLE = "alpha_hunter_account_state_snapshots"
 POSITION_TABLE = "alpha_hunter_open_position_snapshots"
@@ -257,7 +255,8 @@ def _insert_ignore(
         "Content-Type": "application/json",
         "Prefer": "resolution=ignore-duplicates,return=minimal",
     }
-    response = requests.post(
+    response = SupabaseStorage(settings).request_with_retry(
+        "post",
         f"{settings.url}/rest/v1/{table}",
         params={"on_conflict": on_conflict},
         headers=headers,

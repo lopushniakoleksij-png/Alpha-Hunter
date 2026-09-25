@@ -6,12 +6,10 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Iterator
 
-import requests
-
 from .analysis import to_float
 from .bitget import BitgetClient
 from .collector import build_instrument_map, instrument_is_allowed
-from .storage import SupabaseConfig
+from .storage import SupabaseConfig, SupabaseStorage
 
 TABLE = "alpha_hunter_universe_hourly"
 MODEL_VERSION = "7.9-universe-ledger-v2-scan"
@@ -174,7 +172,8 @@ def persist_rows(settings: SupabaseConfig, rows: list[dict[str, Any]]) -> int:
         "Content-Type": "application/json",
         "Prefer": "resolution=ignore-duplicates,return=minimal",
     }
-    response = requests.post(
+    response = SupabaseStorage(settings).request_with_retry(
+        "post",
         f"{settings.url}/rest/v1/{TABLE}",
         params={"on_conflict": "observation_id"},
         headers=headers,

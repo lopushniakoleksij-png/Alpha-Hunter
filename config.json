@@ -104,7 +104,9 @@
     "key_env": "SUPABASE_SERVICE_ROLE_KEY",
     "snapshot_table": "alpha_hunter_snapshots",
     "symbol_table": "alpha_hunter_symbol_snapshots",
-    "timeout_seconds": 15
+    "timeout_seconds": 15,
+    "max_retries": 2,
+    "retry_backoff_seconds": 1.0
   },
   "minimum_data_integrity": 88,
   "intelligence_version": "1.1",

@@ -1,6 +1,14 @@
 from datetime import datetime, timezone
 
-from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, build_run_id
+import pytest
+import requests
+
+from alpha_hunter.storage import (
+    SupabaseConfig,
+    SupabaseStorage,
+    SupabaseStorageError,
+    build_run_id,
+)
 from hourly import (
     next_scan_at,
     remaining_burst_boundaries,
@@ -22,6 +30,31 @@ class FakeSession:
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
         return FakeResponse()
+
+
+class SequencedSession:
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    post = get
+
+
+class StatusResponse:
+    def __init__(self, status_code, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        return self._payload
 
 
 def sample_snapshot():
@@ -59,6 +92,92 @@ def test_supabase_writes_parent_and_children():
     assert session.calls[3][1]["params"] == {"on_conflict": "signal_id"}
     assert session.calls[2][0].endswith("/rest/v1/alpha_hunter_signals")
     assert session.calls[3][0].endswith("/rest/v1/alpha_hunter_signal_features")
+
+
+def test_supabase_read_retries_transient_status_then_succeeds():
+    session = SequencedSession([
+        StatusResponse(503, text="temporary upstream reset"),
+        StatusResponse(200, payload=[]),
+    ])
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url="https://example.supabase.co",
+            key="secret",
+            max_retries=2,
+            retry_backoff_seconds=0,
+        ),
+        session=session,
+    )
+
+    assert storage.load_latest_snapshot() is None
+    assert len(session.calls) == 2
+
+
+def test_supabase_read_retries_timeout_then_succeeds():
+    session = SequencedSession([
+        requests.ReadTimeout("temporary timeout"),
+        StatusResponse(200, payload=[]),
+    ])
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url="https://example.supabase.co",
+            key="secret",
+            max_retries=2,
+            retry_backoff_seconds=0,
+        ),
+        session=session,
+    )
+
+    assert storage.load_latest_snapshot() is None
+    assert len(session.calls) == 2
+
+
+def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
+    session = SequencedSession([
+        StatusResponse(503, text="temporary upstream reset"),
+        StatusResponse(201),
+        StatusResponse(201),
+        StatusResponse(201),
+        StatusResponse(201),
+    ])
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url="https://example.supabase.co",
+            key="secret",
+            max_retries=2,
+            retry_backoff_seconds=0,
+        ),
+        session=session,
+    )
+
+    run_id = storage.save_snapshot(sample_snapshot())
+
+    assert len(run_id) == 32
+    assert len(session.calls) == 5
+    assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
+    assert session.calls[1][1]["params"] == {"on_conflict": "run_id"}
+
+
+def test_supabase_request_exhaustion_remains_fail_closed():
+    session = SequencedSession([
+        requests.ReadTimeout("timeout one"),
+        requests.ReadTimeout("timeout two"),
+        requests.ReadTimeout("timeout three"),
+    ])
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url="https://example.supabase.co",
+            key="secret",
+            max_retries=2,
+            retry_backoff_seconds=0,
+        ),
+        session=session,
+    )
+
+    with pytest.raises(SupabaseStorageError, match="failed after 3 attempts"):
+        storage.load_latest_snapshot()
+
+    assert len(session.calls) == 3
 
 
 def test_seconds_until_next_hour():
