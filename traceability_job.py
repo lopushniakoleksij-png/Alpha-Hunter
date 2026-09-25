@@ -85,6 +85,11 @@ def load_snapshot_window(
             continue
         if collected_dt > end:
             continue
+        if not isinstance(snapshot.get("symbols"), list):
+            readiness_records = snapshot.get("readiness_records")
+            if isinstance(readiness_records, list):
+                snapshot = dict(snapshot)
+                snapshot["symbols"] = readiness_records
         rows.append(snapshot)
     return rows
 
