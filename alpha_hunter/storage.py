@@ -241,7 +241,7 @@ class SupabaseStorage:
                 "funding_rate": item.get("funding_rate"),
                 "data_integrity_score": item.get("data_integrity_score"),
                 "error": item.get("error"),
-                "payload": compact_source_payload(item),
+                "payload": item,
             })
 
         signal_rows: list[dict[str, Any]] = []
@@ -276,7 +276,7 @@ class SupabaseStorage:
                 "stop_loss": setup.get("stop"),
                 "take_profit": setup.get("target"),
                 "reference_price": reference_price,
-                "payload": item,
+                "payload": compact_source_payload(item),
             })
 
         feature_rows = extract_feature_rows(snapshot)
