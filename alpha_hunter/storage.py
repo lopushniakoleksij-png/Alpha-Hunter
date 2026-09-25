@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -15,6 +16,9 @@ class SupabaseStorageError(RuntimeError):
     """Raised when configured Supabase persistence or retrieval fails."""
 
 
+RETRYABLE_SUPABASE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
 @dataclass(frozen=True)
 class SupabaseConfig:
     url: str
@@ -22,6 +26,8 @@ class SupabaseConfig:
     snapshot_table: str = "alpha_hunter_snapshots"
     symbol_table: str = "alpha_hunter_symbol_snapshots"
     timeout_seconds: int = 15
+    max_retries: int = 2
+    retry_backoff_seconds: float = 1.0
 
     @classmethod
     def from_environment(cls, config: dict[str, Any]) -> "SupabaseConfig | None":
@@ -38,6 +44,11 @@ class SupabaseConfig:
             snapshot_table=storage.get("snapshot_table", "alpha_hunter_snapshots"),
             symbol_table=storage.get("symbol_table", "alpha_hunter_symbol_snapshots"),
             timeout_seconds=int(storage.get("timeout_seconds", 15)),
+            max_retries=max(0, int(storage.get("max_retries", 2))),
+            retry_backoff_seconds=max(
+                0.0,
+                float(storage.get("retry_backoff_seconds", 1.0)),
+            ),
         )
 
 
@@ -64,6 +75,45 @@ class SupabaseStorage:
             "Prefer": "resolution=merge-duplicates,return=minimal",
         }
 
+    def request_with_retry(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """Run an idempotent Supabase REST request with bounded retries.
+
+        Canonical writes use deterministic conflict keys, so retrying a timed-out
+        request cannot create a second evidence row. Exhaustion still raises and
+        leaves the production caller fail-closed.
+        """
+        request = getattr(self.session, method.lower(), None)
+        if request is None:
+            raise ValueError(f"Unsupported Supabase request method: {method}")
+
+        attempts = self.settings.max_retries + 1
+        for attempt in range(attempts):
+            try:
+                response = request(url, **kwargs)
+            except requests.RequestException as exc:
+                if attempt + 1 >= attempts:
+                    raise SupabaseStorageError(
+                        f"Supabase {method.upper()} failed after {attempts} "
+                        f"attempts: {exc}"
+                    ) from exc
+            else:
+                if (
+                    response.status_code not in RETRYABLE_SUPABASE_STATUS_CODES
+                    or attempt + 1 >= attempts
+                ):
+                    return response
+
+            delay = self.settings.retry_backoff_seconds * (2 ** attempt)
+            if delay > 0:
+                time.sleep(delay)
+
+        raise AssertionError("Supabase retry loop exhausted without a result")
+
     def load_latest_snapshot(
         self,
         *,
@@ -73,7 +123,8 @@ class SupabaseStorage:
     ) -> dict[str, Any] | None:
         filtered = expected_identity is not None or require_strategy_context
         limit = max(1, int(search_limit)) if filtered else 1
-        response = self.session.get(
+        response = self.request_with_retry(
+            "get",
             f"{self.settings.url}/rest/v1/{self.settings.snapshot_table}",
             params={
                 "select": "run_id,collected_at_utc,payload",
@@ -144,7 +195,8 @@ class SupabaseStorage:
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
         if not rows:
             return
-        response = self.session.post(
+        response = self.request_with_retry(
+            "post",
             f"{self.settings.url}/rest/v1/{table}",
             params={"on_conflict": on_conflict},
             headers=self.headers,

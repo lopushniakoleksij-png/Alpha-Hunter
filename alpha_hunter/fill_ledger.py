@@ -6,11 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import requests
-
 from .bitget import BitgetAPIError, BitgetClient
 from .fill_client import BitgetFillPermissionError
-from .storage import SupabaseConfig
+from .storage import SupabaseConfig, SupabaseStorage
 
 TRACEABILITY_TABLE = "alpha_hunter_fill_traceability_runs"
 FILL_TABLE = "alpha_hunter_fill_evidence"
@@ -556,7 +554,8 @@ def _insert_ignore(
         "Content-Type": "application/json",
         "Prefer": "resolution=ignore-duplicates,return=minimal",
     }
-    response = requests.post(
+    response = SupabaseStorage(settings).request_with_retry(
+        "post",
         f"{settings.url}/rest/v1/{table}",
         params={"on_conflict": on_conflict},
         headers=headers,
