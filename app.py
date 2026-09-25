@@ -740,6 +740,32 @@ async function checkScanStatus(){const b=document.getElementById('runScanButton'
 """
 
 
+DEGRADED_PAGE = """
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alpha Hunter — Data Backend Unavailable</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;margin:0;background:#0b0d10;color:#f4f4f5}
+main{max-width:760px;margin:0 auto;padding:48px 20px}
+.card{border:1px solid #30343b;border-radius:18px;padding:24px;background:#15181d}
+h1{margin-top:0} .status{font-weight:800;color:#ff5a3d}
+code{background:#23272e;padding:3px 7px;border-radius:7px}
+p{line-height:1.55;color:#d4d4d8}
+</style>
+</head>
+<body><main><div class="card">
+<h1>Alpha Hunter Dashboard</h1>
+<p class="status">DATA BACKEND TEMPORARILY UNAVAILABLE</p>
+<p>Alpha Hunter is fail-closed. No dashboard trade state is being inferred while the canonical persistence backend is unavailable.</p>
+<p>Service process: <code>online</code> · Data state: <code>unavailable</code></p>
+<p>Refresh after the persistence service recovers.</p>
+</div></main></body></html>
+"""
+
+
 @app.get("/")
 def dashboard():
     try:
@@ -750,8 +776,8 @@ def dashboard():
                 latest_test_engine_status(),
             ),
         )
-    except Exception as exc:
-        return render_template_string("<h1>Alpha Hunter Dashboard</h1><p>{{ error }}</p>", error=str(exc)), 503
+    except Exception:
+        return render_template_string(DEGRADED_PAGE), 503
 
 
 @app.get("/api/latest")
@@ -763,8 +789,12 @@ def api_latest():
                 latest_test_engine_status(),
             )
         )
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 503
+    except Exception:
+        return jsonify({
+            "error": "DATA_BACKEND_UNAVAILABLE",
+            "message": "Canonical persistence backend is temporarily unavailable.",
+            "fail_closed": True,
+        }), 503
 
 
 @app.get("/api/build")
