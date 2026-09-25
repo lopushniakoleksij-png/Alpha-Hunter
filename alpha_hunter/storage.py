@@ -73,6 +73,9 @@ def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
         "v7_trade_ready": bool(item.get("v7_trade_ready", False)),
         "last_price": item.get("last_price"),
         "behaviour_score": item.get("behaviour_score"),
+        "previous_behaviour_score": item.get("previous_behaviour_score"),
+        "open_interest_change_pct": item.get("open_interest_change_pct"),
+        "behaviour": item.get("behaviour", {}),
         "market_phase": item.get("market_phase"),
         "opportunity_timing": item.get("opportunity_timing"),
         "candidate_quality_status": item.get("candidate_quality_status"),
@@ -102,8 +105,8 @@ def compact_parent_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     Full per-symbol science evidence remains in the short-lived child stream.
     """
     payload = dict(snapshot)
-    symbols = payload.pop("symbols", [])
-    payload["readiness_records"] = [
+    symbols = payload.get("symbols", [])
+    payload["symbols"] = [
         compact_readiness_record(item)
         for item in symbols
         if isinstance(item, dict)
@@ -252,7 +255,10 @@ class SupabaseStorage:
         snapshot.setdefault("run_id", row.get("run_id"))
         snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
 
-        if isinstance(snapshot.get("symbols"), list):
+        if (
+            snapshot.get("_storage_contract") != PARENT_STORAGE_CONTRACT
+            and isinstance(snapshot.get("symbols"), list)
+        ):
             return snapshot
 
         run_id = str(snapshot.get("run_id") or "")
