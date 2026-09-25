@@ -9,7 +9,7 @@ from typing import Any
 
 import requests
 
-from .feature_capture import extract_feature_rows
+from .feature_capture import compact_source_payload, extract_feature_rows
 
 
 class SupabaseStorageError(RuntimeError):
@@ -241,7 +241,7 @@ class SupabaseStorage:
                 "funding_rate": item.get("funding_rate"),
                 "data_integrity_score": item.get("data_integrity_score"),
                 "error": item.get("error"),
-                "payload": item,
+                "payload": compact_source_payload(item),
             })
 
         signal_rows: list[dict[str, Any]] = []
