@@ -643,6 +643,76 @@ def _btc_regime(
 
 
 # =========================================================
+# COMPACT CANONICAL SOURCE PAYLOAD
+# =========================================================
+
+COMPACT_SOURCE_PAYLOAD_VERSION = "signal-source-v0.2"
+
+_COMPACT_SOURCE_KEYS = (
+    "symbol",
+    "collected_at_utc",
+    "exchange_timestamp_ms",
+    "last_price",
+    "mark_price",
+    "index_price",
+    "bid_price",
+    "ask_price",
+    "change_24h_pct",
+    "change_3d_pct",
+    "quote_volume_24h",
+    "open_interest",
+    "open_interest_change_pct",
+    "funding_rate",
+    "funding_interval_hours",
+    "next_funding_time_ms",
+    "support",
+    "resistance",
+    "compression_base",
+    "breakout_trigger",
+    "average_7d",
+    "distance_from_compression_base_pct",
+    "distance_above_breakout_trigger_pct",
+    "distance_from_7d_average_pct",
+    "state",
+    "previous_state",
+    "state_changed",
+    "trade_permission",
+    "trade_permission_reason",
+    "data_integrity_score",
+    "market_phase",
+    "opportunity_timing",
+    "candidate_quality_status",
+    "rejection_reasons",
+    "discovery_permission",
+    "notification_permission",
+    "v7_trade_ready",
+    "execution_setup",
+    "intelligence",
+    "behaviour",
+    "decision_trace",
+)
+
+
+def compact_source_payload(
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist only decision/science fields already materialized elsewhere.
+
+    The full per-symbol scanner record is already stored in the short-lived
+    canonical snapshot stream. Signal features must not create a second full
+    JSON copy of timeframes, strategy arrays, microstructure and catalyst
+    evidence for every symbol on every scan.
+    """
+    compact = {
+        key: item.get(key)
+        for key in _COMPACT_SOURCE_KEYS
+        if key in item
+    }
+    compact["_storage_contract"] = COMPACT_SOURCE_PAYLOAD_VERSION
+    return compact
+
+
+# =========================================================
 # FEATURE EXTRACTION
 # =========================================================
 
@@ -1171,7 +1241,9 @@ def extract_feature_rows(
                 feature_payload,
 
             "source_payload":
-                item,
+                compact_source_payload(
+                    item
+                ),
         })
 
     return rows
