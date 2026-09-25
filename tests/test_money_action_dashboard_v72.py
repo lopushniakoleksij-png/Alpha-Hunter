@@ -1,3 +1,4 @@
+import app as app_module
 from app import build_money_action, dashboard_payload, required_entry_for_rr
 
 
@@ -95,3 +96,25 @@ def test_dashboard_does_not_promote_research_to_action_queue():
     assert [row["symbol"] for row in data["actionable"]] == ["TESTUSDT"]
     assert data["best_action"]["symbol"] == "TESTUSDT"
     assert any(row["symbol"] == "BADUSDT" for row in data["research"])
+
+
+def test_dashboard_backend_failure_is_safe_and_fail_closed(monkeypatch):
+    def fail_snapshot():
+        raise RuntimeError("sensitive upstream URL should never render")
+
+    monkeypatch.setattr(app_module, "latest_snapshot", fail_snapshot)
+    client = app_module.app.test_client()
+
+    page = client.get("/")
+    assert page.status_code == 503
+    body = page.get_data(as_text=True)
+    assert "DATA BACKEND TEMPORARILY UNAVAILABLE" in body
+    assert "fail-closed" in body
+    assert "sensitive upstream URL" not in body
+
+    api = client.get("/api/latest")
+    assert api.status_code == 503
+    payload = api.get_json()
+    assert payload["error"] == "DATA_BACKEND_UNAVAILABLE"
+    assert payload["fail_closed"] is True
+    assert "sensitive upstream URL" not in api.get_data(as_text=True)
