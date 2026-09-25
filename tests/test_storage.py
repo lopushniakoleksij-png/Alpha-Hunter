@@ -141,6 +141,7 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
         StatusResponse(201),
         StatusResponse(201),
         StatusResponse(201),
+        StatusResponse(201),
     ])
     storage = SupabaseStorage(
         SupabaseConfig(
