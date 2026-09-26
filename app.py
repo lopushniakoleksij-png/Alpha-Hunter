@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,11 @@ SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_TABLE = os.getenv("ALPHA_HUNTER_SNAPSHOT_TABLE", "alpha_hunter_snapshots")
 APP_VERSION = os.getenv("ALPHA_HUNTER_VERSION", "7.2")
 SERVICE_STARTED_AT_UTC = datetime.now(timezone.utc).isoformat()
+
+SUPABASE_READ_ATTEMPTS = 3
+SUPABASE_READ_TIMEOUT_SECONDS = 12
+SUPABASE_RETRY_BACKOFF_SECONDS = 0.75
+SUPABASE_TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
 
 REFERENCE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"}
 
@@ -91,45 +97,71 @@ def supabase_headers() -> dict[str, str]:
     }
 
 
-def latest_snapshot() -> dict[str, Any]:
+def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]]:
+    """Read Supabase with bounded retries for transient infrastructure failures.
+
+    Dashboard reads are idempotent. We retry only connection failures and
+    transient HTTP statuses, then fail closed rather than displaying stale
+    trading evidence as if it were current.
+    """
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError("Supabase environment variables are not configured")
 
-    response = requests.get(
-        f"{SUPABASE_URL}/rest/v1/{SNAPSHOT_TABLE}",
-        params={
+    for attempt in range(1, SUPABASE_READ_ATTEMPTS + 1):
+        try:
+            response = requests.get(
+                f"{SUPABASE_URL}/rest/v1/{table}",
+                params=params,
+                headers=supabase_headers(),
+                timeout=SUPABASE_READ_TIMEOUT_SECONDS,
+            )
+        except requests.RequestException:
+            if attempt >= SUPABASE_READ_ATTEMPTS:
+                raise
+            time.sleep(SUPABASE_RETRY_BACKOFF_SECONDS * attempt)
+            continue
+
+        if (
+            response.status_code in SUPABASE_TRANSIENT_STATUSES
+            and attempt < SUPABASE_READ_ATTEMPTS
+        ):
+            time.sleep(SUPABASE_RETRY_BACKOFF_SECONDS * attempt)
+            continue
+
+        response.raise_for_status()
+        rows = response.json()
+        if not isinstance(rows, list):
+            raise RuntimeError("Unexpected Supabase response shape")
+        return rows
+
+    raise RuntimeError("Supabase read retry budget exhausted")
+
+
+def latest_snapshot() -> dict[str, Any]:
+    rows = supabase_get_rows(
+        SNAPSHOT_TABLE,
+        {
             "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
             "order": "collected_at_utc.desc",
             "limit": "1",
         },
-        headers=supabase_headers(),
-        timeout=15,
     )
-    response.raise_for_status()
-    rows = response.json()
     if not rows:
         raise RuntimeError("No Alpha Hunter snapshots found")
     return rows[0].get("payload") or {}
 
 
 def latest_test_engine_status() -> dict[str, Any]:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        return {}
     try:
-        response = requests.get(
-            f"{SUPABASE_URL}/rest/v1/alpha_hunter_test_engine_latest_v01",
-            params={"select": "*", "limit": "1"},
-            headers=supabase_headers(),
-            timeout=15,
+        rows = supabase_get_rows(
+            "alpha_hunter_test_engine_latest_v01",
+            {"select": "*", "limit": "1"},
         )
-        response.raise_for_status()
-        rows = response.json()
-        if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        if rows and isinstance(rows[0], dict):
             return rows[0]
-    except requests.RequestException:
+    except (requests.RequestException, RuntimeError, ValueError):
         return {}
     return {}
-
 
 def safe_float(value: Any) -> float:
     try:
@@ -740,6 +772,38 @@ async function checkScanStatus(){const b=document.getElementById('runScanButton'
 """
 
 
+DASHBOARD_RECOVERY_PAGE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="10">
+  <title>Alpha Hunter — recovering</title>
+  <style>
+    body{margin:0;background:#071018;color:#e7edf2;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .wrap{max-width:720px;margin:0 auto;padding:28px 18px}
+    .card{margin-top:18px;background:#0d1923;border:1px solid #1b3040;border-radius:16px;padding:20px}
+    h1{margin:0 0 8px;font-size:28px}.muted{color:#91a3b1;line-height:1.55}
+    .warn{color:#ffbf69;font-weight:700}.ok{color:#75e6b5}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Alpha Hunter Dashboard</h1>
+    <div class="card">
+      <div class="warn">LIVE DATA TEMPORARILY UNAVAILABLE</div>
+      <p class="muted">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
+      <p class="muted">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
+      <p class="muted">This page retries automatically every 10 seconds.</p>
+      <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+
+
 @app.get("/")
 def dashboard():
     try:
@@ -750,8 +814,12 @@ def dashboard():
                 latest_test_engine_status(),
             ),
         )
-    except Exception as exc:
-        return render_template_string("<h1>Alpha Hunter Dashboard</h1><p>{{ error }}</p>", error=str(exc)), 503
+    except Exception:
+        app.logger.exception("Dashboard live-data read failed")
+        return render_template_string(
+            DASHBOARD_RECOVERY_PAGE,
+            build=build_identity(),
+        ), 503
 
 
 @app.get("/api/latest")
@@ -763,8 +831,13 @@ def api_latest():
                 latest_test_engine_status(),
             )
         )
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 503
+    except Exception:
+        app.logger.exception("API latest live-data read failed")
+        return jsonify({
+            "error": "live_data_unavailable",
+            "retry_after_seconds": 10,
+            "build": build_identity(),
+        }), 503
 
 
 @app.get("/api/build")
