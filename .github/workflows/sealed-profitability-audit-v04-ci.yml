@@ -1,0 +1,88 @@
+name: Sealed Profitability Audit v0.4 CI
+
+on:
+  pull_request:
+    paths:
+      - 'realtime_profitability_monitor_performance_v02.sql'
+      - 'sealed_profitability_audit_source_scope_v02.sql'
+      - 'sealed_profitability_cadence_staleness_v03.sql'
+      - 'sealed_profitability_integrity_gate_v04.sql'
+      - 'realtime_test_engine_db_refresh_v02.sql'
+      - 'execution_cost_benchmark_collection_v03.sql'
+      - 'shadow_decision_quote_ledger_v01.sql'
+      - 'test_engine_authoritative_latest_v03.sql'
+      - 'sealed_decision_quote_status_v01.sql'
+      - 'private_fill_cost_readiness_v01.sql'
+      - 'sealed_profitability_sample_integrity_performance_v03.sql'
+      - 'tests/test_realtime_profitability_monitor_performance_v02.py'
+      - 'tests/test_sealed_profitability_audit_source_scope_v02.py'
+      - 'tests/test_sealed_profitability_cadence_staleness_v03.py'
+      - 'tests/test_sealed_profitability_integrity_gate_v04.py'
+      - 'tests/test_realtime_test_engine_db_refresh_v02.py'
+      - 'tests/test_execution_cost_benchmark_collection_v03.py'
+      - 'tests/test_shadow_decision_quote_ledger_v01.py'
+      - 'tests/test_test_engine_authoritative_latest_v03.py'
+      - 'tests/test_sealed_decision_quote_status_v01.py'
+      - 'tests/test_private_fill_cost_readiness_v01.py'
+      - 'tests/test_sealed_profitability_sample_integrity_performance_v03.py'
+      - '.github/workflows/sealed-profitability-audit-v04-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check pytest
+      - name: Run sealed profitability audit tests
+        run: |
+          python -m pytest -q \
+            tests/test_realtime_profitability_monitor_performance_v02.py \
+            tests/test_sealed_profitability_audit_source_scope_v02.py \
+            tests/test_sealed_profitability_cadence_staleness_v03.py \
+            tests/test_sealed_profitability_integrity_gate_v04.py \
+            tests/test_realtime_test_engine_db_refresh_v02.py \
+            tests/test_execution_cost_benchmark_collection_v03.py \
+            tests/test_shadow_decision_quote_ledger_v01.py \
+            tests/test_test_engine_authoritative_latest_v03.py \
+            tests/test_sealed_decision_quote_status_v01.py \
+            tests/test_private_fill_cost_readiness_v01.py \
+            tests/test_sealed_profitability_sample_integrity_performance_v03.py
+      - name: Reject execution authority
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          paths = [
+              "realtime_profitability_monitor_performance_v02.sql",
+              "sealed_profitability_audit_source_scope_v02.sql",
+              "sealed_profitability_cadence_staleness_v03.sql",
+              "sealed_profitability_integrity_gate_v04.sql",
+              "realtime_test_engine_db_refresh_v02.sql",
+              "execution_cost_benchmark_collection_v03.sql",
+              "shadow_decision_quote_ledger_v01.sql",
+              "test_engine_authoritative_latest_v03.sql",
+              "sealed_decision_quote_status_v01.sql",
+              "private_fill_cost_readiness_v01.sql",
+              "sealed_profitability_sample_integrity_performance_v03.sql",
+          ]
+          text = "\n".join(
+              Path(p).read_text(encoding="utf-8").lower() for p in paths
+          )
+          forbidden = [
+              "trade_permission=true",
+              "trade_permission = true",
+              "place_order",
+              "cancel_order",
+              "modify_order",
+              "set_leverage",
+          ]
+          hits = [marker for marker in forbidden if marker in text]
+          if hits:
+              raise SystemExit(f"forbidden authority marker(s): {hits}")
+          PY
