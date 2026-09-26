@@ -80,3 +80,9 @@ def test_monitor_has_time_indexes_for_forward_only_counts():
     ]
     for marker in required:
         assert marker in LOWER
+
+
+def test_monitor_exposes_only_the_latest_preregistered_spec():
+    spec_cte = LOWER.split("with spec as (", 1)[1].split("),\nlatest_scan as (", 1)[0]
+    assert "order by s.preregistered_at_utc desc" in spec_cte
+    assert "limit 1" in spec_cte
