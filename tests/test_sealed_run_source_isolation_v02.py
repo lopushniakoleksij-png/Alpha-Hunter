@@ -28,6 +28,10 @@ def test_validation_identity_includes_explicit_run_source(monkeypatch):
     )
     identity = build_validation_identity(config())
     assert identity["run_source"] == "GITHUB_REALTIME_HOURLY"
+    assert identity["scientific_fingerprint_version"] == "scientific-fingerprint-v0.1"
+    assert len(identity["scientific_fingerprint_sha256"]) == 64
+    assert identity["scientific_fingerprint_file_count"] > 0
+    assert identity["runtime_versions"]["python"]
     assert identity["test_contract"] == "sealed-profitability-v0.1"
 
 
