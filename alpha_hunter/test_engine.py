@@ -12,7 +12,9 @@ from .storage import SupabaseConfig
 
 
 ENGINE_VERSION = "realtime-test-engine-v0.1"
+AUTHORITATIVE_ENGINE_VERSION = "realtime-test-engine-db-v0.2"
 MAX_LIVE_SCAN_AGE_SECONDS = 5400.0
+MAX_AUTHORITATIVE_AGE_SECONDS = 1500.0
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,55 @@ class RealtimeTestEngine:
             return None
         row = payload[0]
         return row if isinstance(row, dict) else None
+
+    def load_authoritative(self) -> TestEngineReport:
+        row = self._get_one("alpha_hunter_test_engine_latest_v01")
+        if row is None:
+            raise RuntimeError("Authoritative DB test-engine status is missing")
+
+        engine_version = str(row.get("engine_version") or "")
+        if engine_version != AUTHORITATIVE_ENGINE_VERSION:
+            raise RuntimeError(
+                "Authoritative DB test-engine status is not current: "
+                f"engine_version={engine_version or 'MISSING'}"
+            )
+
+        evaluated_raw = str(row.get("evaluated_at_utc") or "")
+        try:
+            evaluated_at = datetime.fromisoformat(
+                evaluated_raw.replace("Z", "+00:00")
+            )
+        except ValueError as exc:
+            raise RuntimeError(
+                "Authoritative DB test-engine timestamp is invalid"
+            ) from exc
+
+        if evaluated_at.tzinfo is None:
+            evaluated_at = evaluated_at.replace(tzinfo=timezone.utc)
+        age_seconds = (
+            datetime.now(timezone.utc)
+            - evaluated_at.astimezone(timezone.utc)
+        ).total_seconds()
+        if age_seconds < -60.0 or age_seconds > MAX_AUTHORITATIVE_AGE_SECONDS:
+            raise RuntimeError(
+                "Authoritative DB test-engine status is stale: "
+                f"age_seconds={age_seconds:.1f}"
+            )
+
+        if self._bool(row.get("trade_permission")):
+            raise RuntimeError(
+                "Authoritative DB test-engine unexpectedly grants trade permission"
+            )
+        if not self._bool(row.get("paper_only")):
+            raise RuntimeError(
+                "Authoritative DB test-engine unexpectedly leaves paper-only mode"
+            )
+        if str(row.get("order_path") or "") != "NONE":
+            raise RuntimeError(
+                "Authoritative DB test-engine unexpectedly exposes an order path"
+            )
+
+        return TestEngineReport(row=dict(row))
 
     @staticmethod
     def _float(value: Any) -> float | None:
