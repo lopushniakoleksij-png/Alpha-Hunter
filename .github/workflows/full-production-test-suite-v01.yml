@@ -33,7 +33,7 @@ jobs:
       - name: Install pinned production and test dependencies
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pip install --disable-pip-version-check pytest
+          python -m pip install --disable-pip-version-check pytest pglast==8.4
 
       - name: Compile production package
         run: |
