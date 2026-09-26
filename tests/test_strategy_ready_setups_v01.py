@@ -18,7 +18,8 @@ def test_ready_queue_accepts_only_shadow_candidates_with_five_r():
 
 
 def test_ready_queue_is_source_scoped_and_fresh():
-    assert "in ('render','github_fast_discovery')" in LOWER
+    assert "in ('render_cron','render','github_fast_discovery')" in LOWER
+    assert "'render_web'" not in LOWER
     assert "interval '90 minutes'" in LOWER
     assert "source_latest" in LOWER
 
