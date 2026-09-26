@@ -21,4 +21,4 @@ def test_production_dependencies_are_exactly_pinned():
 def test_python_runtime_is_exactly_pinned_to_tested_version():
     assert Path(".python-version").read_text(
         encoding="utf-8"
-    ).strip() == "3.12.14"
+    ).strip() == "3.14.3"
