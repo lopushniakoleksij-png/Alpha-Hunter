@@ -106,7 +106,7 @@
     "symbol_table": "alpha_hunter_symbol_snapshots",
     "timeout_seconds": 15,
     "max_retries": 2,
-    "retry_backoff_seconds": 1.0
+    "retry_backoff_seconds": 1
   },
   "minimum_data_integrity": 88,
   "intelligence_version": "1.1",
@@ -164,5 +164,6 @@
       "maintenance_system_updates",
       "latest_news"
     ]
-  }
+  },
+  "canonical_market_max_age_seconds": 120
 }
