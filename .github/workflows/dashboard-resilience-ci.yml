@@ -1,0 +1,33 @@
+name: Dashboard resilience CI
+
+on:
+  pull_request:
+    paths:
+      - app.py
+      - tests/test_dashboard_supabase_resilience.py
+      - .github/workflows/dashboard-resilience-ci.yml
+  push:
+    branches:
+      - fix/dashboard-supabase-resilience
+    paths:
+      - app.py
+      - tests/test_dashboard_supabase_resilience.py
+      - .github/workflows/dashboard-resilience-ci.yml
+
+jobs:
+  dashboard-resilience:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Compile dashboard
+        run: python -m py_compile app.py
+      - name: Run resilience tests
+        run: PYTHONPATH=. pytest -q tests/test_dashboard_supabase_resilience.py tests/test_build_identity.py
