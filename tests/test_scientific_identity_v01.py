@@ -16,6 +16,7 @@ def make_root(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (root / "run.py").write_text("print('run')\n", encoding="utf-8")
+    (root / "hourly.py").write_text("INTERVAL = 20\n", encoding="utf-8")
     (root / "requirements.txt").write_text(
         "requests>=2.32,<3\n",
         encoding="utf-8",
@@ -87,5 +88,6 @@ def test_fingerprint_manifest_excludes_tests_and_ui(tmp_path):
 
     assert "web.py" not in result["files"]
     assert "alpha_hunter/strategy_engine.py" in result["files"]
+    assert "hourly.py" in result["files"]
     assert "strategy_forward_outcome_ledger_v01.sql" in result["files"]
     assert "requirements.txt" in result["files"]
