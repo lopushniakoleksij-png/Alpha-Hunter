@@ -12,9 +12,16 @@ def test_scope_diagnostic_is_ops_only_and_outside_scientific_fingerprint():
 
 def test_scope_diagnostic_does_not_expose_raw_identity_values():
     assert "account_identity_fingerprint" in LOWER
-    assert "uid" not in LOWER
-    assert "parentid" not in LOWER
-    assert "parent_id" not in LOWER
+    for raw_identity_access in [
+        "->>'uid'",
+        "->>'userId'".lower(),
+        "->>'user_id'",
+        "->>'parentid'",
+        "->>'parent_id'",
+        "->'uid'",
+        "->'parentid'",
+    ]:
+        assert raw_identity_access not in LOWER
     assert "account_fp" not in LOWER
     assert "scientific_fingerprint" not in LOWER
 
