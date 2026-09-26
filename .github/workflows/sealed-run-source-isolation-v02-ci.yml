@@ -6,6 +6,9 @@ on:
     paths:
       - 'alpha_hunter/collector.py'
       - 'alpha_hunter/scientific_identity.py'
+      - 'requirements.txt'
+      - '.python-version'
+      - 'tests/test_runtime_pins_v01.py'
       - 'alpha_hunter/storage.py'
       - 'hourly.py'
       - 'app.py'
@@ -29,6 +32,9 @@ on:
     paths:
       - 'alpha_hunter/collector.py'
       - 'alpha_hunter/scientific_identity.py'
+      - 'requirements.txt'
+      - '.python-version'
+      - 'tests/test_runtime_pins_v01.py'
       - 'alpha_hunter/storage.py'
       - 'hourly.py'
       - 'app.py'
@@ -69,6 +75,7 @@ jobs:
             tests/test_sealed_run_source_isolation_v02.py \
             tests/test_sealed_scientific_fingerprint_v01.py \
             tests/test_scientific_identity_v01.py \
+            tests/test_runtime_pins_v01.py \
             tests/test_canonical_previous_snapshot_continuity_v01.py \
             tests/test_render_source_lane_compatibility_v01.py \
             tests/test_strategy_ready_setups_v01.py \
