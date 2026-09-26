@@ -50,6 +50,36 @@ def load_config(path: Path) -> dict[str, Any]:
         return json.load(handle)
 
 
+def resolve_runtime_role(
+    run_source: str | None = None,
+) -> str:
+    override = str(
+        os.getenv("ALPHA_HUNTER_RUNTIME_ROLE") or ""
+    ).strip().upper()
+    if override:
+        return override
+
+    source = str(run_source or "").strip().upper()
+    if source == "RENDER":
+        if os.getenv("PORT"):
+            return "RENDER_WEB"
+        if (
+            os.getenv("RENDER_SERVICE_NAME")
+            or os.getenv("RENDER_SERVICE_ID")
+            or os.getenv("RENDER")
+        ):
+            return "RENDER_CRON"
+        return "RENDER_UNKNOWN"
+
+    if (
+        str(os.getenv("GITHUB_ACTIONS") or "").strip().lower() == "true"
+        or source.startswith("GITHUB")
+    ):
+        return "GITHUB_ACTIONS"
+
+    return "LOCAL_OR_UNSPECIFIED"
+
+
 def build_validation_identity(
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -71,9 +101,11 @@ def build_validation_identity(
     )
 
     scientific = build_scientific_fingerprint(config)
+    runtime_role = resolve_runtime_role(run_source)
 
     return {
         "run_source": run_source,
+        "runtime_role": runtime_role,
         "git_commit": (
             os.getenv("RENDER_GIT_COMMIT")
             or os.getenv("GIT_COMMIT")
@@ -946,7 +978,13 @@ def load_previous_snapshot(
         identity = snapshot.get("validation_identity")
         if not isinstance(identity, dict):
             return False
-        for key in ("test_contract", "config_sha256", "run_source"):
+        for key in (
+            "test_contract",
+            "config_sha256",
+            "run_source",
+            "runtime_role",
+            "scientific_fingerprint_sha256",
+        ):
             if identity.get(key) != expected_identity.get(key):
                 return False
         return (
@@ -3775,6 +3813,22 @@ def main() -> int:
             "run_source":
                 (
                     previous_snapshot.get("validation_identity", {}).get("run_source")
+                    if previous_snapshot
+                    else None
+                ),
+
+            "runtime_role":
+                (
+                    previous_snapshot.get("validation_identity", {}).get("runtime_role")
+                    if previous_snapshot
+                    else None
+                ),
+
+            "scientific_fingerprint_sha256":
+                (
+                    previous_snapshot.get("validation_identity", {}).get(
+                        "scientific_fingerprint_sha256"
+                    )
                     if previous_snapshot
                     else None
                 ),
