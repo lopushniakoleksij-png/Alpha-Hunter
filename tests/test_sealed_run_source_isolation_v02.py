@@ -158,3 +158,13 @@ def test_storage_skips_newer_foreign_source_and_returns_same_source_snapshot():
     assert snapshot is not None
     assert snapshot["run_id"] == "same-source"
     assert session.calls[0][1]["params"]["limit"] == "25"
+
+
+def test_source_isolated_realtime_monitor_uses_only_latest_spec():
+    monitor = LOWER.split(
+        "create or replace view public.alpha_hunter_realtime_profitability_monitor_v01",
+        1,
+    )[1]
+    spec_cte = monitor.split("with spec as (", 1)[1].split("),\nlatest_scan as (", 1)[0]
+    assert "order by s.preregistered_at_utc desc" in spec_cte
+    assert "limit 1" in spec_cte
