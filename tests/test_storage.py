@@ -13,6 +13,7 @@ from hourly import (
     next_scan_at,
     remaining_burst_boundaries,
     render_cron_burst_enabled,
+    should_run_initial_burst_scan,
     seconds_until_next_hour,
     seconds_until_next_interval,
 )
@@ -229,6 +230,23 @@ def test_render_burst_override_is_explicit():
         "RENDER_SERVICE_NAME": "alpha-hunter-hourly",
         "ALPHA_HUNTER_RENDER_BURST_MODE": "0",
     }) is False
+
+
+def test_late_render_cron_start_waits_for_next_boundary():
+    safe = datetime(2026, 7, 26, 18, 4, 0, tzinfo=timezone.utc)
+    late = datetime(2026, 7, 26, 18, 6, 0, tzinfo=timezone.utc)
+    near_boundary = datetime(2026, 7, 26, 18, 19, 0, tzinfo=timezone.utc)
+
+    assert should_run_initial_burst_scan(safe, 20) is True
+    assert should_run_initial_burst_scan(late, 20) is False
+    assert should_run_initial_burst_scan(near_boundary, 20) is False
+
+
+def test_render_burst_source_skips_missed_boundaries_instead_of_backfill():
+    source = Path("hourly.py").read_text(encoding="utf-8")
+    assert "if current >= scheduled_at:" in source
+    assert "no late backfill" in source
+    assert "skipped late immediate scan" in source
 
 
 def test_remaining_render_burst_boundaries_are_aligned():
