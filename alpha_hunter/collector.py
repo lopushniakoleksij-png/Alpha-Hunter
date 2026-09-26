@@ -127,6 +127,65 @@ def build_validation_identity(
     }
 
 
+def _exchange_ts_ms(row: dict[str, Any]) -> int | None:
+    """Return a usable Bitget exchange timestamp without inventing freshness."""
+    raw = row.get("ts")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def validate_canonical_market_freshness(
+    tickers: list[dict[str, Any]],
+    *,
+    observed_at: datetime,
+    max_age_seconds: int,
+) -> dict[str, Any]:
+    """Fail closed when canonical Bitget ticker evidence is stale or un-timestamped."""
+    if not tickers:
+        raise BitgetAPIError("Canonical Bitget ticker payload is empty")
+
+    timestamps = [
+        timestamp
+        for row in tickers
+        if isinstance(row, dict)
+        for timestamp in [_exchange_ts_ms(row)]
+        if timestamp is not None
+    ]
+    if not timestamps:
+        raise BitgetAPIError(
+            "Canonical Bitget ticker payload has no exchange timestamps; "
+            "freshness unverified"
+        )
+
+    newest_ms = max(timestamps)
+    observed_ms = int(observed_at.timestamp() * 1000)
+    age_ms = observed_ms - newest_ms
+
+    if age_ms < -60_000:
+        raise BitgetAPIError(
+            "Canonical Bitget ticker timestamp is "
+            f"{abs(age_ms) / 1000:.1f}s in the future"
+        )
+    if age_ms > max_age_seconds * 1000:
+        raise BitgetAPIError(
+            "Canonical Bitget ticker payload stale: "
+            f"age={age_ms / 1000:.1f}s limit={max_age_seconds}s"
+        )
+
+    return {
+        "source": "BITGET_V2_USDT_FUTURES_TICKERS",
+        "verified": True,
+        "observed_at_utc": observed_at.isoformat(),
+        "newest_exchange_timestamp_ms": newest_ms,
+        "age_seconds": max(0.0, age_ms / 1000.0),
+        "max_age_seconds": max_age_seconds,
+        "ticker_count": len(tickers),
+    }
+
+
 def safe_float(
     value: Any,
     default: float = 0.0,
@@ -3490,6 +3549,23 @@ def main() -> int:
 
         instruments = []
 
+    market_observed_at = datetime.now(timezone.utc)
+    max_market_age_seconds = int(
+        config.get(
+            "canonical_market_max_age_seconds",
+            120,
+        )
+    )
+    try:
+        market_freshness = validate_canonical_market_freshness(
+            tickers,
+            observed_at=market_observed_at,
+            max_age_seconds=max_market_age_seconds,
+        )
+    except BitgetAPIError as exc:
+        print(f"CANONICAL MARKET DATA: BLOCKED — {exc}")
+        return 2
+
     catalyst_settings = config.get(
         "catalyst_engine",
         {},
@@ -3833,6 +3909,9 @@ def main() -> int:
                     else None
                 ),
         },
+
+        "canonical_market_freshness":
+            market_freshness,
 
         "btc_change_24h_pct":
             btc_change_24h,
