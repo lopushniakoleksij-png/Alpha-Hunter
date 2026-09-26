@@ -1,6 +1,6 @@
 from pathlib import Path
 
-SQL = Path("storage_reclaim_audit_v01.sql").read_text(encoding="utf-8")
+SQL = Path("ops/sql/storage_reclaim_audit_v01.sql").read_text(encoding="utf-8")
 LOWER = SQL.lower()
 
 
