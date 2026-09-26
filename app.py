@@ -223,6 +223,47 @@ def latest_test_engine_status() -> dict[str, Any]:
         return {}
     return {}
 
+def latest_control_tower_status() -> dict[str, Any]:
+    rows = supabase_get_rows(
+        "alpha_hunter_v14_watchdog_status_v01",
+        {"select": "*", "limit": "1"},
+    )
+    if not rows or not isinstance(rows[0], dict):
+        raise RuntimeError("V14 control-tower status is unavailable")
+    return rows[0]
+
+
+def latest_control_tower_events(limit: int = 12) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(int(limit), 50))
+    rows = supabase_get_rows(
+        "alpha_hunter_v14_watchdog_events_v01",
+        {
+            "select": (
+                "checked_at_utc,spec_id,status,critical_alerts,"
+                "warning_alerts,expected_gates,payload,"
+                "trade_permission,order_path"
+            ),
+            "order": "checked_at_utc.desc",
+            "limit": str(bounded_limit),
+        },
+    )
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def control_tower_payload() -> dict[str, Any]:
+    status = latest_control_tower_status()
+    return {
+        "status": status,
+        "events": latest_control_tower_events(),
+        "build": build_identity(),
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "paper_only": True,
+        "trade_permission": False,
+        "production_promotion_permitted": False,
+        "order_path": "NONE",
+    }
+
+
 def safe_float(value: Any) -> float:
     try:
         return float(value)
@@ -698,7 +739,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V{{ data.build.version }}</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div><div class="small" style="margin-top:5px">Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · deployed {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start fallback){% endif %}</div></div>
-    <div><div class="toolbar"><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
+    <div><div class="toolbar"><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
   </div>
 
   <div class="cards">
@@ -836,6 +877,97 @@ async function checkScanStatus(){const b=document.getElementById('runScanButton'
 """
 
 
+CONTROL_TOWER_PAGE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="60">
+  <title>Alpha Hunter — V14 Control Tower</title>
+  <style>
+    :root{--bg:#071018;--panel:#0d1822;--line:#1d2e3a;--text:#e8f0f6;--muted:#91a3b1;--ok:#2bd39a;--warn:#ffbf47;--bad:#ff6474;--blue:#4db6ff}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
+    .wrap{max-width:1120px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}
+    h1{font-size:26px;margin:0 0 4px}.muted,.small{color:var(--muted)}.small{font-size:12px}.links a{color:var(--blue);text-decoration:none;margin-left:12px}
+    .hero,.card,.panel{background:rgba(13,24,34,.96);border:1px solid var(--line);border-radius:16px}.hero,.panel{padding:16px;margin-bottom:14px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}.card{padding:13px}
+    .label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.value{font-size:22px;font-weight:800;margin-top:4px}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+    .pill{display:inline-block;padding:5px 9px;border:1px solid var(--line);border-radius:999px;font-size:11px;margin:3px 4px 3px 0}.pill-ok{border-color:#21634e;color:var(--ok)}.pill-warn{border-color:#76602a;color:var(--warn)}.pill-bad{border-color:#78313c;color:var(--bad)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.row{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid #152633;font-size:13px}.row:last-child{border-bottom:0}.right{text-align:right;overflow-wrap:anywhere}
+    table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:left;padding:9px 6px;border-bottom:1px solid #152633;vertical-align:top}th{color:var(--muted)}
+    @media(max-width:760px){.wrap{padding:10px}.top{display:block}.links{margin-top:8px}.links a{margin:0 12px 0 0}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.value{font-size:20px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  {% set s=data.status %}
+  <div class="top">
+    <div><h1>V14 Control Tower</h1><div class="small">Forward scientific test · operations only · no order authority</div></div>
+    <div class="links"><a href="/">Money Action</a><a href="/performance">Performance</a></div>
+  </div>
+
+  <div class="hero">
+    <div class="label">Watchdog</div>
+    <div class="value {{ 'bad' if s.watchdog_status=='CRITICAL' else 'warn' if s.watchdog_status=='WARNING' else 'ok' }}">{{ s.watchdog_status }}</div>
+    <div class="small" style="margin-top:7px">Spec {{ s.spec_id }} · generated {{ data.generated_at_utc }}</div>
+    <div style="margin-top:10px">
+      {% for a in s.critical_alerts or [] %}<span class="pill pill-bad">{{ a }}</span>{% endfor %}
+      {% for a in s.warning_alerts or [] %}<span class="pill pill-warn">{{ a }}</span>{% endfor %}
+      {% if not s.critical_alerts and not s.warning_alerts %}<span class="pill pill-ok">NO ACTIVE OPERATIONAL ALERTS</span>{% endif %}
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Operational</div><div class="value {{ 'ok' if s.operational_status=='PASS' else 'bad' }}">{{ s.operational_status }}</div></div>
+    <div class="card"><div class="label">Test days</div><div class="value">{{ '%.2f'|format(s.test_days_elapsed or 0) }}/{{ s.minimum_test_days or 30 }}</div><div class="small">{{ '%.2f'|format(s.test_days_remaining or 0) }} remaining</div></div>
+    <div class="card"><div class="label">Paper trades</div><div class="value">{{ s.completed_paper_trades or 0 }}/{{ s.minimum_completed_paper_trades or 100 }}</div><div class="small">{{ s.paper_trades_remaining or 0 }} remaining</div></div>
+    <div class="card"><div class="label">Cadence</div><div class="value {{ 'ok' if s.cadence_integrity_status=='PASS' else 'bad' }}">{{ s.cadence_integrity_status }}</div><div class="small">{{ s.expected_schedule }}</div></div>
+    <div class="card"><div class="label">Identity drift</div><div class="value {{ 'ok' if (s.identity_drift_scans or 0)==0 else 'bad' }}">{{ s.identity_drift_scans or 0 }}</div><div class="small">scientific fingerprint</div></div>
+    <div class="card"><div class="label">Latest scan age</div><div class="value">{{ '%.1f'|format((s.latest_live_scan_age_seconds or 0)/60) }}m</div><div class="small">{{ s.latest_live_scan_at_utc }}</div></div>
+    <div class="card"><div class="label">Bitget continuity</div><div class="value {{ 'warn' if s.historical_fill_continuity_conflict else 'ok' }}">{{ 'CONFLICT' if s.historical_fill_continuity_conflict else 'PASS' }}</div><div class="small">{{ s.account_identity_probe_status }}</div></div>
+    <div class="card"><div class="label">Database</div><div class="value">{{ s.database_size_pretty or '—' }}</div><div class="small">{{ s.live_toast_review_tables or 0 }} live-TOAST review tables</div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2 style="margin-top:0">Validation gates</h2>
+      {% for g in s.expected_gates or [] %}<span class="pill pill-warn">{{ g }}</span>{% endfor %}
+      <div class="row"><span>Profitability status</span><b class="right">{{ s.profitability_status }}</b></div>
+      <div class="row"><span>Verdict</span><b class="right">{{ s.verdict }}</b></div>
+      <div class="row"><span>Earliest duration gate</span><b class="right">{{ s.earliest_duration_gate_at_utc or '—' }}</b></div>
+      <div class="row"><span>Cost model</span><b class="right">{{ s.cost_scientific_status or 'NOT VALIDATED' }}</b></div>
+      <div class="row"><span>Next cost gate</span><b class="right">{{ s.cost_next_gate or '—' }}</b></div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">Production integrity</h2>
+      <div class="row"><span>Post-baseline scans</span><b>{{ s.post_start_scans or 0 }}</b></div>
+      <div class="row"><span>Cadence mismatches</span><b>{{ s.identity_mismatch_scan_count or 0 }}</b></div>
+      <div class="row"><span>Too-frequent intervals</span><b>{{ s.too_frequent_scan_intervals or 0 }}</b></div>
+      <div class="row"><span>Excessive gaps</span><b>{{ s.excessive_gap_intervals or 0 }}</b></div>
+      <div class="row"><span>Historical fills same window</span><b>{{ s.historical_fill_rows_same_window or 0 }}</b></div>
+      <div class="row"><span>Legacy control plane</span><b class="{{ 'ok' if s.legacy_control_plane_status=='PASS' else 'warn' }}">{{ s.legacy_control_plane_status or '—' }}</b></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 style="margin-top:0">Recent watchdog events</h2>
+    {% if data.events %}
+    <table><thead><tr><th>UTC</th><th>Status</th><th>Critical</th><th>Warnings</th></tr></thead><tbody>
+    {% for e in data.events %}<tr><td>{{ e.checked_at_utc }}</td><td><b class="{{ 'bad' if e.status=='CRITICAL' else 'warn' if e.status=='WARNING' else 'ok' }}">{{ e.status }}</b></td><td>{{ (e.critical_alerts or [])|join(', ') or '—' }}</td><td>{{ (e.warning_alerts or [])|join(', ') or '—' }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div class="small">No watchdog events persisted yet. The scheduled watchdog will populate this automatically.</div>{% endif %}
+  </div>
+
+  <div class="panel small">
+    Safety contract: paper/shadow only. trade_permission=false · production_promotion_permitted=false · order_path=NONE.
+    This page is observability only and cannot place, cancel, or modify an exchange order.
+  </div>
+</div>
+</body>
+</html>
+"""
+
+
 DASHBOARD_RECOVERY_PAGE = """
 <!doctype html>
 <html>
@@ -926,6 +1058,34 @@ def api_run_scan():
 def api_scan_status():
     with scan_lock:
         return jsonify(dict(scan_state))
+
+
+@app.get("/control-tower")
+def control_tower():
+    try:
+        return render_template_string(
+            CONTROL_TOWER_PAGE,
+            data=control_tower_payload(),
+        )
+    except Exception:
+        app.logger.exception("V14 control-tower live-data read failed")
+        return render_template_string(
+            DASHBOARD_RECOVERY_PAGE,
+            build=build_identity(),
+        ), 503
+
+
+@app.get("/api/control-tower")
+def api_control_tower():
+    try:
+        return jsonify(control_tower_payload())
+    except Exception:
+        app.logger.exception("V14 control-tower API read failed")
+        return jsonify({
+            "error": "control_tower_unavailable",
+            "retry_after_seconds": 10,
+            "build": build_identity(),
+        }), 503
 
 
 @app.get("/performance")
