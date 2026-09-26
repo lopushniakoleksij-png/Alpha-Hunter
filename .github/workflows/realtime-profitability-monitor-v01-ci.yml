@@ -7,8 +7,6 @@ on:
       - 'tests/test_realtime_profitability_monitor_v01.py'
       - 'tests/test_realtime_profitability_workflow_resilience_v01.py'
       - '.github/workflows/alpha-hunter-realtime-profitability-test.yml'
-      - 'tests/test_realtime_profitability_workflow_resilience_v01.py'
-      - '.github/workflows/alpha-hunter-realtime-profitability-test.yml'
       - '.github/workflows/realtime-profitability-monitor-v01-ci.yml'
   push:
     branches:
@@ -16,6 +14,9 @@ on:
     paths:
       - 'realtime_profitability_monitor_v01.sql'
       - 'tests/test_realtime_profitability_monitor_v01.py'
+      - 'tests/test_realtime_profitability_workflow_resilience_v01.py'
+      - '.github/workflows/alpha-hunter-realtime-profitability-test.yml'
+      - '.github/workflows/realtime-profitability-monitor-v01-ci.yml'
 
 permissions:
   contents: read
