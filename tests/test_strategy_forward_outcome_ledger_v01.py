@@ -149,3 +149,19 @@ def test_hourly_evaluator_and_nonranking_scorecard_are_present():
     assert "avg_confirmation_tax_reference_pct" in SQL
     assert "avg_mfe_pct" in SQL
     assert "avg_mae_pct" in SQL
+
+
+def test_forward_evaluator_does_not_starve_newer_mature_episodes():
+    required = [
+        "from (values (1),(4),(12),(24)) as h(horizon_hours)",
+        "h.horizon_hours * interval '1 hour'",
+        "o.episode_id=e.episode_id",
+        "o.horizon_hours=h.horizon_hours",
+    ]
+    for marker in required:
+        assert marker in LOWER
+
+    selector = LOWER.split("for v_episode in", 1)[1].split("loop", 1)[0]
+    assert "and exists (" in selector
+    assert "not exists (" in selector
+    assert "limit 500" in selector
