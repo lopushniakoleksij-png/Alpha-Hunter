@@ -578,10 +578,14 @@ def run_scan_worker() -> None:
         )
 
     try:
+        scan_env = os.environ.copy()
+        scan_env["ALPHA_HUNTER_RUN_SOURCE"] = "RENDER_WEB"
+        scan_env["ALPHA_HUNTER_RUNTIME_ROLE"] = "RENDER_WEB"
+
         completed = subprocess.run(
             [sys.executable, "run.py"],
             cwd=project_root,
-            env=os.environ.copy(),
+            env=scan_env,
             capture_output=True,
             text=True,
             timeout=900,
