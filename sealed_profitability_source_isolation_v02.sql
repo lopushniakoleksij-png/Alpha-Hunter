@@ -394,8 +394,6 @@ with spec_activation as (
   from public.alpha_hunter_profitability_test_specs_v01 s
   left join public.alpha_hunter_profitability_test_activations_v01 a
     on a.spec_id=s.spec_id
-  order by s.preregistered_at_utc desc
-  limit 1
 ),
 drift as (
   select
@@ -577,6 +575,8 @@ with spec as (
   from public.alpha_hunter_profitability_test_specs_v01 s
   left join public.alpha_hunter_profitability_test_activations_v01 a
     on a.spec_id=s.spec_id
+  order by s.preregistered_at_utc desc
+  limit 1
 ),
 latest_scan as (
   select
