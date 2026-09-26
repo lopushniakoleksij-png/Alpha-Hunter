@@ -70,7 +70,7 @@ jobs:
         if: ${{ steps.evidence_credentials.outcome == 'success' }}
         run: python run.py
 
-      - name: Evaluate and persist real-time profitability test
+      - name: Read authoritative real-time profitability status
         if: ${{ always() && steps.evidence_credentials.outcome == 'success' }}
         run: python test_engine_job.py
 

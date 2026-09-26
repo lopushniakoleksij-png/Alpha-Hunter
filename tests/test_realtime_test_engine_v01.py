@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 import json
 
@@ -196,3 +197,90 @@ def test_test_engine_schema_grants_service_role_insert_without_update_delete():
     schema = Path("test_engine_schema_v01.sql").read_text(encoding="utf-8").lower()
     assert "grant select, insert on public.alpha_hunter_test_engine_runs_v01" in schema
     assert "before update or delete on public.alpha_hunter_test_engine_runs_v01" in schema
+
+
+def authoritative_row(**overrides):
+    row = {
+        "test_engine_run_id": "db-run",
+        "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "engine_version": "realtime-test-engine-db-v0.2",
+        "spec_id": "TEST-SPEC",
+        "operational_status": "BLOCKED",
+        "profitability_status": "INVALIDATED_BY_BUILD_OR_CONFIG_DRIFT",
+        "verdict": "NOT_PROVEN",
+        "blockers": ["BUILD_OR_CONFIG_DRIFT"],
+        "paper_only": True,
+        "trade_permission": False,
+        "order_path": "NONE",
+        "production_promotion_permitted": False,
+        "test_days_elapsed": 2.0,
+        "minimum_test_days": 30,
+        "completed_paper_trades": 0,
+        "minimum_completed_paper_trades": 100,
+    }
+    row.update(overrides)
+    return row
+
+
+def test_authoritative_db_status_avoids_heavy_validation_views():
+    session = FakeSession({
+        "alpha_hunter_test_engine_latest_v01": authoritative_row(),
+    })
+    report = RealtimeTestEngine(settings(), session=session).load_authoritative()
+
+    assert report.row["engine_version"] == "realtime-test-engine-db-v0.2"
+    assert report.row["trade_permission"] is False
+    assert [relation for relation, _ in session.gets] == [
+        "alpha_hunter_test_engine_latest_v01"
+    ]
+
+
+def test_authoritative_db_status_rejects_wrong_engine_version():
+    session = FakeSession({
+        "alpha_hunter_test_engine_latest_v01": authoritative_row(
+            engine_version="realtime-test-engine-v0.1"
+        ),
+    })
+    engine = RealtimeTestEngine(settings(), session=session)
+
+    try:
+        engine.load_authoritative()
+    except RuntimeError as exc:
+        assert "not current" in str(exc)
+    else:
+        raise AssertionError("expected non-authoritative engine to fail closed")
+
+
+def test_authoritative_db_status_rejects_stale_snapshot():
+    stale = (
+        datetime.now(timezone.utc) - timedelta(minutes=40)
+    ).isoformat()
+    session = FakeSession({
+        "alpha_hunter_test_engine_latest_v01": authoritative_row(
+            evaluated_at_utc=stale
+        ),
+    })
+    engine = RealtimeTestEngine(settings(), session=session)
+
+    try:
+        engine.load_authoritative()
+    except RuntimeError as exc:
+        assert "stale" in str(exc)
+    else:
+        raise AssertionError("expected stale authoritative status to fail closed")
+
+
+def test_authoritative_db_status_rejects_any_order_authority():
+    session = FakeSession({
+        "alpha_hunter_test_engine_latest_v01": authoritative_row(
+            trade_permission=True
+        ),
+    })
+    engine = RealtimeTestEngine(settings(), session=session)
+
+    try:
+        engine.load_authoritative()
+    except RuntimeError as exc:
+        assert "trade permission" in str(exc)
+    else:
+        raise AssertionError("expected trade permission to fail closed")
