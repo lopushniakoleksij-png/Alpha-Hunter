@@ -51,7 +51,8 @@ begin
       from public.alpha_hunter_profitability_test_activations_v01 a
       where a.spec_id=s.spec_id
     )
-    order by s.preregistered_at_utc
+    order by s.preregistered_at_utc desc
+    limit 1
   loop
     v_parent := null;
     v_not_before := v_spec.preregistered_at_utc;
@@ -236,6 +237,8 @@ begin
   return jsonb_build_object(
     'protocol_version','sealed-profitability-v0.3-scientific-fingerprint',
     'activated_specs',v_activated,
+    'latest_spec_only',true,
+    'selected_spec_id',v_spec.spec_id,
     'run_source_isolation',true,
     'shadow_only',true,
     'trade_permission',false,
