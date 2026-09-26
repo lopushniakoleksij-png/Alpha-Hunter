@@ -70,3 +70,18 @@ def test_scientific_fingerprint_contract_never_grants_execution_authority():
     ]
     for marker in forbidden:
         assert marker not in LOWER
+
+
+def test_activation_only_considers_newest_preregistered_spec():
+    function_sql = LOWER.split(
+        "create or replace function private.alpha_hunter_try_activate_profitability_test_v01()",
+        1,
+    )[1].split(
+        "revoke all on function private.alpha_hunter_try_activate_profitability_test_v01()",
+        1,
+    )[0]
+    selector = function_sql.split("for v_spec in", 1)[1].split("loop", 1)[0]
+    assert "order by s.preregistered_at_utc desc" in selector
+    assert "limit 1" in selector
+    assert "'latest_spec_only',true" in function_sql
+    assert "'selected_spec_id',v_spec.spec_id" in function_sql
