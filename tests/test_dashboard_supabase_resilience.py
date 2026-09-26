@@ -1,3 +1,4 @@
+from pathlib import Path
 import requests
 
 import app as dashboard_app
@@ -75,3 +76,10 @@ def test_api_latest_returns_generic_retryable_503(monkeypatch):
     assert payload["error"] == "live_data_unavailable"
     assert payload["retry_after_seconds"] == 10
     assert "build" in payload
+
+
+def test_manual_web_scan_isolated_from_canonical_cron_source():
+    source = Path("app.py").read_text(encoding="utf-8")
+    assert 'scan_env["ALPHA_HUNTER_RUN_SOURCE"] = "RENDER_WEB"' in source
+    assert 'scan_env["ALPHA_HUNTER_RUNTIME_ROLE"] = "RENDER_WEB"' in source
+    assert "env=scan_env" in source

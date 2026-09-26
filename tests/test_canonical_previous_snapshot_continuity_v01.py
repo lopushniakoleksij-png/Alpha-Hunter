@@ -208,17 +208,24 @@ def test_supabase_storage_reads_latest_canonical_parent_snapshot():
     assert session.calls[0][1]["params"]["limit"] == "1"
 
 
-def modern_snapshot(run_id, collected_at, source="GITHUB_REALTIME_HOURLY"):
+def modern_snapshot(
+    run_id,
+    collected_at,
+    source="GITHUB_REALTIME_HOURLY",
+    runtime_role=None,
+    scientific_fingerprint_sha256=None,
+):
+    identity = collector.build_validation_identity(config())
+    identity["run_source"] = source
+    if runtime_role is not None:
+        identity["runtime_role"] = runtime_role
+    if scientific_fingerprint_sha256 is not None:
+        identity["scientific_fingerprint_sha256"] = scientific_fingerprint_sha256
+
     return {
         "run_id": run_id,
         "collected_at_utc": collected_at,
-        "validation_identity": {
-            "run_source": source,
-            "git_commit": "abc",
-            "git_branch": "main",
-            "config_sha256": collector.build_validation_identity(config())["config_sha256"],
-            "test_contract": "sealed-profitability-v0.1",
-        },
+        "validation_identity": identity,
         "multi_strategy_summary": {},
         "microstructure_summary": {},
         "catalyst_summary": {"version": "0.2"},
@@ -268,3 +275,70 @@ def test_validation_identity_contains_explicit_run_source(monkeypatch):
     monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
     identity = collector.build_validation_identity(config())
     assert identity["run_source"] == "GITHUB_REALTIME_HOURLY"
+    assert identity["runtime_role"] == "GITHUB_ACTIONS"
+
+
+def test_validation_identity_distinguishes_render_cron_and_web(monkeypatch):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "RENDER")
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "alpha-hunter-hourly")
+    monkeypatch.delenv("PORT", raising=False)
+
+    cron = collector.build_validation_identity(config())
+    assert cron["runtime_role"] == "RENDER_CRON"
+
+    monkeypatch.setenv("PORT", "10000")
+    web = collector.build_validation_identity(config())
+    assert web["runtime_role"] == "RENDER_WEB"
+
+
+def test_previous_snapshot_rejects_same_source_different_runtime_role(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "RENDER")
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "alpha-hunter-hourly")
+    monkeypatch.delenv("PORT", raising=False)
+
+    FakeCloudStorage.snapshot = modern_snapshot(
+        "web-run",
+        "2026-09-23T05:55:00+00:00",
+        source="RENDER",
+        runtime_role="RENDER_WEB",
+    )
+    monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
+
+    previous, source = collector.load_previous_snapshot(
+        tmp_path / "config.json",
+        config(),
+        cloud_settings=cloud_settings(),
+    )
+
+    assert previous is None
+    assert source == "NONE"
+
+
+def test_previous_snapshot_rejects_different_scientific_fingerprint(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "GITHUB_REALTIME_HOURLY")
+    current = collector.build_validation_identity(config())
+
+    FakeCloudStorage.snapshot = modern_snapshot(
+        "old-science",
+        "2026-09-23T05:55:00+00:00",
+        source="GITHUB_REALTIME_HOURLY",
+        runtime_role="GITHUB_ACTIONS",
+        scientific_fingerprint_sha256="0" * 64,
+    )
+    assert current["scientific_fingerprint_sha256"] != "0" * 64
+    monkeypatch.setattr(collector, "SupabaseStorage", FakeCloudStorage)
+
+    previous, source = collector.load_previous_snapshot(
+        tmp_path / "config.json",
+        config(),
+        cloud_settings=cloud_settings(),
+    )
+
+    assert previous is None
+    assert source == "NONE"

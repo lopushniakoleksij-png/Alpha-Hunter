@@ -1,213 +1,11 @@
--- Alpha Hunter Big-Mover-First database-native shadow runtime
+-- Alpha Hunter Render source-lane compatibility v0.1
 --
--- Prerequisites:
---   big_mover_answer_key_schema.sql
---   big_mover_shadow_schema.sql
+-- Canonical production scanner writes RENDER_CRON.
+-- Manual dashboard scans write RENDER_WEB and are excluded from canonical
+-- sealed evidence and decision-support source selection.
+-- Legacy RENDER remains accepted temporarily for read continuity.
 --
--- Safety boundary:
---   shadow_only=true
---   trade_permission=false
---
--- GitHub is CI/source control only. Supabase pg_cron owns hourly shadow execution.
-
-create extension if not exists pg_cron with schema extensions;
-create extension if not exists http with schema extensions;
-
-create or replace function public.alpha_hunter_big_mover_training_evidence()
-returns table (
-  signal_id text,
-  run_id text,
-  symbol text,
-  captured_at_utc timestamptz,
-  scanner_direction text,
-  scanner_state text,
-  model_direction text,
-  label text,
-  feature_obj jsonb,
-  evidence_source text
-)
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_latest_audit timestamptz;
-  v_historical_end timestamptz;
-  v_historical_start timestamptz;
-  v_first_answer_key timestamptz;
-  v_latest_answer_key timestamptz;
-  v_forward_end timestamptz;
-begin
-  select max(audited_at_utc) into v_latest_audit
-  from public.alpha_hunter_missed_mover_audit;
-  if v_latest_audit is null then
-    raise exception 'no historical mover audit evidence available';
-  end if;
-
-  v_historical_end := v_latest_audit - interval '24 hours';
-  v_historical_start := v_historical_end - interval '21 days';
-
-  select min(observed_at_utc), max(observed_at_utc)
-    into v_first_answer_key, v_latest_answer_key
-  from public.alpha_hunter_big_mover_answer_key;
-  if v_latest_answer_key is not null then
-    v_forward_end := v_latest_answer_key - interval '24 hours';
-  end if;
-
-  return query
-  with historical_base as (
-    select
-      sf.signal_id,
-      sf.run_id,
-      sf.symbol,
-      sf.captured_at_utc,
-      sf.direction as scanner_direction,
-      sf.state as scanner_state,
-      coalesce(sf.features, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
-        'volume_ratio', sf.volume_ratio,
-        'volatility_pct', sf.volatility_pct,
-        'compression_score', sf.compression_score,
-        'funding_rate', sf.funding_rate,
-        'open_interest_change_pct', sf.open_interest_change_pct,
-        'relative_strength_btc', sf.relative_strength_btc,
-        'rsi_15m', sf.rsi_15m,
-        'rsi_1h', sf.rsi_1h,
-        'rsi_4h', sf.rsi_4h,
-        'distance_to_support_pct', sf.distance_to_support_pct,
-        'distance_to_resistance_pct', sf.distance_to_resistance_pct,
-        'behaviour_score', sf.source_payload->'behaviour'->'score',
-        'spread_pct', sf.source_payload->'behaviour'->'spread_pct',
-        'funding_change_pct', sf.source_payload->'behaviour'->'funding_change_pct',
-        'relative_strength_acceleration', sf.source_payload->'behaviour'->'relative_strength_acceleration',
-        'volume_acceleration_component', sf.source_payload->'behaviour'->'components'->'volume_acceleration',
-        'trend_acceleration_component', sf.source_payload->'behaviour'->'components'->'trend_acceleration',
-        'volatility_transition_component', sf.source_payload->'behaviour'->'components'->'volatility_transition',
-        'liquidity_component', sf.source_payload->'behaviour'->'components'->'liquidity'
-      )) as feature_obj
-    from public.alpha_hunter_signal_features sf
-    where sf.captured_at_utc >= v_historical_start
-      and sf.captured_at_utc <= v_historical_end
-      and (v_first_answer_key is null or sf.captured_at_utc < v_first_answer_key)
-      and sf.source_payload ? 'change_24h_pct'
-      and (sf.source_payload->>'change_24h_pct') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
-      and abs((sf.source_payload->>'change_24h_pct')::double precision) < 5.0
-  ), historical_directional as (
-    select hb.*, d.model_direction, d.audit_direction
-    from historical_base hb
-    cross join (values ('LONG','UP'),('SHORT','DOWN')) d(model_direction,audit_direction)
-  ), historical_labeled as (
-    select
-      hd.signal_id,
-      hd.run_id,
-      hd.symbol,
-      hd.captured_at_utc,
-      hd.scanner_direction,
-      hd.scanner_state,
-      hd.model_direction,
-      case
-        when exists (
-          select 1 from public.alpha_hunter_missed_mover_audit a
-          where a.symbol=hd.symbol
-            and a.mover_direction=hd.audit_direction
-            and a.audited_at_utc > hd.captured_at_utc
-            and a.audited_at_utc <= hd.captured_at_utc + interval '24 hours'
-            and a.mover_threshold_pct >= 10
-        ) then 'MOVER'
-        when not exists (
-          select 1 from public.alpha_hunter_missed_mover_audit a
-          where a.symbol=hd.symbol
-            and a.mover_direction=hd.audit_direction
-            and a.audited_at_utc > hd.captured_at_utc
-            and a.audited_at_utc <= hd.captured_at_utc + interval '24 hours'
-            and a.mover_threshold_pct >= 5
-        ) then 'CONTROL'
-        else null
-      end as label,
-      hd.feature_obj,
-      'HISTORICAL_MISSED_MOVER_AUDIT'::text as evidence_source
-    from historical_directional hd
-  ), forward_base as (
-    select
-      sf.signal_id,
-      sf.run_id,
-      sf.symbol,
-      sf.captured_at_utc,
-      sf.direction as scanner_direction,
-      sf.state as scanner_state,
-      coalesce(sf.features, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
-        'volume_ratio', sf.volume_ratio,
-        'volatility_pct', sf.volatility_pct,
-        'compression_score', sf.compression_score,
-        'funding_rate', sf.funding_rate,
-        'open_interest_change_pct', sf.open_interest_change_pct,
-        'relative_strength_btc', sf.relative_strength_btc,
-        'rsi_15m', sf.rsi_15m,
-        'rsi_1h', sf.rsi_1h,
-        'rsi_4h', sf.rsi_4h,
-        'distance_to_support_pct', sf.distance_to_support_pct,
-        'distance_to_resistance_pct', sf.distance_to_resistance_pct,
-        'behaviour_score', sf.source_payload->'behaviour'->'score',
-        'spread_pct', sf.source_payload->'behaviour'->'spread_pct',
-        'funding_change_pct', sf.source_payload->'behaviour'->'funding_change_pct',
-        'relative_strength_acceleration', sf.source_payload->'behaviour'->'relative_strength_acceleration',
-        'volume_acceleration_component', sf.source_payload->'behaviour'->'components'->'volume_acceleration',
-        'trend_acceleration_component', sf.source_payload->'behaviour'->'components'->'trend_acceleration',
-        'volatility_transition_component', sf.source_payload->'behaviour'->'components'->'volatility_transition',
-        'liquidity_component', sf.source_payload->'behaviour'->'components'->'liquidity'
-      )) as feature_obj
-    from public.alpha_hunter_signal_features sf
-    where v_first_answer_key is not null
-      and v_forward_end is not null
-      and v_forward_end >= v_first_answer_key
-      and sf.captured_at_utc >= v_first_answer_key
-      and sf.captured_at_utc <= v_forward_end
-      and sf.source_payload ? 'change_24h_pct'
-      and (sf.source_payload->>'change_24h_pct') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
-      and abs((sf.source_payload->>'change_24h_pct')::double precision) < 5.0
-  ), forward_directional as (
-    select fb.*, d.model_direction, d.answer_direction
-    from forward_base fb
-    cross join (values ('LONG','UP'),('SHORT','DOWN')) d(model_direction,answer_direction)
-  ), forward_labeled as (
-    select
-      fd.signal_id,
-      fd.run_id,
-      fd.symbol,
-      fd.captured_at_utc,
-      fd.scanner_direction,
-      fd.scanner_state,
-      fd.model_direction,
-      case
-        when exists (
-          select 1 from public.alpha_hunter_big_mover_answer_key a
-          where a.symbol=fd.symbol
-            and a.direction=fd.answer_direction
-            and a.observed_at_utc > fd.captured_at_utc
-            and a.observed_at_utc <= fd.captured_at_utc + interval '24 hours'
-            and a.threshold_pct >= 10
-        ) then 'MOVER'
-        when not exists (
-          select 1 from public.alpha_hunter_big_mover_answer_key a
-          where a.symbol=fd.symbol
-            and a.direction=fd.answer_direction
-            and a.observed_at_utc > fd.captured_at_utc
-            and a.observed_at_utc <= fd.captured_at_utc + interval '24 hours'
-            and a.threshold_pct >= 5
-        ) then 'CONTROL'
-        else null
-      end as label,
-      fd.feature_obj,
-      'BITGET_FORWARD_ANSWER_KEY'::text as evidence_source
-    from forward_directional fd
-  )
-  select * from historical_labeled where historical_labeled.label is not null
-  union all
-  select * from forward_labeled where forward_labeled.label is not null;
-end;
-$$;
-
-revoke all on function public.alpha_hunter_big_mover_training_evidence() from public, anon, authenticated;
-grant execute on function public.alpha_hunter_big_mover_training_evidence() to service_role;
+-- Safety: no order authority, no threshold changes, no trade permission.
 
 create or replace function public.alpha_hunter_run_big_mover_shadow()
 returns jsonb
@@ -439,79 +237,203 @@ $$;
 revoke all on function public.alpha_hunter_run_big_mover_shadow() from public, anon, authenticated;
 grant execute on function public.alpha_hunter_run_big_mover_shadow() to service_role;
 
-create or replace function public.alpha_hunter_collect_big_mover_answer_key()
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, extensions
-as $$
-declare
-  v_status integer;
-  v_content text;
-  v_payload jsonb;
-  v_observed_at timestamptz := clock_timestamp();
-  v_bucket timestamptz := date_trunc('hour',clock_timestamp());
-  v_inserted integer := 0;
-  v_scoring jsonb;
-begin
-  select (r).status,(r).content into v_status,v_content
-  from(select extensions.http_get('https://api.bitget.com/api/v2/mix/market/tickers?productType=usdt-futures') as r)q;
-  if v_status<>200 then raise exception 'Bitget ticker HTTP status %',v_status; end if;
-  v_payload:=v_content::jsonb;
-  if coalesce(v_payload->>'code','')<>'00000' then
-    raise exception 'Bitget ticker payload code %',v_payload->>'code';
-  end if;
+-- Alpha Hunter canonical S1-S10 ready-setup view v0.1
+--
+-- Purpose:
+-- Expose strategy candidates that have already passed the S1-S10 candidate
+-- contract as a canonical decision-support queue. This closes the gap between
+-- strategy discovery and the operator-facing Money Action layer.
+--
+-- IMPORTANT:
+-- READY_SETUP means "all strategy/safety/geometry/5R gates passed for paper
+-- decision support". It does NOT grant exchange/order authority.
+--
+-- Sources:
+-- - RENDER_CRON: canonical Render production scanner
+-- - RENDER: legacy canonical Render scanner during migration
+-- - GITHUB_FAST_DISCOVERY: isolated 20-minute early-discovery scanner
+-- - RENDER_WEB is intentionally excluded from the canonical ready queue
+--
+-- Staleness:
+-- - only the latest run from each source
+-- - source run must be <= 90 minutes old
 
-  with raw as(
-    select value as ticker from jsonb_array_elements(coalesce(v_payload->'data','[]'::jsonb))
-  ), normalized as(
-    select upper(ticker->>'symbol') as symbol,
-      case when(ticker->>'lastPr')~'^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
-        then(ticker->>'lastPr')::double precision end as last_price,
-      case when(ticker->>'change24h')~'^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
-        then(ticker->>'change24h')::double precision*100.0 end as change_pct,
-      case when coalesce(ticker->>'quoteVolume',ticker->>'usdtVolume','')~'^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
-        then coalesce(ticker->>'quoteVolume',ticker->>'usdtVolume')::double precision else 0.0 end as quote_volume
-    from raw
-  ), expanded as(
-    select n.*,case when n.change_pct>=0 then 'UP' else 'DOWN' end as direction,
-      threshold::double precision as threshold_pct
-    from normalized n cross join unnest(array[5.0,10.0,20.0]) as threshold
-    where n.symbol is not null and n.last_price is not null and n.last_price>0
-      and n.change_pct is not null and abs(n.change_pct)>=threshold
-  ), inserted as(
-    insert into public.alpha_hunter_big_mover_answer_key(
-      event_id,observed_at_utc,hour_bucket_utc,symbol,product_type,direction,threshold_pct,
-      current_24h_move_pct,last_price,quote_volume_24h,strategy_eligible,liquidity_pass,
-      source,model_version,shadow_only,trade_permission
+create or replace view public.alpha_hunter_strategy_ready_setups_v01
+with (security_invoker=true,security_barrier=true)
+as
+with source_latest as (
+  select distinct on (
+    p.payload->'validation_identity'->>'run_source'
+  )
+    p.run_id,
+    p.collected_at_utc,
+    p.payload->'validation_identity'->>'run_source' as run_source,
+    p.payload->'validation_identity'->>'git_commit' as git_commit,
+    p.payload->'validation_identity'->>'config_sha256' as config_sha256
+  from public.alpha_hunter_snapshots p
+  where p.payload->'validation_identity'->>'run_source'
+      in ('RENDER_CRON','RENDER','GITHUB_FAST_DISCOVERY')
+    and p.collected_at_utc >= clock_timestamp()-interval '90 minutes'
+  order by
+    p.payload->'validation_identity'->>'run_source',
+    p.collected_at_utc desc
+),
+eligible as (
+  select
+    l.run_source,
+    l.run_id,
+    l.collected_at_utc as scan_at_utc,
+    l.git_commit,
+    l.config_sha256,
+    extract(
+      epoch from (clock_timestamp()-l.collected_at_utc)
+    ) as scan_age_seconds,
+
+    o.observation_id,
+    o.strategy_instance_id,
+    o.symbol,
+    o.strategy_id,
+    o.strategy_name,
+    o.direction,
+    o.status as strategy_status,
+    o.action as strategy_action,
+    coalesce(
+      o.strategy_payload->>'proposed_action',
+      o.action
+    ) as proposed_action,
+    o.signal_score,
+    o.score_is_calibrated,
+    o.reference_price,
+    o.entry_price,
+    o.stop_price,
+    o.target_price,
+    o.reward_risk,
+    o.distance_to_entry_pct,
+    o.geometry_valid,
+    o.persistence_state,
+    o.consecutive_scans,
+    o.first_seen_at_utc,
+    o.observed_at_utc,
+    o.checks,
+    o.reasons,
+    o.evidence,
+
+    case
+      when o.action='EXECUTE_NOW'
+        then 'READY_SETUP_NOW'
+      when o.action='PLACE_LIMIT'
+        then 'READY_LIMIT_SETUP'
+      else 'NOT_READY'
+    end as ready_status,
+
+    case
+      when o.action='EXECUTE_NOW' then 2
+      when o.action='PLACE_LIMIT' then 1
+      else 0
+    end as action_priority
+
+  from source_latest l
+  join public.alpha_hunter_strategy_observations_v01 o
+    on o.run_id=l.run_id
+
+  where o.status='SHADOW_CANDIDATE'
+    and o.action in ('EXECUTE_NOW','PLACE_LIMIT')
+    and o.direction in ('LONG','SHORT')
+    and coalesce(o.geometry_valid,false)
+    and o.reward_risk>=5.0
+    and o.entry_price is not null
+    and o.stop_price is not null
+    and o.target_price is not null
+    and coalesce(o.shadow_only,false)
+    and coalesce(o.trade_permission,false)=false
+    and coalesce(o.production_permission,false)=false
+
+    and (
+      (
+        o.direction='LONG'
+        and o.stop_price<o.entry_price
+        and o.entry_price<o.target_price
+      )
+      or
+      (
+        o.direction='SHORT'
+        and o.target_price<o.entry_price
+        and o.entry_price<o.stop_price
+      )
     )
-    select md5('big-mover-answer-key-v0.1|'||symbol||'|'||v_bucket::text||'|'||direction||'|'||to_char(threshold_pct,'FM999990.00')),
-      v_observed_at,v_bucket,symbol,'usdt-futures',direction,threshold_pct,change_pct,last_price,quote_volume,
-      true,quote_volume>=100000.0,'BITGET_PUBLIC_ALL_TICKERS_DB_HTTP','big-mover-answer-key-v0.1-db',true,false
-    from expanded on conflict(event_id)do nothing returning 1
-  ) select count(*) into v_inserted from inserted;
+),
+ranked as (
+  select
+    e.*,
+    row_number() over (
+      partition by e.run_source
+      order by
+        e.action_priority desc,
+        e.signal_score desc,
+        e.reward_risk desc,
+        coalesce(e.distance_to_entry_pct,0) asc,
+        e.symbol,
+        e.strategy_id
+    ) as source_rank,
+    row_number() over (
+      partition by e.run_source,e.symbol
+      order by
+        e.action_priority desc,
+        e.signal_score desc,
+        e.reward_risk desc,
+        coalesce(e.distance_to_entry_pct,0) asc,
+        e.strategy_id
+    ) as symbol_rank
+  from eligible e
+)
+select
+  r.run_source,
+  r.run_id,
+  r.scan_at_utc,
+  r.scan_age_seconds,
+  r.git_commit,
+  r.config_sha256,
+  r.source_rank,
+  r.symbol_rank,
 
-  v_scoring:=public.alpha_hunter_run_big_mover_shadow();
-  return jsonb_build_object(
-    'mode','BITGET_BIG_MOVER_DB_NATIVE_HOURLY','shadow_only',true,'trade_permission',false,
-    'observed_at_utc',v_observed_at,'answer_key_rows_inserted',v_inserted,
-    'ticker_count',jsonb_array_length(coalesce(v_payload->'data','[]'::jsonb)),'scoring',v_scoring
-  );
-end;
-$$;
+  r.symbol,
+  r.strategy_id,
+  r.strategy_name,
+  r.direction,
+  r.ready_status,
+  r.strategy_action,
+  r.signal_score,
+  r.score_is_calibrated,
 
-revoke all on function public.alpha_hunter_collect_big_mover_answer_key() from public, anon, authenticated;
-grant execute on function public.alpha_hunter_collect_big_mover_answer_key() to service_role;
+  r.reference_price,
+  r.entry_price,
+  r.stop_price,
+  r.target_price,
+  r.reward_risk,
+  r.distance_to_entry_pct,
 
--- Keep exactly one database-native hourly job. If already installed, do not duplicate it.
-do $$
-begin
-  if not exists(select 1 from cron.job where jobname='alpha-hunter-big-mover-shadow-hourly') then
-    perform cron.schedule(
-      'alpha-hunter-big-mover-shadow-hourly',
-      '10 * * * *',
-      'select public.alpha_hunter_collect_big_mover_answer_key();'
-    );
-  end if;
-end;
-$$;
+  r.persistence_state,
+  r.consecutive_scans,
+  r.first_seen_at_utc,
+  r.observed_at_utc,
+
+  r.checks,
+  r.reasons,
+  r.evidence,
+
+  'S1_S10_SHADOW_CANDIDATE_5R'::text as readiness_contract,
+  true as decision_support_only,
+  true as shadow_only,
+  false as live_money_claim_permitted,
+  false as execution_authority,
+  false as trade_permission,
+  false as production_permission,
+  false as production_promotion_permitted,
+  'NONE'::text as order_path
+from ranked r;
+
+revoke all on public.alpha_hunter_strategy_ready_setups_v01
+  from public,anon,authenticated,service_role;
+grant select on public.alpha_hunter_strategy_ready_setups_v01
+  to service_role;
+

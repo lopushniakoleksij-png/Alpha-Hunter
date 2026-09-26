@@ -7,12 +7,20 @@ on:
       - 'alpha_hunter/collector.py'
       - 'alpha_hunter/scientific_identity.py'
       - 'alpha_hunter/storage.py'
+      - 'hourly.py'
+      - 'app.py'
+      - 'render_source_lane_compatibility_v01.sql'
+      - 'strategy_ready_setups_v01.sql'
+      - 'big_mover_supabase_runtime.sql'
       - 'sealed_profitability_source_isolation_v02.sql'
       - 'sealed_scientific_fingerprint_v01.sql'
       - 'tests/test_sealed_run_source_isolation_v02.py'
       - 'tests/test_sealed_scientific_fingerprint_v01.py'
       - 'tests/test_scientific_identity_v01.py'
       - 'tests/test_canonical_previous_snapshot_continuity_v01.py'
+      - 'tests/test_render_source_lane_compatibility_v01.py'
+      - 'tests/test_strategy_ready_setups_v01.py'
+      - 'tests/test_big_mover_fresh_canonical_source_v01.py'
       - '.github/workflows/alpha-hunter-realtime-profitability-test.yml'
       - '.github/workflows/sealed-run-source-isolation-v02-ci.yml'
   push:
@@ -22,6 +30,11 @@ on:
       - 'alpha_hunter/collector.py'
       - 'alpha_hunter/scientific_identity.py'
       - 'alpha_hunter/storage.py'
+      - 'hourly.py'
+      - 'app.py'
+      - 'render_source_lane_compatibility_v01.sql'
+      - 'strategy_ready_setups_v01.sql'
+      - 'big_mover_supabase_runtime.sql'
       - 'sealed_profitability_source_isolation_v02.sql'
       - 'sealed_scientific_fingerprint_v01.sql'
       - 'tests/test_sealed_run_source_isolation_v02.py'
@@ -57,6 +70,9 @@ jobs:
             tests/test_sealed_scientific_fingerprint_v01.py \
             tests/test_scientific_identity_v01.py \
             tests/test_canonical_previous_snapshot_continuity_v01.py \
+            tests/test_render_source_lane_compatibility_v01.py \
+            tests/test_strategy_ready_setups_v01.py \
+            tests/test_big_mover_fresh_canonical_source_v01.py \
             tests/test_sealed_profitability_validation_v01.py \
             tests/test_realtime_profitability_monitor_v01.py \
             tests/test_realtime_test_engine_v01.py \
@@ -70,6 +86,9 @@ jobs:
               for p in (
                   "sealed_profitability_source_isolation_v02.sql",
                   "sealed_scientific_fingerprint_v01.sql",
+                  "render_source_lane_compatibility_v01.sql",
+                  "strategy_ready_setups_v01.sql",
+                  "big_mover_supabase_runtime.sql",
                   "alpha_hunter/collector.py",
                   "alpha_hunter/scientific_identity.py",
                   "alpha_hunter/storage.py",

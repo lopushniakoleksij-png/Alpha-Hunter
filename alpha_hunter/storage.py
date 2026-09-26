@@ -171,7 +171,13 @@ class SupabaseStorage:
                 actual_identity = payload.get("validation_identity")
                 if not isinstance(actual_identity, dict):
                     continue
-                for key in ("test_contract", "config_sha256", "run_source"):
+                for key in (
+                    "test_contract",
+                    "config_sha256",
+                    "run_source",
+                    "runtime_role",
+                    "scientific_fingerprint_sha256",
+                ):
                     expected = expected_identity.get(key)
                     if expected and actual_identity.get(key) != expected:
                         break

@@ -163,6 +163,7 @@ def run_once(
     config: str,
     *,
     run_auxiliary_jobs: bool = True,
+    run_source_override: str | None = None,
 ) -> int:
     """Run one canonical scanner cycle.
 
@@ -186,9 +187,15 @@ def run_once(
             "--config",
             config,
         ]
+        run_env = os.environ.copy()
+        if run_source_override:
+            run_env["ALPHA_HUNTER_RUN_SOURCE"] = run_source_override
+            run_env["ALPHA_HUNTER_RUNTIME_ROLE"] = run_source_override
+
         completed = subprocess.run(
             command,
             cwd=project_root,
+            env=run_env,
             check=False,
         )
         if completed.returncode != 0:
@@ -271,6 +278,7 @@ def run_render_cron_burst(
             project_root,
             config,
             run_auxiliary_jobs=True,
+            run_source_override="RENDER_CRON",
         )
     else:
         overall_code = 0
@@ -306,6 +314,7 @@ def run_render_cron_burst(
             project_root,
             config,
             run_auxiliary_jobs=False,
+            run_source_override="RENDER_CRON",
         )
         if overall_code == 0 and code != 0:
             overall_code = code

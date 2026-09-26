@@ -10,8 +10,10 @@
 -- decision support". It does NOT grant exchange/order authority.
 --
 -- Sources:
--- - RENDER: canonical hourly production scanner
+-- - RENDER_CRON: canonical Render production scanner
+-- - RENDER: legacy canonical Render scanner during migration
 -- - GITHUB_FAST_DISCOVERY: isolated 20-minute early-discovery scanner
+-- - RENDER_WEB is intentionally excluded from the canonical ready queue
 --
 -- Staleness:
 -- - only the latest run from each source
@@ -31,7 +33,7 @@ with source_latest as (
     p.payload->'validation_identity'->>'config_sha256' as config_sha256
   from public.alpha_hunter_snapshots p
   where p.payload->'validation_identity'->>'run_source'
-      in ('RENDER','GITHUB_FAST_DISCOVERY')
+      in ('RENDER_CRON','RENDER','GITHUB_FAST_DISCOVERY')
     and p.collected_at_utc >= clock_timestamp()-interval '90 minutes'
   order by
     p.payload->'validation_identity'->>'run_source',

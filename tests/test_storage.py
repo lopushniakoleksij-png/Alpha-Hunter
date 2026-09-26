@@ -263,6 +263,13 @@ def test_remaining_render_burst_boundaries_are_aligned():
     ]
 
 
+def test_render_cron_launcher_stamps_canonical_source_lane():
+    source = Path("hourly.py").read_text(encoding="utf-8")
+    assert 'run_source_override="RENDER_CRON"' in source
+    assert 'run_env["ALPHA_HUNTER_RUN_SOURCE"] = run_source_override' in source
+    assert 'run_env["ALPHA_HUNTER_RUNTIME_ROLE"] = run_source_override' in source
+
+
 def test_hourly_lock_prevents_overlap(tmp_path):
     from hourly import acquire_lock, release_lock
     lock = tmp_path / ".lock"

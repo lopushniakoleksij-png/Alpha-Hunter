@@ -13,7 +13,7 @@ def test_live_scoring_is_bound_to_render_canonical_snapshot():
         "p.run_id=sf.run_id",
         "validation_identity",
         "run_source",
-        "='render'",
+        "in ('render_cron','render')",
     ]
     for marker in required:
         assert marker in LOWER
@@ -21,12 +21,12 @@ def test_live_scoring_is_bound_to_render_canonical_snapshot():
 
 def test_stale_feature_source_fails_closed():
     assert "interval '90 minutes'" in LOWER
-    assert "canonical render feature run is stale" in LOWER
-    assert "no canonical render feature run available" in LOWER
+    assert "canonical render_cron feature run is stale" in LOWER
+    assert "no canonical render_cron/legacy render feature run available" in LOWER
 
 
 def test_scoring_reports_canonical_source_contract():
-    assert "canonical_render_signal_features" in LOWER
+    assert "canonical_render_cron_signal_features" in LOWER
     assert "feature_source_max_age_minutes" in LOWER
 
 
