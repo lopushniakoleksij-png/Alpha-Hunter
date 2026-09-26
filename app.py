@@ -14,7 +14,6 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 from alpha_hunter.services.statistics import StatisticsService
-from alpha_hunter.storage import SupabaseConfig, SupabaseStorage
 from performance_page import PERFORMANCE_PAGE
 
 
@@ -24,6 +23,10 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_TABLE = os.getenv("ALPHA_HUNTER_SNAPSHOT_TABLE", "alpha_hunter_snapshots")
 APP_VERSION = os.getenv("ALPHA_HUNTER_VERSION", "7.2")
+CANONICAL_RUN_SOURCE = os.getenv(
+    "ALPHA_HUNTER_CANONICAL_RUN_SOURCE",
+    "RENDER_CRON",
+).strip().upper()
 SERVICE_STARTED_AT_UTC = datetime.now(timezone.utc).isoformat()
 
 SUPABASE_READ_ATTEMPTS = 3
@@ -138,24 +141,74 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
     raise RuntimeError("Supabase read retry budget exhausted")
 
 
-def latest_snapshot() -> dict[str, Any]:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise RuntimeError("Supabase environment variables are not configured")
+def _hydrate_dashboard_snapshot(
+    row: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    snapshot = dict(payload)
+    snapshot.setdefault("run_id", row.get("run_id"))
+    snapshot.setdefault("collected_at_utc", row.get("collected_at_utc"))
 
-    storage = SupabaseStorage(
-        SupabaseConfig(
-            url=SUPABASE_URL,
-            key=SUPABASE_KEY,
-            snapshot_table=SNAPSHOT_TABLE,
-            timeout_seconds=SUPABASE_READ_TIMEOUT_SECONDS,
-            max_retries=max(0, SUPABASE_READ_ATTEMPTS - 1),
-            retry_backoff_seconds=SUPABASE_RETRY_BACKOFF_SECONDS,
-        )
+    if snapshot.get("_storage_contract") != "snapshot-parent-v0.2":
+        return snapshot
+
+    run_id = str(snapshot.get("run_id") or "")
+    if not run_id:
+        raise RuntimeError("Compact canonical snapshot is missing run_id")
+
+    children = supabase_get_rows(
+        "alpha_hunter_symbol_snapshots",
+        {
+            "select": "symbol,payload",
+            "run_id": f"eq.{run_id}",
+            "order": "symbol.asc",
+            "limit": "2000",
+        },
     )
-    snapshot = storage.load_latest_snapshot()
-    if snapshot is None:
-        raise RuntimeError("No Alpha Hunter snapshots found")
+    snapshot["symbols"] = [
+        child.get("payload")
+        for child in children
+        if isinstance(child, dict)
+        and isinstance(child.get("payload"), dict)
+    ]
     return snapshot
+
+
+def latest_snapshot() -> dict[str, Any]:
+    params = {
+        "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
+        "order": "collected_at_utc.desc",
+        "limit": "1",
+    }
+    if CANONICAL_RUN_SOURCE:
+        params["payload->validation_identity->>run_source"] = (
+            f"eq.{CANONICAL_RUN_SOURCE}"
+        )
+
+    rows = supabase_get_rows(SNAPSHOT_TABLE, params)
+    if not rows:
+        raise RuntimeError(
+            "No Alpha Hunter snapshots found for canonical run source "
+            f"{CANONICAL_RUN_SOURCE or '<ANY>'}"
+        )
+
+    row = rows[0]
+    payload = row.get("payload")
+    if not isinstance(payload, dict):
+        raise RuntimeError("Canonical snapshot payload is missing")
+
+    if CANONICAL_RUN_SOURCE:
+        identity = payload.get("validation_identity")
+        if not isinstance(identity, dict):
+            raise RuntimeError("Canonical snapshot is missing validation identity")
+        actual_source = str(identity.get("run_source") or "").upper()
+        if actual_source != CANONICAL_RUN_SOURCE:
+            raise RuntimeError(
+                "Canonical snapshot source mismatch: "
+                f"expected {CANONICAL_RUN_SOURCE}, got {actual_source or '<NONE>'}"
+            )
+
+    return _hydrate_dashboard_snapshot(row, payload)
 
 
 def latest_test_engine_status() -> dict[str, Any]:
