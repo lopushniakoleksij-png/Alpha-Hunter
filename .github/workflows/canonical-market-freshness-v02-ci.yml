@@ -1,0 +1,61 @@
+name: Canonical Market Freshness v0.2 CI
+
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/collector.py'
+      - 'config.json'
+      - 'tests/test_canonical_market_freshness_v02.py'
+      - '.github/workflows/canonical-market-freshness-v02-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/collector.py'
+      - 'config.json'
+      - 'tests/test_canonical_market_freshness_v02.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest
+      - name: Compile scanner
+        run: python -m py_compile alpha_hunter/collector.py
+      - name: Run canonical market freshness regressions
+        run: >
+          python -m pytest -q
+          tests/test_canonical_market_freshness_v02.py
+          tests/test_production_gates_v03.py
+      - name: Enforce no execution authority
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path("alpha_hunter/collector.py").read_text(
+              encoding="utf-8"
+          ).lower()
+          forbidden = [
+              "place_order(",
+              "cancel_order(",
+              "modify_order(",
+              "set_leverage(",
+              "trade_permission=true",
+              "trade_permission = true",
+              "production_execution_enabled=true",
+          ]
+          hits = [item for item in forbidden if item in text]
+          if hits:
+              raise SystemExit(
+                  f"forbidden market-freshness authority path(s): {hits}"
+              )
+          PY
