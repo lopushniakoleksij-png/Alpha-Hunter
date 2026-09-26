@@ -19,8 +19,7 @@ def main() -> int:
     engine = RealtimeTestEngine(settings)
 
     try:
-        report = engine.evaluate()
-        engine.persist(report)
+        report = engine.load_authoritative()
     except Exception as exc:
         print(f"Test engine: FAILED {exc}")
         return 2
