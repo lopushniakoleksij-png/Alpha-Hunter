@@ -1,136 +1,230 @@
--- Alpha Hunter Money Entry exact-stage single writer v0.1
--- Forward-only production-development upgrade. Shadow evidence only.
--- No numeric T0/T1/T2 thresholds are embedded here. Exact stage claims require
--- a separately evidenced ACTIVE threshold-set row.
+-- Alpha Hunter Money Entry geometry-contract binding v0.1
+--
+-- Safety objective:
+--   Thresholds may never authorize T0/T1/T2 against a geometry construction
+--   different from the one they were validated for.
+--
+-- No numeric threshold is introduced here. Existing stage evidence remains
+-- append-only and current exact stages remain fail-closed.
 
-create schema if not exists private;
-revoke all on schema private from public, anon, authenticated;
-grant usage on schema private to service_role;
+alter table public.alpha_hunter_money_entry_threshold_sets
+  add column if not exists geometry_contract_id text;
 
-create table if not exists public.alpha_hunter_money_entry_threshold_sets (
-  threshold_set_id text primary key,
-  status text not null check (status in ('DRAFT','VALIDATED','ACTIVE','RETIRED')),
-  geometry_contract_id text,
-  max_t0_stop_distance_pct double precision,
-  min_t0_remaining_r double precision,
-  min_t1_remaining_r double precision,
-  min_t2_remaining_r double precision,
-  evidence_reference jsonb not null default '{}'::jsonb check (jsonb_typeof(evidence_reference)='object'),
-  validated_at_utc timestamptz,
-  activated_at_utc timestamptz,
-  model_version text not null,
-  shadow_only boolean not null default true check (shadow_only=true),
-  trade_permission boolean not null default false check (trade_permission=false),
-  created_at timestamptz not null default clock_timestamp(),
-  check (status='DRAFT' or (
-    geometry_contract_id is not null and
-    max_t0_stop_distance_pct is not null and max_t0_stop_distance_pct>0 and
-    min_t0_remaining_r is not null and min_t0_remaining_r>0 and
-    min_t1_remaining_r is not null and min_t1_remaining_r>0 and
-    min_t2_remaining_r is not null and min_t2_remaining_r>0
-  )),
-  check (status<>'ACTIVE' or (
-    validated_at_utc is not null and activated_at_utc is not null and evidence_reference<>'{}'::jsonb
-  ))
-);
+alter table public.alpha_hunter_money_entry_stage_snapshots
+  add column if not exists source_geometry_contract_id text,
+  add column if not exists threshold_geometry_contract_id text;
 
-create table if not exists public.alpha_hunter_money_entry_stage_snapshots (
-  stage_snapshot_id text primary key,
-  control_run_id text not null references public.alpha_hunter_control_plane_runs(control_run_id),
-  source_run_id text not null,
-  source_bridge_id text not null unique,
-  source_signal_id text,
-  source_captured_at_utc timestamptz not null,
-  snapshot_at_utc timestamptz not null default clock_timestamp(),
-  symbol text not null,
-  direction text not null check (direction in ('LONG','SHORT')),
-  stage_status text not null check (stage_status in ('DATA_INSUFFICIENT','NO_T0','T0_CONTROLLED_ENTRY','T1_ACCEPTANCE_CONFIRMED','T2_EXPANSION_CONFIRMED')),
-  stage_eligible boolean not null default false,
-  threshold_set_id text references public.alpha_hunter_money_entry_threshold_sets(threshold_set_id),
-  threshold_status text not null,
-  source_geometry_contract_id text,
-  threshold_geometry_contract_id text,
-  direction_1h text,
-  direction_12h text,
-  direction_1d text,
-  lifecycle text,
-  research_status text,
-  bridge_status text,
-  scanner_state text,
-  decision_stage text,
-  market_phase text,
-  liquidity_state text,
-  candidate_entry double precision,
-  stop_price double precision,
-  target_price double precision,
-  stop_distance_pct double precision,
-  remaining_r double precision,
-  execution_setup_direction text,
-  scanner_structure_valid boolean,
-  scanner_direction_aligned boolean,
-  scanner_momentum_confirmed boolean,
-  scanner_participation_confirmed boolean,
-  scanner_data_integrity_pass boolean,
-  liquidity_ok boolean,
-  participation_emerging boolean,
-  acceptance_confirmed boolean,
-  trigger_confirmed boolean,
-  expansion_confirmed boolean,
-  open_position_conflict boolean,
-  blockers jsonb not null default '[]'::jsonb check (jsonb_typeof(blockers)='array'),
-  next_stage_blockers jsonb not null default '[]'::jsonb check (jsonb_typeof(next_stage_blockers)='array'),
-  evidence jsonb not null default '{}'::jsonb check (jsonb_typeof(evidence)='object'),
-  model_version text not null default 'money-entry-stage-single-writer-v0.1',
-  shadow_only boolean not null default true check (shadow_only=true),
-  trade_permission boolean not null default false check (trade_permission=false),
-  created_at timestamptz not null default clock_timestamp(),
-  check (
-    (stage_status in ('T0_CONTROLLED_ENTRY','T1_ACCEPTANCE_CONFIRMED','T2_EXPANSION_CONFIRMED') and stage_eligible=true)
-    or (stage_status in ('DATA_INSUFFICIENT','NO_T0') and stage_eligible=false)
-  ),
-  check (
-    stage_status not in ('T0_CONTROLLED_ENTRY','T1_ACCEPTANCE_CONFIRMED','T2_EXPANSION_CONFIRMED')
-    or (
-      source_geometry_contract_id is not null
-      and threshold_geometry_contract_id=source_geometry_contract_id
-    )
-  )
-);
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint
+    where conrelid='public.alpha_hunter_money_entry_threshold_sets'::regclass
+      and conname='ah_money_entry_threshold_geometry_required'
+  ) then
+    alter table public.alpha_hunter_money_entry_threshold_sets
+      add constraint ah_money_entry_threshold_geometry_required
+      check (
+        status='DRAFT'
+        or geometry_contract_id is not null
+      );
+  end if;
 
-alter table public.alpha_hunter_money_entry_threshold_sets enable row level security;
-alter table public.alpha_hunter_money_entry_stage_snapshots enable row level security;
-revoke all on table public.alpha_hunter_money_entry_threshold_sets from public,anon,authenticated;
-revoke all on table public.alpha_hunter_money_entry_stage_snapshots from public,anon,authenticated;
-grant select,insert on table public.alpha_hunter_money_entry_threshold_sets to service_role;
-grant select,insert on table public.alpha_hunter_money_entry_stage_snapshots to service_role;
+  if not exists (
+    select 1
+    from pg_catalog.pg_constraint
+    where conrelid='public.alpha_hunter_money_entry_stage_snapshots'::regclass
+      and conname='ah_money_entry_exact_stage_geometry_match'
+  ) then
+    alter table public.alpha_hunter_money_entry_stage_snapshots
+      add constraint ah_money_entry_exact_stage_geometry_match
+      check (
+        stage_status not in (
+          'T0_CONTROLLED_ENTRY',
+          'T1_ACCEPTANCE_CONFIRMED',
+          'T2_EXPANSION_CONFIRMED'
+        )
+        or (
+          source_geometry_contract_id is not null
+          and threshold_geometry_contract_id=source_geometry_contract_id
+        )
+      );
+  end if;
+end;
+$$;
 
-create index if not exists idx_ah_money_entry_stage_run
-  on public.alpha_hunter_money_entry_stage_snapshots(control_run_id,created_at desc);
-create index if not exists idx_ah_money_entry_stage_source
-  on public.alpha_hunter_money_entry_stage_snapshots(source_run_id,symbol,direction);
+comment on column public.alpha_hunter_money_entry_threshold_sets.geometry_contract_id is
+  'Immutable execution-geometry contract against which this threshold set was calibrated. Non-DRAFT sets require a value.';
 
-drop trigger if exists trg_ah_money_entry_threshold_sets_append_only on public.alpha_hunter_money_entry_threshold_sets;
-create trigger trg_ah_money_entry_threshold_sets_append_only
-before update or delete on public.alpha_hunter_money_entry_threshold_sets
-for each row execute function private.alpha_hunter_block_append_only_mutation();
+comment on column public.alpha_hunter_money_entry_stage_snapshots.source_geometry_contract_id is
+  'Geometry contract frozen by the contemporaneous Money Entry bridge source.';
 
-drop trigger if exists trg_ah_money_entry_stage_snapshots_append_only on public.alpha_hunter_money_entry_stage_snapshots;
-create trigger trg_ah_money_entry_stage_snapshots_append_only
-before update or delete on public.alpha_hunter_money_entry_stage_snapshots
-for each row execute function private.alpha_hunter_block_append_only_mutation();
+comment on column public.alpha_hunter_money_entry_stage_snapshots.threshold_geometry_contract_id is
+  'Geometry contract attached to the ACTIVE threshold set used for this stage evaluation.';
 
-create or replace function private.alpha_hunter_text_bool(p_value text)
-returns boolean
-language sql
-immutable
+create or replace function private.alpha_hunter_run_big_mover_money_entry_bridge()
+returns jsonb
+language plpgsql
+security definer
 set search_path = ''
 as $$
-  select case lower(trim(p_value))
-    when 'true' then true when 'false' then false when '1' then true when '0' then false else null
-  end;
+declare
+  v_run_id text;
+  v_captured timestamptz;
+  v_upserted integer := 0;
+  v_top_long jsonb;
+  v_top_short jsonb;
+begin
+  select b.run_id,max(b.captured_at_utc)
+    into v_run_id,v_captured
+  from public.alpha_hunter_big_mover_shadow b
+  where b.run_id=(
+    select b2.run_id
+    from public.alpha_hunter_big_mover_shadow b2
+    order by b2.captured_at_utc desc,b2.created_at desc limit 1
+  )
+  group by b.run_id;
+
+  if v_run_id is null then
+    raise exception 'no big-mover shadow run available';
+  end if;
+
+  with latest_shadow as (
+    -- Multiple model versions may coexist for one run; choose one row deterministically.
+    select distinct on (b.symbol,b.direction) b.*
+    from public.alpha_hunter_big_mover_shadow b
+    where b.run_id=v_run_id
+    order by b.symbol,b.direction,b.created_at desc,b.model_version desc
+  ), source_rows as (
+    select
+      b.run_id,b.captured_at_utc,b.symbol,b.direction,b.similarity_score,b.feature_coverage,
+      b.lifecycle,b.research_status,
+      coalesce(
+        b.raw_change_24h_pct,
+        case when (sf.source_payload->>'change_24h_pct') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
+          then (sf.source_payload->>'change_24h_pct')::double precision end
+      ) as raw_change_24h_pct,
+      coalesce(b.direction_normalized_move_pct,b.current_move_pct) as direction_normalized_move_pct,
+      upper(nullif(sf.direction,'')) as scanner_direction,
+      upper(nullif(coalesce(sf.source_payload#>>'{timeframes,1H,trend}',sf.trend_1h),'')) as direction_1h,
+      upper(nullif(coalesce(sf.source_payload#>>'{timeframes,4H,trend}',sf.trend_4h),'')) as direction_4h,
+      sf.liquidity_state,
+      sf.source_payload->>'opportunity_timing' as opportunity_timing,
+      sf.source_payload->>'candidate_quality_status' as candidate_quality_status,
+      sf.source_payload#>>'{execution_setup,geometry_contract_id}' as geometry_contract_id,
+      case when (sf.source_payload#>>'{execution_setup,entry}') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
+        then (sf.source_payload#>>'{execution_setup,entry}')::double precision end as candidate_entry,
+      case when (sf.source_payload#>>'{execution_setup,stop}') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
+        then (sf.source_payload#>>'{execution_setup,stop}')::double precision end as stop_price,
+      case when (sf.source_payload#>>'{execution_setup,target}') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
+        then (sf.source_payload#>>'{execution_setup,target}')::double precision end as target_price,
+      case when (sf.source_payload#>>'{execution_setup,rr}') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
+        then (sf.source_payload#>>'{execution_setup,rr}')::double precision end as execution_rr,
+      coalesce(b.blockers,'[]'::jsonb) as signature_blockers
+    from latest_shadow b
+    left join lateral (
+      select s.*
+      from public.alpha_hunter_signal_features s
+      where s.run_id=b.run_id and s.symbol=b.symbol
+      order by s.captured_at_utc desc limit 1
+    ) sf on true
+  ), evaluated as (
+    select s.*,
+      s.signature_blockers
+      || case when s.direction_normalized_move_pct<-3 then '["CURRENT_MOVE_OPPOSES_DIRECTION"]'::jsonb else '[]'::jsonb end
+      || case when s.scanner_direction is not null and s.scanner_direction<>s.direction then '["SCANNER_DIRECTION_CONFLICT"]'::jsonb else '[]'::jsonb end
+      || case when s.liquidity_state is null then '["LIQUIDITY_STATE_MISSING"]'::jsonb else '[]'::jsonb end
+      || case when s.candidate_entry is null or s.stop_price is null or s.execution_rr is null then '["EXECUTION_GEOMETRY_MISSING"]'::jsonb else '[]'::jsonb end
+      || case when s.research_status<>'SHADOW_QUEUE' then '["NOT_IN_SHADOW_QUEUE"]'::jsonb else '[]'::jsonb end as all_blockers
+    from source_rows s
+  ), dedup as (
+    select e.*,
+      (select coalesce(jsonb_agg(distinct value),'[]'::jsonb) from jsonb_array_elements(e.all_blockers)) as blockers_dedup
+    from evaluated e
+  ), upserted as (
+    insert into public.alpha_hunter_big_mover_money_entry_shadow(
+      bridge_id,run_id,captured_at_utc,symbol,direction,similarity_score,feature_coverage,lifecycle,research_status,
+      raw_change_24h_pct,direction_normalized_move_pct,scanner_direction,direction_1h,direction_4h,direction_12h,direction_1d,
+      liquidity_state,opportunity_timing,candidate_quality_status,candidate_entry,stop_price,target_price,execution_rr,
+      bridge_status,blockers,evidence,model_version,shadow_only,trade_permission,updated_at
+    )
+    select
+      md5('big-mover-money-entry-bridge-v0.1|'||d.run_id||'|'||d.symbol||'|'||d.direction),
+      d.run_id,d.captured_at_utc,d.symbol,d.direction,d.similarity_score,d.feature_coverage,d.lifecycle,d.research_status,
+      d.raw_change_24h_pct,d.direction_normalized_move_pct,d.scanner_direction,d.direction_1h,d.direction_4h,null,null,
+      d.liquidity_state,d.opportunity_timing,d.candidate_quality_status,d.candidate_entry,d.stop_price,d.target_price,d.execution_rr,
+      case
+        when d.direction_normalized_move_pct<-3 then 'WATCH'
+        when jsonb_array_length(d.blockers_dedup)>0 then 'DATA_INSUFFICIENT'
+        else 'READY_FOR_MONEY_ENTRY_EVAL'
+      end,
+      d.blockers_dedup,
+      jsonb_build_object(
+        'source','BIG_MOVER_SHADOW_PLUS_LIVE_SCANNER',
+        'geometry_contract_id',d.geometry_contract_id,
+        'thresholds_invented',false,
+        't0_authorized',false,
+        'trade_permission',false,
+        'note','Bridge only. Exact T0/T1/T2 decision remains fail-closed until all Money Entry evidence and validated thresholds are present.'
+      ),
+      'big-mover-money-entry-bridge-v0.1',true,false,now()
+    from dedup d
+    on conflict(bridge_id) do update set
+      captured_at_utc=excluded.captured_at_utc,
+      similarity_score=excluded.similarity_score,
+      feature_coverage=excluded.feature_coverage,
+      lifecycle=excluded.lifecycle,
+      research_status=excluded.research_status,
+      raw_change_24h_pct=excluded.raw_change_24h_pct,
+      direction_normalized_move_pct=excluded.direction_normalized_move_pct,
+      scanner_direction=excluded.scanner_direction,
+      direction_1h=excluded.direction_1h,
+      direction_4h=excluded.direction_4h,
+      direction_12h=null,
+      direction_1d=null,
+      liquidity_state=excluded.liquidity_state,
+      opportunity_timing=excluded.opportunity_timing,
+      candidate_quality_status=excluded.candidate_quality_status,
+      candidate_entry=excluded.candidate_entry,
+      stop_price=excluded.stop_price,
+      target_price=excluded.target_price,
+      execution_rr=excluded.execution_rr,
+      bridge_status=excluded.bridge_status,
+      blockers=excluded.blockers,
+      evidence=excluded.evidence,
+      shadow_only=true,
+      trade_permission=false,
+      updated_at=now()
+    returning 1
+  )
+  select count(*) into v_upserted from upserted;
+
+  select to_jsonb(x) into v_top_long from (
+    select symbol,direction,similarity_score,feature_coverage,lifecycle,research_status,
+      raw_change_24h_pct,direction_normalized_move_pct,bridge_status,blockers,candidate_entry,stop_price,target_price,execution_rr
+    from public.alpha_hunter_big_mover_money_entry_shadow
+    where run_id=v_run_id and direction='LONG'
+    order by similarity_score desc nulls last limit 1
+  ) x;
+
+  select to_jsonb(x) into v_top_short from (
+    select symbol,direction,similarity_score,feature_coverage,lifecycle,research_status,
+      raw_change_24h_pct,direction_normalized_move_pct,bridge_status,blockers,candidate_entry,stop_price,target_price,execution_rr
+    from public.alpha_hunter_big_mover_money_entry_shadow
+    where run_id=v_run_id and direction='SHORT'
+    order by similarity_score desc nulls last limit 1
+  ) x;
+
+  return jsonb_build_object(
+    'mode','BIG_MOVER_TO_MONEY_ENTRY_SHADOW_BRIDGE',
+    'run_id',v_run_id,'captured_at_utc',v_captured,'rows_upserted',v_upserted,
+    'shadow_only',true,'trade_permission',false,'top_long',v_top_long,'top_short',v_top_short
+  );
+end;
 $$;
-revoke all on function private.alpha_hunter_text_bool(text) from public,anon,authenticated;
-grant execute on function private.alpha_hunter_text_bool(text) to service_role;
+
+revoke execute on function private.alpha_hunter_run_big_mover_money_entry_bridge() from public, anon, authenticated;
+grant execute on function private.alpha_hunter_run_big_mover_money_entry_bridge() to service_role;
 
 create or replace function private.alpha_hunter_capture_money_entry_stage_snapshots(p_control_run_id text)
 returns jsonb

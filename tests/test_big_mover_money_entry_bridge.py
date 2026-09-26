@@ -37,6 +37,11 @@ def test_runtime_order_is_big_mover_then_parent_then_bridge():
     assert "alpha_hunter_run_big_mover_money_entry_pipeline" in BRIDGE_SQL
 
 
+def test_bridge_freezes_scanner_geometry_contract():
+    assert "source_payload#>>'{execution_setup,geometry_contract_id}'" in BRIDGE_SQL
+    assert "'geometry_contract_id',d.geometry_contract_id" in BRIDGE_SQL
+
+
 def test_bridge_does_not_claim_t0_or_invent_thresholds():
     assert "'thresholds_invented',false" in BRIDGE_SQL
     assert "'t0_authorized',false" in BRIDGE_SQL
