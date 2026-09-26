@@ -415,6 +415,19 @@ begin
     select e.*
     from public.alpha_hunter_strategy_episodes_v01 e
     where e.first_observed_at_utc <= clock_timestamp() - interval '1 hour'
+      and exists (
+        select 1
+        from (values (1),(4),(12),(24)) as h(horizon_hours)
+        where e.first_observed_at_utc
+                + h.horizon_hours * interval '1 hour'
+              <= clock_timestamp()
+          and not exists (
+            select 1
+            from public.alpha_hunter_strategy_forward_outcomes_v01 o
+            where o.episode_id=e.episode_id
+              and o.horizon_hours=h.horizon_hours
+          )
+      )
     order by e.first_observed_at_utc
     limit 500
   loop
