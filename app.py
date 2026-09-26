@@ -14,6 +14,7 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 from alpha_hunter.services.statistics import StatisticsService
+from alpha_hunter.storage import SupabaseConfig, SupabaseStorage
 from performance_page import PERFORMANCE_PAGE
 
 
@@ -138,17 +139,23 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
 
 
 def latest_snapshot() -> dict[str, Any]:
-    rows = supabase_get_rows(
-        SNAPSHOT_TABLE,
-        {
-            "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
-            "order": "collected_at_utc.desc",
-            "limit": "1",
-        },
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("Supabase environment variables are not configured")
+
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url=SUPABASE_URL,
+            key=SUPABASE_KEY,
+            snapshot_table=SNAPSHOT_TABLE,
+            timeout_seconds=SUPABASE_READ_TIMEOUT_SECONDS,
+            max_retries=max(0, SUPABASE_READ_ATTEMPTS - 1),
+            retry_backoff_seconds=SUPABASE_RETRY_BACKOFF_SECONDS,
+        )
     )
-    if not rows:
+    snapshot = storage.load_latest_snapshot()
+    if snapshot is None:
         raise RuntimeError("No Alpha Hunter snapshots found")
-    return rows[0].get("payload") or {}
+    return snapshot
 
 
 def latest_test_engine_status() -> dict[str, Any]:

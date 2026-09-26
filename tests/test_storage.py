@@ -87,13 +87,17 @@ def test_supabase_writes_parent_and_children():
     )
     run_id = storage.save_snapshot(sample_snapshot())
     assert len(run_id) == 32
-    assert len(session.calls) == 4
+    assert len(session.calls) == 5
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id,symbol"}
     assert session.calls[2][1]["params"] == {"on_conflict": "signal_id"}
     assert session.calls[3][1]["params"] == {"on_conflict": "signal_id"}
+    assert session.calls[4][1]["params"] == {"on_conflict": "run_id,symbol"}
     assert session.calls[2][0].endswith("/rest/v1/alpha_hunter_signals")
     assert session.calls[3][0].endswith("/rest/v1/alpha_hunter_signal_features")
+    assert session.calls[4][0].endswith(
+        "/rest/v1/alpha_hunter_readiness_observations_v01"
+    )
 
 
 def test_supabase_read_retries_transient_status_then_succeeds():
@@ -141,6 +145,7 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
         StatusResponse(201),
         StatusResponse(201),
         StatusResponse(201),
+        StatusResponse(201),
     ])
     storage = SupabaseStorage(
         SupabaseConfig(
@@ -155,7 +160,7 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
     run_id = storage.save_snapshot(sample_snapshot())
 
     assert len(run_id) == 32
-    assert len(session.calls) == 5
+    assert len(session.calls) == 6
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id"}
 
@@ -311,3 +316,126 @@ def test_canonical_signal_and_feature_rows_share_same_signal_id():
     assert signal_rows[0]["symbol"] == "SUIUSDT"
     assert feature_rows[0]["symbol"] == "SUIUSDT"
     assert signal_rows[0]["trade_permission"] is False
+
+
+def test_compact_parent_snapshot_hydrates_from_symbol_rows():
+    parent = StatusResponse(
+        200,
+        payload=[{
+            "run_id": "run-1",
+            "collected_at_utc": "2026-09-25T12:00:00+00:00",
+            "payload": {
+                "version": "0.7.1",
+                "product_type": "usdt-futures",
+                "_storage_contract": "snapshot-parent-v0.2",
+            },
+        }],
+    )
+    children = StatusResponse(
+        200,
+        payload=[
+            {
+                "symbol": "BTCUSDT",
+                "payload": {"symbol": "BTCUSDT", "last_price": 100.0},
+            },
+            {
+                "symbol": "ETHUSDT",
+                "payload": {"symbol": "ETHUSDT", "last_price": 50.0},
+            },
+        ],
+    )
+    session = SequencedSession([parent, children])
+    storage = SupabaseStorage(
+        SupabaseConfig(
+            url="https://example.supabase.co",
+            key="secret",
+            retry_backoff_seconds=0,
+        ),
+        session=session,
+    )
+
+    snapshot = storage.load_latest_snapshot()
+
+    assert snapshot is not None
+    assert snapshot["run_id"] == "run-1"
+    assert [row["symbol"] for row in snapshot["symbols"]] == [
+        "BTCUSDT",
+        "ETHUSDT",
+    ]
+    assert session.calls[1][1]["params"]["run_id"] == "eq.run-1"
+
+
+def test_signal_feature_and_parent_payloads_are_compact():
+    import json
+
+    snapshot = sample_snapshot()
+    symbol = snapshot["symbols"][0]
+    symbol.update({
+        "collected_at_utc": snapshot["collected_at_utc"],
+        "change_24h_pct": 2.5,
+        "market_phase": "IGNITION",
+        "opportunity_timing": "EARLY",
+        "execution_setup": {
+            "direction": "LONG",
+            "rr": 6.0,
+            "entry": 0.75,
+            "stop": 0.70,
+            "target": 1.05,
+        },
+        "behaviour": {"score": 81.0, "spread_pct": 0.03},
+        "timeframes": {
+            "1H": {
+                "indicators": {"rsi": 55},
+                "latest_candle": {"close": 0.75},
+            },
+        },
+        "multi_strategy_engine": {
+            "strategies": [
+                {"strategy_id": "S1", "evidence": {"large": "x" * 5000}},
+            ],
+        },
+        "microstructure": {"depth": {"large": "y" * 5000}},
+        "catalyst": {"notices": [{"large": "z" * 5000}]},
+    })
+
+    session = FakeSession()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=session,
+    )
+    storage.save_snapshot(snapshot)
+
+    signal_rows = json.loads(session.calls[2][1]["data"])
+    feature_rows = json.loads(session.calls[3][1]["data"])
+    signal_payload = signal_rows[0]["payload"]
+    feature_source = feature_rows[0]["source_payload"]
+
+    for compact in (signal_payload, feature_source):
+        assert compact["_storage_contract"] == "signal-source-v0.2"
+        assert compact["symbol"] == "SUIUSDT"
+        assert compact["change_24h_pct"] == 2.5
+        assert compact["market_phase"] == "IGNITION"
+        assert compact["opportunity_timing"] == "EARLY"
+        assert compact["execution_setup"]["rr"] == 6.0
+        assert compact["behaviour"]["score"] == 81.0
+        assert "timeframes" not in compact
+        assert "multi_strategy_engine" not in compact
+        assert "microstructure" not in compact
+        assert "catalyst" not in compact
+
+    child_rows = json.loads(session.calls[1][1]["data"])
+    assert "timeframes" in child_rows[0]["payload"]
+    assert "multi_strategy_engine" in child_rows[0]["payload"]
+
+    parent_rows = json.loads(session.calls[0][1]["data"])
+    parent_payload = parent_rows[0]["payload"]
+    assert parent_payload["_storage_contract"] == "snapshot-parent-v0.2"
+    assert parent_payload["symbols"][0]["symbol"] == "SUIUSDT"
+    assert parent_payload["symbols"][0]["market_phase"] == "IGNITION"
+    assert "timeframes" not in parent_payload["symbols"][0]
+    assert "multi_strategy_engine" not in parent_payload["symbols"][0]
+
+    readiness_rows = json.loads(session.calls[4][1]["data"])
+    assert readiness_rows[0]["symbol"] == "SUIUSDT"
+    assert readiness_rows[0]["reward_risk"] == 6.0
+    assert readiness_rows[0]["trade_permission"] is False
