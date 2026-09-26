@@ -2,6 +2,16 @@ name: Scientific Fingerprint Audit v0.1
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'alpha_hunter/**/*.py'
+      - '*.sql'
+      - 'run.py'
+      - 'hourly.py'
+      - 'config.json'
+      - 'requirements.txt'
+      - '.python-version'
+      - '.github/workflows/scientific-fingerprint-audit-v01.yml'
   push:
     branches:
       - main
