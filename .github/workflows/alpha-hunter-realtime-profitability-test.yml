@@ -54,6 +54,7 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Verify required production evidence credentials
+        id: evidence_credentials
         shell: bash
         run: |
           set -euo pipefail
@@ -64,12 +65,17 @@ jobs:
           echo "Order execution: disabled"
 
       - name: Run current main against real Bitget market data
+        id: live_scan
+        continue-on-error: true
+        if: ${{ steps.evidence_credentials.outcome == 'success' }}
         run: python run.py
 
       - name: Evaluate and persist real-time profitability test
+        if: ${{ always() && steps.evidence_credentials.outcome == 'success' }}
         run: python test_engine_job.py
 
       - name: Assert test runner remains paper-only
+        if: ${{ always() && steps.evidence_credentials.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -77,3 +83,10 @@ jobs:
           grep -F '"paper_only": True' alpha_hunter/test_engine.py
           grep -F '"order_path": "NONE"' alpha_hunter/test_engine.py
           echo "Real-time test remains paper-only; no order authority."
+
+      - name: Preserve scanner failure status
+        if: ${{ always() && steps.live_scan.outcome == 'failure' }}
+        shell: bash
+        run: |
+          echo "Canonical realtime scan failed; evaluator was still attempted."
+          exit 1
