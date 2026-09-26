@@ -31,6 +31,7 @@ from .microstructure import build_microstructure_coverage, build_microstructure_
 from .strategy_engine import apply_multi_strategy_engine, build_multi_strategy_summary
 from .strategy_persistence import annotate_strategy_persistence
 from .pre_move import apply_pre_move_engine
+from .scientific_identity import build_scientific_fingerprint
 from .private_account import collect_private_account_snapshot
 from .storage import (
     SupabaseConfig,
@@ -69,6 +70,8 @@ def build_validation_identity(
         )
     )
 
+    scientific = build_scientific_fingerprint(config)
+
     return {
         "run_source": run_source,
         "git_commit": (
@@ -84,6 +87,10 @@ def build_validation_identity(
         "config_sha256": hashlib.sha256(
             canonical_config.encode("utf-8")
         ).hexdigest(),
+        "scientific_fingerprint_version": scientific["version"],
+        "scientific_fingerprint_sha256": scientific["sha256"],
+        "scientific_fingerprint_file_count": scientific["file_count"],
+        "runtime_versions": scientific["runtime_versions"],
         "test_contract": "sealed-profitability-v0.1",
     }
 
