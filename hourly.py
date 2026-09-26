@@ -11,6 +11,7 @@ from typing import Mapping
 
 
 DEFAULT_SCAN_INTERVAL_MINUTES = 20
+DEFAULT_MINIMUM_BURST_START_GAP_MINUTES = 15
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
@@ -90,6 +91,31 @@ def render_cron_burst_enabled(
         return False
 
     return bool(env.get("RENDER_SERVICE_NAME")) and not bool(env.get("PORT"))
+
+
+def should_run_initial_burst_scan(
+    now: datetime | None = None,
+    interval_minutes: int = DEFAULT_SCAN_INTERVAL_MINUTES,
+    minimum_start_gap_minutes: int = DEFAULT_MINIMUM_BURST_START_GAP_MINUTES,
+) -> bool:
+    """Return whether an immediate cron scan leaves enough room to the next boundary.
+
+    Render cron invocations can start late. An immediate scan is allowed only
+    when the next aligned boundary is at least the sealed minimum interval away.
+    Otherwise the process waits for that boundary instead of creating a
+    too-frequent duplicate observation.
+    """
+    current = _utc(now)
+    interval = _validated_interval_minutes(interval_minutes)
+    minimum_gap = int(minimum_start_gap_minutes)
+    if minimum_gap <= 0 or minimum_gap > interval:
+        raise ValueError(
+            "minimum burst start gap must be positive and no greater than interval"
+        )
+    seconds_to_next = (
+        next_scan_at(current, interval) - current
+    ).total_seconds()
+    return seconds_to_next >= minimum_gap * 60.0
 
 
 def remaining_burst_boundaries(
@@ -235,21 +261,39 @@ def run_render_cron_burst(
     the first non-zero return code is returned at the end for cron visibility.
     """
     interval = _validated_interval_minutes(interval_minutes)
-    first_code = run_once(
-        project_root,
-        config,
-        run_auxiliary_jobs=True,
-    )
-    overall_code = first_code
+    burst_started_at = datetime.now(timezone.utc)
 
-    for scheduled_at in remaining_burst_boundaries(
-        datetime.now(timezone.utc),
+    if should_run_initial_burst_scan(
+        burst_started_at,
         interval,
     ):
-        delay = max(
-            0.0,
-            (scheduled_at - datetime.now(timezone.utc)).total_seconds(),
+        overall_code = run_once(
+            project_root,
+            config,
+            run_auxiliary_jobs=True,
         )
+    else:
+        overall_code = 0
+        print(
+            "Render cron burst skipped late immediate scan; "
+            "waiting for next aligned boundary.",
+            flush=True,
+        )
+
+    for scheduled_at in remaining_burst_boundaries(
+        burst_started_at,
+        interval,
+    ):
+        current = datetime.now(timezone.utc)
+        if current >= scheduled_at:
+            print(
+                "Render cron burst skipped missed boundary "
+                f"{scheduled_at.isoformat()}; no late backfill.",
+                flush=True,
+            )
+            continue
+
+        delay = (scheduled_at - current).total_seconds()
         print(
             "Render cron burst next canonical scan at "
             f"{scheduled_at.isoformat()} "
