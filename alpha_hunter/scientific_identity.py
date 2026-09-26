@@ -23,7 +23,7 @@ def _scientific_paths(root: Path) -> list[Path]:
             if "__pycache__" not in path.parts
         )
 
-    for name in ("run.py", "requirements.txt"):
+    for name in ("run.py", "hourly.py", "requirements.txt"):
         path = root / name
         if path.exists():
             paths.append(path)
