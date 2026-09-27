@@ -13,7 +13,7 @@ language sql
 stable
 security definer
 set search_path=''
-as $
+as $fn$
   select d.start_time
   from cron.job_run_details d
   join cron.job j on j.jobid=d.jobid
@@ -21,7 +21,7 @@ as $
     and d.status='succeeded'
   order by d.start_time desc
   limit 1
-$;
+$fn$;
 
 revoke all on function private.alpha_hunter_latest_forward_outcome_evaluator_watermark_v01()
   from public,anon,authenticated;
