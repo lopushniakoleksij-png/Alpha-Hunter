@@ -19,6 +19,22 @@ from alpha_hunter.collector import load_config, load_previous_snapshot
 COLLECTOR_TELEMETRY_TABLE = "alpha_hunter_execution_quality_collector_runs_v01"
 
 
+def _align_render_cron_identity() -> str | None:
+    """Restore canonical runtime identity for auxiliary Render cron subprocesses.
+
+    hourly.py passes the RENDER_CRON override only to run.py. Auxiliary jobs are
+    separate subprocesses and otherwise inherit the parent environment without
+    ALPHA_HUNTER_RUN_SOURCE / ALPHA_HUNTER_RUNTIME_ROLE. Since snapshot loading
+    is identity-strict, explicitly restoring those values here prevents a
+    canonical RENDER_CRON snapshot from being rejected as incompatible.
+    """
+    if os.getenv("RENDER_SERVICE_NAME") and not os.getenv("PORT"):
+        os.environ.setdefault("ALPHA_HUNTER_RUN_SOURCE", "RENDER_CRON")
+        os.environ.setdefault("ALPHA_HUNTER_RUNTIME_ROLE", "RENDER_CRON")
+        return "RENDER_CRON"
+    return None
+
+
 def _parse_collector_result(stdout: str) -> dict:
     text = str(stdout or "").strip()
     if not text:
@@ -134,21 +150,17 @@ def main() -> int:
     root = Path(__file__).resolve().parent
     load_env_file(root / ".env")
     config = load_config(root / "config.json")
-    snapshot, snapshot_source = load_previous_snapshot(
-        root / "config.json",
-        config,
-    )
-    if not snapshot:
-        raise SystemExit("No latest snapshot found")
-
-    print(f"PERFORMANCE SNAPSHOT SOURCE: {snapshot_source}")
+    runtime_identity = _align_render_cron_identity()
 
     settings = SupabaseConfig.from_environment(config)
     if settings is None:
         raise SystemExit("Supabase is not configured")
 
-    count = PerformanceStorage(settings.url, settings.key).save_signals(snapshot)
-    print(f"PERFORMANCE SIGNALS SAVED: {count}")
+    snapshot, snapshot_source = load_previous_snapshot(
+        root / "config.json",
+        config,
+        cloud_settings=settings,
+    )
 
     collector = root / "ops" / "collect_execution_quality_readonly.py"
     collector_exists = collector.exists()
@@ -201,8 +213,12 @@ def main() -> int:
     try:
         _persist_collector_telemetry(
             settings,
-            snapshot=snapshot,
-            snapshot_source=snapshot_source,
+            snapshot=snapshot or {},
+            snapshot_source=(
+                snapshot_source
+                if snapshot
+                else (runtime_identity or "NO_COMPATIBLE_SNAPSHOT")
+            ),
             collector_exists=collector_exists,
             bitget_credentials_configured=bitget_credentials_configured,
             subprocess_started=subprocess_started,
@@ -217,6 +233,13 @@ def main() -> int:
             flush=True,
         )
 
+    if not snapshot:
+        raise SystemExit("No latest snapshot found")
+
+    print(f"PERFORMANCE SNAPSHOT SOURCE: {snapshot_source}")
+
+    count = PerformanceStorage(settings.url, settings.key).save_signals(snapshot)
+    print(f"PERFORMANCE SIGNALS SAVED: {count}")
     return 0
 
 
