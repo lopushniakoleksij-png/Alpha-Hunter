@@ -1,44 +1,13 @@
--- Alpha Hunter V14 control tower + watchdog v0.1
+-- Alpha Hunter V14 watchdog storage semantics v0.2
 --
--- Operations-only observability. This file lives under ops/sql so it is
--- intentionally outside the sealed scientific fingerprint.
+-- Operations-only observability, outside the sealed V14 scientific fingerprint.
 --
--- The watchdog never changes trading/scientific thresholds and never grants
--- trade, promotion, or order authority.
-
-create table if not exists public.alpha_hunter_v14_watchdog_events_v01 (
-  watchdog_event_id text primary key,
-  checked_at_utc timestamptz not null,
-  spec_id text,
-  status text not null check (status in ('HEALTHY','WARNING','CRITICAL')),
-  critical_alerts text[] not null default '{}'::text[],
-  warning_alerts text[] not null default '{}'::text[],
-  expected_gates text[] not null default '{}'::text[],
-  payload jsonb not null default '{}'::jsonb,
-  trade_permission boolean not null default false
-    check (trade_permission=false),
-  production_promotion_permitted boolean not null default false
-    check (production_promotion_permitted=false),
-  order_path text not null default 'NONE'
-    check (order_path='NONE'),
-  created_at timestamptz not null default clock_timestamp()
-);
-
-alter table public.alpha_hunter_v14_watchdog_events_v01
-  enable row level security;
-
-revoke all on table public.alpha_hunter_v14_watchdog_events_v01
-  from public,anon,authenticated,service_role;
-grant select on table public.alpha_hunter_v14_watchdog_events_v01
-  to service_role;
-
-drop trigger if exists trg_ah_v14_watchdog_append_only
-  on public.alpha_hunter_v14_watchdog_events_v01;
-create trigger trg_ah_v14_watchdog_append_only
-before update or delete
-on public.alpha_hunter_v14_watchdog_events_v01
-for each row execute function private.alpha_hunter_block_append_only_mutation();
-
+-- Distinguishes:
+-- - active storage compaction regression;
+-- - historical live TOAST backlog while current writes are compact;
+-- - generic live TOAST review when current-write telemetry is unavailable.
+--
+-- Public watchdog view schema is unchanged.
 
 create or replace view public.alpha_hunter_v14_watchdog_status_v01
 with (security_invoker=true, security_barrier=true) as
@@ -280,103 +249,3 @@ revoke all on public.alpha_hunter_v14_watchdog_status_v01
   from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_v14_watchdog_status_v01
   to service_role;
-
-
-create or replace function private.alpha_hunter_capture_v14_watchdog_v01()
-returns jsonb
-language plpgsql
-security invoker
-set search_path=''
-as $$
-declare
-  w public.alpha_hunter_v14_watchdog_status_v01%rowtype;
-  v_checked_at timestamptz := clock_timestamp();
-  v_event_id text;
-begin
-  select x.* into w
-  from public.alpha_hunter_v14_watchdog_status_v01 x
-  limit 1;
-
-  if w.spec_id is null then
-    raise exception 'V14 watchdog cannot resolve current test-engine spec';
-  end if;
-
-  v_event_id := md5(
-    'v14-watchdog-v0.1|'
-    ||w.spec_id||'|'
-    ||date_trunc('minute',v_checked_at)::text||'|'
-    ||w.watchdog_status
-  );
-
-  insert into public.alpha_hunter_v14_watchdog_events_v01(
-    watchdog_event_id,
-    checked_at_utc,
-    spec_id,
-    status,
-    critical_alerts,
-    warning_alerts,
-    expected_gates,
-    payload,
-    trade_permission,
-    production_promotion_permitted,
-    order_path
-  ) values (
-    v_event_id,
-    v_checked_at,
-    w.spec_id,
-    w.watchdog_status,
-    w.critical_alerts,
-    w.warning_alerts,
-    w.expected_gates,
-    jsonb_build_object(
-      'test_engine_evaluated_at_utc',w.test_engine_evaluated_at_utc,
-      'latest_live_run_id',w.latest_live_run_id,
-      'latest_live_scan_at_utc',w.latest_live_scan_at_utc,
-      'latest_live_scan_age_seconds',w.latest_live_scan_age_seconds,
-      'operational_status',w.operational_status,
-      'profitability_status',w.profitability_status,
-      'verdict',w.verdict,
-      'test_days_elapsed',w.test_days_elapsed,
-      'test_days_remaining',w.test_days_remaining,
-      'completed_paper_trades',w.completed_paper_trades,
-      'paper_trades_remaining',w.paper_trades_remaining,
-      'earliest_duration_gate_at_utc',w.earliest_duration_gate_at_utc,
-      'cadence_integrity_status',w.cadence_integrity_status,
-      'identity_drift_scans',w.identity_drift_scans,
-      'private_fill_continuity_status',w.private_fill_continuity_status,
-      'account_identity_probe_status',w.account_identity_probe_status,
-      'database_bytes',w.database_bytes,
-      'legacy_control_plane_status',w.legacy_control_plane_status
-    ),
-    false,
-    false,
-    'NONE'
-  )
-  on conflict(watchdog_event_id) do nothing;
-
-  return jsonb_build_object(
-    'watchdog_version','v14-watchdog-v0.1',
-    'checked_at_utc',v_checked_at,
-    'spec_id',w.spec_id,
-    'status',w.watchdog_status,
-    'critical_alerts',w.critical_alerts,
-    'warning_alerts',w.warning_alerts,
-    'expected_gates',w.expected_gates,
-    'trade_permission',false,
-    'production_promotion_permitted',false,
-    'order_path','NONE'
-  );
-end;
-$$;
-
-revoke all on function private.alpha_hunter_capture_v14_watchdog_v01()
-  from public,anon,authenticated;
-grant execute on function private.alpha_hunter_capture_v14_watchdog_v01()
-  to service_role;
-
-
-select cron.schedule(
-  'alpha-hunter-v14-watchdog-v01',
-  '5,25,45 * * * *',
-  'select private.alpha_hunter_capture_v14_watchdog_v01();'
-);
