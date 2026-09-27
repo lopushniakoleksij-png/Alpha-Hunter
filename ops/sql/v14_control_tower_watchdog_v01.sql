@@ -67,6 +67,11 @@ storage as (
   from public.alpha_hunter_storage_reclaim_summary_v01 s
   limit 1
 ),
+storage_growth as (
+  select g.*
+  from public.alpha_hunter_storage_growth_status_v01 g
+  limit 1
+),
 deployment as (
   select d.*
   from public.alpha_hunter_production_deployment_drift_v01 d
@@ -215,7 +220,15 @@ classified as (
         then 'LEGACY_CONTROL_PLANE_NOT_PASSING' end,
       case when coalesce(d.deployment_drift,false)
         then 'RENDER_CRON_DEPLOYMENT_DRIFT' end,
+      case when coalesce(g.current_write_compaction_status,'')
+                  not in ('','CURRENT_WRITES_COMPACT')
+        then 'STORAGE_COMPACTION_REGRESSION' end,
       case when coalesce(b.live_toast_review_tables,0)>0
+             and coalesce(g.current_write_compaction_status,'')
+                  ='CURRENT_WRITES_COMPACT'
+        then 'STORAGE_HISTORICAL_TOAST_BACKLOG_REVIEW_REQUIRED' end,
+      case when coalesce(b.live_toast_review_tables,0)>0
+             and coalesce(g.current_write_compaction_status,'')=''
         then 'STORAGE_LIVE_TOAST_REVIEW_REQUIRED' end
     ]::text[],null) as warning_alerts,
 
@@ -228,6 +241,7 @@ classified as (
         then 'REALISTIC_NET_R_CLAIM_NOT_YET_PERMITTED' end
     ]::text[],null) as expected_gates
   from base b
+  left join storage_growth g on true
   left join deployment d on true
 )
 select
