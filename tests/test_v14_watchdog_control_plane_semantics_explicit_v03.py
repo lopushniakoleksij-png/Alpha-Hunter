@@ -16,7 +16,7 @@ def test_explicit_watchdog_migration_is_ops_only():
 
 def test_failed_only_control_plane_warning_semantics():
     marker = "legacy_control_plane_not_passing"
-    idx = LOWER.index(marker)
+    idx = LOWER.rindex(marker)
     context = LOWER[max(0, idx - 400):idx + 100]
     assert "legacy_control_plane_status" in context
     assert "failed" in context
