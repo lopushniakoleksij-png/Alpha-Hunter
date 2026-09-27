@@ -39,7 +39,10 @@ with target as (
     r.repository
   from public.alpha_hunter_production_release_targets_v01 r
   where r.source in ('GITHUB_RUNTIME_PUSH','MANUAL_RUNTIME_TARGET')
-  order by r.recorded_at_utc desc,r.created_at desc
+  order by
+    (r.runtime_fingerprint_sha256 is not null) desc,
+    r.recorded_at_utc desc,
+    r.created_at desc
   limit 1
 ),
 canonical as (
