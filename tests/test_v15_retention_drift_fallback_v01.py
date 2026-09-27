@@ -15,13 +15,30 @@ def test_fallback_runs_hourly_and_bootstraps_on_its_own_merge():
     )
 
 
-def test_fallback_is_strictly_deployment_drift_gated():
-    assert 'if status == "DRIFT":' in TEXT
-    assert 'elif status == "MATCHED":' in TEXT
+def test_fallback_is_strictly_deployment_and_recent_run_gated():
+    assert 'if status == "MATCHED":' in TEXT
+    assert 'elif status == "DRIFT" and recent_pass:' in TEXT
+    assert 'elif status == "DRIFT":' in TEXT
     assert "unexpected deployment status" in TEXT
     assert "fail closed" in TEXT
-    assert "steps.drift.outputs.should_run == 'true'" in TEXT
-    assert "steps.drift.outputs.should_run == 'false'" in TEXT
+    assert "steps.ownership.outputs.should_run == 'true'" in TEXT
+    assert "steps.ownership.outputs.should_run == 'false'" in TEXT
+    assert "RECENT_SUCCESSFUL_RETENTION_RUN" in TEXT
+    assert "DRIFT_WITHOUT_RECENT_SUCCESS" in TEXT
+
+
+def test_recent_success_window_is_20_minutes():
+    assert "timedelta(minutes=20)" in TEXT
+    assert 'result_class == "PASS"' in TEXT
+    assert "checked_at_utc,result_class" in TEXT
+
+
+def test_ownership_check_happens_before_checkout_and_install():
+    ownership = TEXT.index("Check fallback ownership")
+    checkout = TEXT.index("Checkout production main")
+    install = TEXT.index("Install production dependencies")
+    assert ownership < checkout < install
+    assert "if: steps.ownership.outputs.should_run == 'true'" in TEXT
 
 
 def test_fallback_runs_only_targeted_retention_collector():
@@ -61,8 +78,6 @@ def test_supabase_secrets_are_used_without_printing_values():
     assert 'print(os.environ["SUPABASE_SERVICE_ROLE_KEY"])' not in TEXT
 
 
-def test_matched_runtime_explicitly_skips_fallback():
-    assert (
-        'echo "Render runtime is MATCHED; fallback collector skipped."'
-        in TEXT
-    )
+def test_skip_reason_is_explicit():
+    assert "V15 retention fallback skipped:" in TEXT
+    assert "steps.ownership.outputs.reason" in TEXT

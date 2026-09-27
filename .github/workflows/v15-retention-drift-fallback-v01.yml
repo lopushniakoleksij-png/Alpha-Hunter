@@ -21,58 +21,94 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Checkout production main
-        uses: actions/checkout@v4
-
-      - name: Set up pinned Python
-        uses: actions/setup-python@v5
-        with:
-          python-version-file: ".python-version"
-
-      - name: Install production dependencies
-        shell: bash
-        run: |
-          python -m pip install --disable-pip-version-check -r requirements.txt
-
-      - name: Check Render runtime deployment status
-        id: drift
+      - name: Check fallback ownership
+        id: ownership
         shell: python
         run: |
           import json
           import os
           import urllib.parse
           import urllib.request
+          from datetime import datetime, timedelta, timezone
 
           base = os.environ["SUPABASE_URL"].rstrip("/")
           key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-          query = urllib.parse.urlencode({
-              "select": "deployment_status,target_git_commit,live_git_commit",
-              "limit": "1",
-          })
-          request = urllib.request.Request(
-              base
-              + "/rest/v1/alpha_hunter_production_deployment_drift_v01?"
-              + query,
-              headers={
-                  "apikey": key,
-                  "Authorization": "Bearer " + key,
+          headers = {
+              "apikey": key,
+              "Authorization": "Bearer " + key,
+          }
+
+          def read_rows(path, params):
+              query = urllib.parse.urlencode(params)
+              request = urllib.request.Request(
+                  base + "/rest/v1/" + path + "?" + query,
+                  headers=headers,
+              )
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  if response.status != 200:
+                      raise SystemExit(
+                          f"{path} read failed: HTTP {response.status}"
+                      )
+                  payload = json.loads(response.read().decode("utf-8"))
+              if not isinstance(payload, list):
+                  raise SystemExit(f"{path} returned unexpected shape")
+              return payload
+
+          deployment = read_rows(
+              "alpha_hunter_production_deployment_drift_v01",
+              {
+                  "select": (
+                      "deployment_status,target_git_commit,live_git_commit"
+                  ),
+                  "limit": "1",
               },
           )
-          with urllib.request.urlopen(request, timeout=20) as response:
-              if response.status != 200:
-                  raise SystemExit(
-                      f"deployment drift read failed: HTTP {response.status}"
+          if len(deployment) != 1:
+              raise SystemExit(
+                  "deployment drift read returned unexpected row count"
+              )
+
+          status = str(deployment[0].get("deployment_status") or "")
+
+          retention = read_rows(
+              "alpha_hunter_candidate_retention_shadow_runs_v01",
+              {
+                  "select": "checked_at_utc,result_class",
+                  "order": "checked_at_utc.desc",
+                  "limit": "1",
+              },
+          )
+
+          recent_pass = False
+          latest_age_minutes = None
+          if retention:
+              row = retention[0]
+              checked_raw = str(row.get("checked_at_utc") or "")
+              result_class = str(row.get("result_class") or "")
+              if checked_raw:
+                  checked_at = datetime.fromisoformat(
+                      checked_raw.replace("Z", "+00:00")
                   )
-              payload = json.loads(response.read().decode("utf-8"))
+                  if checked_at.tzinfo is None:
+                      checked_at = checked_at.replace(tzinfo=timezone.utc)
+                  checked_at = checked_at.astimezone(timezone.utc)
+                  age = datetime.now(timezone.utc) - checked_at
+                  latest_age_minutes = age.total_seconds() / 60.0
+                  recent_pass = (
+                      result_class == "PASS"
+                      and age >= timedelta(0)
+                      and age <= timedelta(minutes=20)
+                  )
 
-          if not isinstance(payload, list) or len(payload) != 1:
-              raise SystemExit("deployment drift read returned unexpected shape")
-
-          status = str(payload[0].get("deployment_status") or "")
-          if status == "DRIFT":
-              should_run = "true"
-          elif status == "MATCHED":
+          if status == "MATCHED":
               should_run = "false"
+              reason = "RENDER_RUNTIME_MATCHED"
+          elif status == "DRIFT" and recent_pass:
+              should_run = "false"
+              reason = "RECENT_SUCCESSFUL_RETENTION_RUN"
+          elif status == "DRIFT":
+              should_run = "true"
+              reason = "DRIFT_WITHOUT_RECENT_SUCCESS"
           else:
               raise SystemExit(
                   f"unexpected deployment status {status!r}; fail closed"
@@ -81,20 +117,41 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
               handle.write(f"should_run={should_run}\n")
               handle.write(f"deployment_status={status}\n")
+              handle.write(f"reason={reason}\n")
 
           print(
               "V15 retention fallback decision: "
-              f"deployment_status={status} should_run={should_run}"
+              f"deployment_status={status} "
+              f"recent_pass={recent_pass} "
+              f"latest_age_minutes={latest_age_minutes} "
+              f"reason={reason} "
+              f"should_run={should_run}"
           )
 
+      - name: Checkout production main
+        if: steps.ownership.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up pinned Python
+        if: steps.ownership.outputs.should_run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install production dependencies
+        if: steps.ownership.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+
       - name: Run targeted V15 retention fallback
-        if: steps.drift.outputs.should_run == 'true'
+        if: steps.ownership.outputs.should_run == 'true'
         shell: bash
         run: |
           python ops/collect_candidate_retention_shadow.py
 
-      - name: Confirm Render owns collection when matched
-        if: steps.drift.outputs.should_run == 'false'
+      - name: Confirm fallback skipped safely
+        if: steps.ownership.outputs.should_run == 'false'
         shell: bash
         run: |
-          echo "Render runtime is MATCHED; fallback collector skipped."
+          echo "V15 retention fallback skipped: ${{ steps.ownership.outputs.reason }}"
