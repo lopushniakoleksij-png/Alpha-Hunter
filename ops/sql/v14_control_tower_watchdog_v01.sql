@@ -153,12 +153,6 @@ base as (
     s.audited_toast_bytes,
     s.live_toast_review_tables,
 
-    d.deployment_status,
-    d.deployment_drift,
-    d.target_git_commit as deployment_target_git_commit,
-    d.live_git_commit as deployment_live_git_commit,
-    d.target_recorded_at_utc as deployment_target_recorded_at_utc,
-
     h.checked_at_utc as legacy_control_plane_checked_at_utc,
     h.status as legacy_control_plane_status,
     h.safety_status as legacy_control_plane_safety_status,
@@ -169,7 +163,6 @@ base as (
   left join cadence c on true
   left join continuity f on true
   left join storage s on true
-  left join deployment d on true
   left join control_health h on true
 ),
 classified as (
@@ -220,7 +213,7 @@ classified as (
         then 'EXECUTION_COST_MODEL_NOT_VALIDATED' end,
       case when coalesce(b.legacy_control_plane_status,'MISSING')='FAILED'
         then 'LEGACY_CONTROL_PLANE_NOT_PASSING' end,
-      case when coalesce(b.deployment_drift,false)
+      case when coalesce(d.deployment_drift,false)
         then 'RENDER_CRON_DEPLOYMENT_DRIFT' end,
       case when coalesce(b.live_toast_review_tables,0)>0
         then 'STORAGE_LIVE_TOAST_REVIEW_REQUIRED' end
@@ -235,6 +228,7 @@ classified as (
         then 'REALISTIC_NET_R_CLAIM_NOT_YET_PERMITTED' end
     ]::text[],null) as expected_gates
   from base b
+  left join deployment d on true
 )
 select
   c.*,
