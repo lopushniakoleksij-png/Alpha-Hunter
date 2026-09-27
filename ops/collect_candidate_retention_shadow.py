@@ -22,7 +22,9 @@ from alpha_hunter.env import load_env_file
 from alpha_hunter.storage import SupabaseConfig
 
 
-TARGET_VIEW = "alpha_hunter_candidate_retention_targets_v01"
+DISCOVERY_VIEW = "alpha_hunter_candidate_retention_targets_v01"
+TARGET_TABLE = "alpha_hunter_candidate_retention_shadow_targets_v02"
+COLLECTION_VIEW = "alpha_hunter_candidate_retention_collection_targets_v02"
 CANDLE_TABLE = "alpha_hunter_candidate_retention_shadow_candles_v01"
 RUN_TABLE = "alpha_hunter_candidate_retention_shadow_runs_v01"
 PRODUCT_TYPE = "USDT-FUTURES"
@@ -52,9 +54,12 @@ def _headers(settings: SupabaseConfig, *, prefer: str | None = None) -> dict[str
     return headers
 
 
-def _load_targets(settings: SupabaseConfig) -> list[dict[str, Any]]:
+def _load_targets(
+    settings: SupabaseConfig,
+    view_name: str,
+) -> list[dict[str, Any]]:
     response = requests.get(
-        f"{settings.url}/rest/v1/{TARGET_VIEW}",
+        f"{settings.url}/rest/v1/{view_name}",
         params={
             "select": (
                 "episode_id,first_candidate_observation_id,symbol,strategy_id,"
@@ -78,11 +83,111 @@ def _load_targets(settings: SupabaseConfig) -> list[dict[str, Any]]:
     return [row for row in payload if isinstance(row, dict)]
 
 
+def _persist_targets(
+    settings: SupabaseConfig,
+    targets: list[dict[str, Any]],
+    checked_at: datetime,
+) -> None:
+    if not targets:
+        return
+
+    rows: list[dict[str, Any]] = []
+    for target in targets:
+        rows.append(
+            {
+                "episode_id": str(target["episode_id"]),
+                "first_candidate_observation_id": str(
+                    target["first_candidate_observation_id"]
+                ),
+                "symbol": str(target["symbol"]).upper(),
+                "strategy_id": str(target["strategy_id"]),
+                "direction": str(target["direction"]).upper(),
+                "first_observed_at_utc": str(target["first_observed_at_utc"]),
+                "first_candidate_at_utc": str(target["first_candidate_at_utc"]),
+                "first_candidate_action": str(
+                    target["first_candidate_action"]
+                ),
+                "retention_start_utc": str(target["retention_start_utc"]),
+                "retention_horizon_end_utc": str(
+                    target["retention_horizon_end_utc"]
+                ),
+                "expected_closed_1h_candles": int(
+                    target["expected_closed_1h_candles"]
+                ),
+                "target_registered_at_utc": _iso(checked_at),
+                "target_source": "SEALED_CANDIDATE_EPISODES_ONLY",
+                "scientific_role": "V15_PARALLEL_SHADOW",
+                "audit_only": True,
+                "counted_in_v14": False,
+                "mutation_permitted": False,
+                "shadow_only": True,
+                "trade_permission": False,
+                "production_promotion_permitted": False,
+                "order_path": "NONE",
+            }
+        )
+
+    for offset in range(0, len(rows), 500):
+        chunk = rows[offset : offset + 500]
+        response = requests.post(
+            f"{settings.url}/rest/v1/{TARGET_TABLE}",
+            headers=_headers(
+                settings,
+                prefer="resolution=ignore-duplicates,return=minimal",
+            ),
+            data=json.dumps(chunk, separators=(",", ":")),
+            timeout=settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201, 204}:
+            raise RuntimeError(
+                "Retention target persistence failed: "
+                f"HTTP {response.status_code}"
+            )
+
+
+def _load_existing_keys(
+    settings: SupabaseConfig,
+    checked_at: datetime,
+) -> set[tuple[str, str]]:
+    cutoff = checked_at - timedelta(hours=30)
+    response = requests.get(
+        f"{settings.url}/rest/v1/{CANDLE_TABLE}",
+        params={
+            "select": "episode_id,candle_open_utc",
+            "candle_open_utc": f"gte.{_iso(cutoff)}",
+            "limit": "10000",
+        },
+        headers=_headers(settings),
+        timeout=settings.timeout_seconds,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Retention existing-key load failed: "
+            f"HTTP {response.status_code}"
+        )
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            "Retention existing-key load returned unexpected shape"
+        )
+
+    keys: set[tuple[str, str]] = set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        episode_id = str(row.get("episode_id") or "")
+        candle_open_utc = str(row.get("candle_open_utc") or "")
+        if episode_id and candle_open_utc:
+            keys.add((episode_id, candle_open_utc))
+    return keys
+
+
 def _build_rows_for_symbol(
     symbol: str,
     targets: list[dict[str, Any]],
     raw_candles: list[list[str]],
     checked_at: datetime,
+    existing_keys: set[tuple[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     parsed = parse_candles(raw_candles)
     closed: list[dict[str, float | int]] = []
@@ -97,6 +202,7 @@ def _build_rows_for_symbol(
 
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    existing = existing_keys if existing_keys is not None else set()
 
     for target in targets:
         episode_id = str(target["episode_id"])
@@ -116,9 +222,10 @@ def _build_rows_for_symbol(
                 continue
 
             key = (episode_id, _iso(candle_open))
-            if key in seen:
+            if key in seen or key in existing:
                 continue
             seen.add(key)
+            existing.add(key)
 
             retention_row_id = hashlib.sha256(
                 (
@@ -266,7 +373,12 @@ def main() -> int:
         raise SystemExit("Supabase is not configured")
 
     checked_at = datetime.now(timezone.utc)
-    targets = _load_targets(settings)
+
+    discovered_targets = _load_targets(settings, DISCOVERY_VIEW)
+    _persist_targets(settings, discovered_targets, checked_at)
+
+    targets = _load_targets(settings, COLLECTION_VIEW)
+    existing_keys = _load_existing_keys(settings, checked_at)
 
     by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for target in targets:
@@ -324,6 +436,7 @@ def main() -> int:
                 symbol_targets,
                 raw,
                 checked_at,
+                existing_keys,
             )
             all_rows.extend(rows)
             candles_considered += considered
