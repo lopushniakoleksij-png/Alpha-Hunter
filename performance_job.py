@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 from alpha_hunter.env import load_env_file
@@ -28,6 +30,27 @@ def main() -> int:
 
     count = PerformanceStorage(settings.url, settings.key).save_signals(snapshot)
     print(f"PERFORMANCE SIGNALS SAVED: {count}")
+
+    collector = root / "ops" / "collect_execution_quality_readonly.py"
+    if collector.exists():
+        completed = subprocess.run(
+            [sys.executable, str(collector)],
+            cwd=root,
+            check=False,
+        )
+        if completed.returncode != 0:
+            print(
+                "READ-ONLY EXECUTION QUALITY COLLECTION DEGRADED: "
+                f"exit code {completed.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print(
+                "READ-ONLY EXECUTION QUALITY COLLECTION: PASS",
+                flush=True,
+            )
+
     return 0
 
 
