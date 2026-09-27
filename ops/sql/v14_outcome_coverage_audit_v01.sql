@@ -7,6 +7,28 @@
 -- produced 24h outcomes, complete path coverage, and counted paper-economics
 -- rows. It does not modify the sealed forward-outcome evaluator or any evidence.
 
+create or replace function private.alpha_hunter_latest_forward_outcome_evaluator_watermark_v01()
+returns timestamptz
+language sql
+stable
+security definer
+set search_path=''
+as $
+  select d.start_time
+  from cron.job_run_details d
+  join cron.job j on j.jobid=d.jobid
+  where j.jobname='alpha-hunter-strategy-forward-outcome-v01-hourly'
+    and d.status='succeeded'
+  order by d.start_time desc
+  limit 1
+$;
+
+revoke all on function private.alpha_hunter_latest_forward_outcome_evaluator_watermark_v01()
+  from public,anon,authenticated;
+grant execute on function private.alpha_hunter_latest_forward_outcome_evaluator_watermark_v01()
+  to service_role;
+
+
 create or replace view public.alpha_hunter_v14_outcome_coverage_audit_v01
 with (security_invoker=true,security_barrier=true) as
 with active as (
@@ -18,6 +40,11 @@ with active as (
     on v.spec_id=e.spec_id
   order by e.evaluated_at_utc desc
   limit 1
+),
+evaluator_watermark as (
+  select
+    private.alpha_hunter_latest_forward_outcome_evaluator_watermark_v01()
+      as evaluated_through_utc
 ),
 candidate_episodes as (
   select distinct on (o.episode_id)
@@ -35,7 +62,10 @@ candidate_episodes as (
 matured as (
   select c.*
   from candidate_episodes c
-  where c.first_candidate_at_utc<=clock_timestamp()-interval '24 hours'
+  cross join evaluator_watermark w
+  where w.evaluated_through_utc is not null
+    and c.first_candidate_at_utc+interval '24 hours'
+      <=w.evaluated_through_utc
 ),
 outcomes_24h as (
   select o.*
