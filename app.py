@@ -34,6 +34,8 @@ OPERATOR_USER = os.getenv("ALPHA_HUNTER_OPERATOR_USER", "").strip()
 OPERATOR_PASSWORD = os.getenv("ALPHA_HUNTER_OPERATOR_PASSWORD", "")
 EXECUTION_FREEZE_RPC = "alpha_hunter_freeze_execution_decision_api_v01"
 EXECUTION_FREEZE_CONFIRM_HEADER = "X-Alpha-Hunter-Freeze-Confirm"
+EXECUTION_BIND_RPC = "alpha_hunter_bind_execution_fill_api_v01"
+EXECUTION_BIND_CONFIRM_HEADER = "X-Alpha-Hunter-Bind-Confirm"
 
 SUPABASE_READ_ATTEMPTS = 3
 SUPABASE_READ_TIMEOUT_SECONDS = 12
@@ -271,6 +273,186 @@ def freeze_execution_decision(
         raise RuntimeError("Unexpected freeze RPC response shape")
 
     payload["trade_permission"] = False
+    payload["order_path"] = "NONE"
+    return payload
+
+
+def execution_freeze_by_id(execution_event_id: str) -> dict[str, Any] | None:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_decision_freezes_v01",
+        {
+            "select": "*",
+            "execution_event_id": f"eq.{execution_event_id}",
+            "limit": "1",
+        },
+    )
+    if rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def execution_binding_by_event(
+    execution_event_id: str,
+) -> dict[str, Any] | None:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_fill_bindings_v01",
+        {
+            "select": "*",
+            "execution_event_id": f"eq.{execution_event_id}",
+            "limit": "1",
+        },
+    )
+    if rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def compatible_execution_fills(
+    frozen: dict[str, Any],
+) -> list[dict[str, Any]]:
+    direction = str(frozen.get("direction") or "").upper()
+    expected_side = "BUY" if direction == "LONG" else "SELL" if direction == "SHORT" else ""
+    symbol = str(frozen.get("symbol") or "")
+    frozen_at = str(frozen.get("frozen_at_utc") or "")
+    if not expected_side or not symbol or not frozen_at:
+        return []
+
+    rows = supabase_get_rows(
+        "alpha_hunter_fill_evidence",
+        {
+            "select": (
+                "fill_evidence_id,traceability_run_id,fill_time_utc,trade_id,"
+                "order_id,symbol,side,trade_side,trade_scope,price,base_volume,"
+                "quote_volume,fee_amount,fee_coin,cost_fields_complete"
+            ),
+            "symbol": f"eq.{symbol}",
+            "side": f"eq.{expected_side}",
+            "trade_side": "eq.OPEN",
+            "fill_time_utc": f"gte.{frozen_at}",
+            "order": "fill_time_utc.asc",
+            "limit": "20",
+        },
+    )
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        fill_id = str(row.get("fill_evidence_id") or "")
+        if not fill_id:
+            continue
+
+        already = supabase_get_rows(
+            "alpha_hunter_execution_fill_bindings_v01",
+            {
+                "select": "binding_id,execution_event_id,fill_evidence_id",
+                "fill_evidence_id": f"eq.{fill_id}",
+                "limit": "1",
+            },
+        )
+        if already:
+            continue
+
+        trace = supabase_get_rows(
+            "alpha_hunter_fill_traceability_runs",
+            {
+                "select": "traceability_run_id,complete,schema_validated",
+                "traceability_run_id": f"eq.{row.get('traceability_run_id')}",
+                "limit": "1",
+            },
+        )
+        order = supabase_get_rows(
+            "alpha_hunter_execution_order_evidence_v01",
+            {
+                "select": (
+                    "order_evidence_id,order_identity_sha256,order_type,"
+                    "order_state,order_created_at_utc,origin_consistent"
+                ),
+                "fill_evidence_id": f"eq.{fill_id}",
+                "order": "observed_at_utc.desc",
+                "limit": "1",
+            },
+        )
+
+        item = dict(row)
+        trace_row = trace[0] if trace and isinstance(trace[0], dict) else {}
+        order_row = order[0] if order and isinstance(order[0], dict) else {}
+        item["_trace_complete"] = (
+            trace_row.get("complete") is True
+            and trace_row.get("schema_validated") is True
+        )
+        item["_order"] = order_row
+        item["_binding_ready"] = (
+            item["_trace_complete"]
+            and bool(order_row.get("order_evidence_id"))
+            and bool(order_row.get("order_identity_sha256"))
+            and bool(order_row.get("order_created_at_utc"))
+            and order_row.get("origin_consistent") is True
+        )
+        result.append(item)
+
+    return result
+
+
+def existing_execution_binding(
+    execution_event_id: str,
+    fill_evidence_id: str,
+) -> dict[str, Any] | None:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_fill_bindings_v01",
+        {
+            "select": "*",
+            "execution_event_id": f"eq.{execution_event_id}",
+            "fill_evidence_id": f"eq.{fill_evidence_id}",
+            "limit": "1",
+        },
+    )
+    if rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def bind_execution_fill(
+    execution_event_id: str,
+    fill_evidence_id: str,
+) -> dict[str, Any]:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("Supabase environment variables are not configured")
+
+    try:
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/{EXECUTION_BIND_RPC}",
+            headers=supabase_headers(),
+            json={
+                "p_execution_event_id": execution_event_id,
+                "p_fill_evidence_id": fill_evidence_id,
+                "p_explicit_user_confirmation": True,
+            },
+            timeout=SUPABASE_READ_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException:
+        existing = existing_execution_binding(
+            execution_event_id,
+            fill_evidence_id,
+        )
+        if existing is not None:
+            recovered = dict(existing)
+            recovered["recovered_after_transport_error"] = True
+            recovered["trade_permission"] = False
+            recovered["production_promotion_permitted"] = False
+            recovered["order_path"] = "NONE"
+            return recovered
+        raise
+
+    if response.status_code >= 400:
+        raise RuntimeError(response.text or "Explicit fill binding rejected")
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Unexpected fill-binding RPC response shape")
+
+    payload["trade_permission"] = False
+    payload["production_promotion_permitted"] = False
     payload["order_path"] = "NONE"
     return payload
 
@@ -1109,13 +1291,147 @@ async function freezeDecision(id,symbol){
       throw new Error(payload.message||payload.error||'Freeze failed');
     }
     status.className='status ok';
-    status.textContent='FROZEN · '+payload.execution_event_id+
-      ' · waiting for exact Bitget order/fill binding';
+    status.innerHTML='FROZEN · '+payload.execution_event_id+
+      ' · <a style="color:#4db6ff" href="/execution-bind/'+
+      encodeURIComponent(payload.execution_event_id)+
+      '">Continue to exact fill binding</a>';
     document.querySelectorAll('button').forEach(x=>x.disabled=true);
   }catch(error){
     status.className='status bad';
     status.textContent='Freeze failed: '+error.message;
     button.disabled=false;
+  }
+}
+</script>
+</body>
+</html>
+"""
+
+
+EXECUTION_BIND_PAGE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="10">
+  <title>Alpha Hunter — Bind Exact Fill</title>
+  <style>
+    :root{--bg:#071018;--panel:#0d1822;--line:#1d2e3a;--text:#e8f0f6;--muted:#91a3b1;--ok:#2bd39a;--warn:#ffbf47;--bad:#ff6474;--blue:#4db6ff}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
+    .wrap{max-width:760px;margin:auto;padding:14px}.panel{background:rgba(13,24,34,.97);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:12px}
+    h1{font-size:25px;margin:0 0 5px}.small{font-size:12px;color:var(--muted);line-height:1.5}.link{color:var(--blue);text-decoration:none}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.metric{background:#09131c;border:1px solid #162734;border-radius:10px;padding:9px}
+    .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}.value{font-weight:800;margin-top:3px;overflow-wrap:anywhere}
+    .fill{border-color:#284355}.ready{border-color:#21634e}.blocked{border-color:#6f5b2a}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+    button{width:100%;border:0;border-radius:12px;padding:15px;font-size:15px;font-weight:900;background:#24d18f;color:#03120d;cursor:pointer;margin-top:12px}
+    button:disabled{opacity:.45;cursor:not-allowed}.status{margin-top:9px;font-size:13px;line-height:1.4}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bind Exact Bitget Fill</h1>
+  <div class="small" style="margin-bottom:12px">
+    This page never chooses a fill for you. Compare the exact Bitget trade/order ID
+    with your order history, then explicitly confirm one record.
+  </div>
+
+  <div class="panel">
+    <div class="label">Frozen decision</div>
+    <div class="value">{{ frozen.symbol }} · {{ frozen.direction }} · {{ frozen.action }}</div>
+    <div class="grid">
+      <div class="metric"><div class="label">Execution event</div><div class="value">{{ frozen.execution_event_id }}</div></div>
+      <div class="metric"><div class="label">Frozen UTC</div><div class="value">{{ frozen.frozen_at_utc }}</div></div>
+      <div class="metric"><div class="label">Entry</div><div class="value">{{ frozen.planned_entry_price }}</div></div>
+      <div class="metric"><div class="label">Decision cross</div><div class="value">{{ frozen.entry_cross_price }}</div></div>
+    </div>
+  </div>
+
+  {% if existing %}
+  <div class="panel ready">
+    <b class="ok">ALREADY BOUND</b>
+    <div class="small" style="margin-top:7px">
+      Binding {{ existing.binding_id }} · fill {{ existing.fill_evidence_id }}
+    </div>
+  </div>
+  {% elif fills %}
+    {% for f in fills %}
+    <div class="panel fill {{ 'ready' if f._binding_ready else 'blocked' }}">
+      <div class="value">{{ f.symbol }} · {{ f.side }} · {{ f.trade_side }}</div>
+      <div class="grid">
+        <div class="metric"><div class="label">Trade ID</div><div class="value">{{ f.trade_id }}</div></div>
+        <div class="metric"><div class="label">Order ID</div><div class="value">{{ f.order_id }}</div></div>
+        <div class="metric"><div class="label">Fill UTC</div><div class="value">{{ f.fill_time_utc }}</div></div>
+        <div class="metric"><div class="label">Price</div><div class="value">{{ f.price }}</div></div>
+        <div class="metric"><div class="label">Base size</div><div class="value">{{ f.base_volume }}</div></div>
+        <div class="metric"><div class="label">Fee</div><div class="value">{{ f.fee_amount }} {{ f.fee_coin or '' }}</div></div>
+      </div>
+      {% if f._binding_ready %}
+      <button onclick="bindExact(
+        '{{ frozen.execution_event_id }}',
+        '{{ f.fill_evidence_id }}',
+        '{{ f.trade_id }}',
+        '{{ f.order_id }}'
+      )">I CONFIRM THIS EXACT BITGET FILL</button>
+      {% else %}
+      <div class="status warn">
+        Not binding-ready yet: waiting for complete traceability and exact read-only order detail.
+      </div>
+      {% endif %}
+      <div class="status" id="status-{{ f.fill_evidence_id }}"></div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="panel">
+    <b>No compatible unbound fill evidence yet.</b>
+    <div class="small" style="margin-top:7px">
+      Read-only Bitget evidence will appear here after collection. Refresh is automatic.
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="small">
+    Compatibility filtering is not attribution. Binding occurs only after your exact
+    confirmation and a second database validation. trade_permission=false · order_path=NONE.
+    <br><a class="link" href="/execution-freeze">Back to Freeze Decision</a>
+  </div>
+</div>
+<script>
+async function bindExact(executionId,fillId,tradeId,orderId){
+  const ok=confirm(
+    'Confirm exact Bitget fill?\n\nTrade ID: '+tradeId+
+    '\nOrder ID: '+orderId+
+    '\n\nThis records evidence only. It does not place an order.'
+  );
+  if(!ok)return;
+  const status=document.getElementById('status-'+fillId);
+  status.className='status warn';
+  status.textContent='Binding exact fill...';
+  const confirmToken=executionId+':'+fillId;
+  try{
+    const response=await fetch(
+      '/api/execution-bind/'+encodeURIComponent(executionId)+'/'+encodeURIComponent(fillId),
+      {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'X-Alpha-Hunter-Bind-Confirm':confirmToken
+        },
+        body:JSON.stringify({
+          execution_event_id:executionId,
+          fill_evidence_id:fillId,
+          explicit_user_confirmation:true
+        })
+      }
+    );
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.message||payload.error||'Binding rejected');
+    status.className='status ok';
+    status.textContent='BOUND · '+payload.binding_id+' · attribution verification available';
+    document.querySelectorAll('button').forEach(x=>x.disabled=true);
+  }catch(error){
+    status.className='status bad';
+    status.textContent='Binding failed: '+error.message;
   }
 }
 </script>
@@ -1384,6 +1700,86 @@ def api_execution_freeze(decision_observation_id: str):
             "trade_permission": False,
             "order_path": "NONE",
         }), 503
+
+
+@app.get("/execution-bind/<execution_event_id>")
+def execution_bind_page(execution_event_id: str):
+    auth_failure = None if operator_authorized() else operator_auth_response()
+    if auth_failure is not None:
+        return auth_failure
+
+    try:
+        frozen = execution_freeze_by_id(execution_event_id)
+        if frozen is None:
+            return jsonify({"error": "frozen_execution_event_not_found"}), 404
+
+        response = app.make_response(
+            render_template_string(
+                EXECUTION_BIND_PAGE,
+                frozen=frozen,
+                existing=execution_binding_by_event(execution_event_id),
+                fills=compatible_execution_fills(frozen),
+            )
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception:
+        app.logger.exception("Execution-fill binding page failed")
+        return jsonify({"error": "execution_binding_unavailable"}), 503
+
+
+@app.post("/api/execution-bind/<execution_event_id>/<fill_evidence_id>")
+def api_execution_bind(execution_event_id: str, fill_evidence_id: str):
+    auth_failure = None if operator_authorized() else operator_auth_response()
+    if auth_failure is not None:
+        return auth_failure
+
+    expected_confirm = f"{execution_event_id}:{fill_evidence_id}"
+    if request.headers.get(EXECUTION_BIND_CONFIRM_HEADER) != expected_confirm:
+        return jsonify({"error": "explicit_exact_fill_confirmation_required"}), 400
+
+    body = request.get_json(silent=True) or {}
+    if (
+        body.get("execution_event_id") != execution_event_id
+        or body.get("fill_evidence_id") != fill_evidence_id
+        or body.get("explicit_user_confirmation") is not True
+    ):
+        return jsonify({"error": "exact_fill_identity_confirmation_mismatch"}), 400
+
+    try:
+        frozen = execution_freeze_by_id(execution_event_id)
+        if frozen is None:
+            return jsonify({"error": "frozen_execution_event_not_found"}), 404
+
+        compatible = {
+            str(row.get("fill_evidence_id")): row
+            for row in compatible_execution_fills(frozen)
+            if row.get("_binding_ready") is True
+        }
+        if fill_evidence_id not in compatible:
+            return jsonify({
+                "error": "fill_not_binding_ready",
+                "message": (
+                    "Exact fill is not currently eligible for binding. "
+                    "No substitute fill was selected."
+                ),
+                "trade_permission": False,
+                "order_path": "NONE",
+            }), 409
+
+        result = bind_execution_fill(execution_event_id, fill_evidence_id)
+        result["trade_permission"] = False
+        result["production_promotion_permitted"] = False
+        result["order_path"] = "NONE"
+        return jsonify(result), 200
+    except Exception as exc:
+        app.logger.exception("Explicit execution-fill binding failed")
+        return jsonify({
+            "error": "execution_fill_binding_rejected",
+            "message": str(exc)[:500],
+            "trade_permission": False,
+            "order_path": "NONE",
+        }), 409
 
 
 @app.get("/control-tower")
