@@ -79,7 +79,11 @@ def test_performance_job_unpacks_snapshot_source(monkeypatch, capsys):
     assert "PERFORMANCE SIGNALS SAVED: 0" in out
 
 
-def test_performance_job_fails_closed_when_no_snapshot(monkeypatch):
+def test_performance_job_fails_closed_when_no_snapshot_but_collector_still_runs(
+    monkeypatch,
+):
+    collector_called = {"value": False}
+
     monkeypatch.setattr(
         performance_job,
         "load_env_file",
@@ -95,6 +99,32 @@ def test_performance_job_fails_closed_when_no_snapshot(monkeypatch):
         "load_previous_snapshot",
         lambda *args, **kwargs: (None, "NONE"),
     )
+    monkeypatch.setattr(
+        performance_job.SupabaseConfig,
+        "from_environment",
+        lambda config: _Settings(),
+    )
+
+    def fake_run(*args, **kwargs):
+        collector_called["value"] = True
+        return type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": '{"fills_considered":0,"rows_persisted":0,'
+                '"order_details_connected":0,"order_detail_failures":0,'
+                '"read_only_get":true,"no_order_write_path":true}',
+                "stderr": "",
+            },
+        )()
+
+    monkeypatch.setattr(performance_job.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        performance_job.requests,
+        "post",
+        lambda *args, **kwargs: _Response(),
+    )
 
     try:
         performance_job.main()
@@ -102,6 +132,8 @@ def test_performance_job_fails_closed_when_no_snapshot(monkeypatch):
         assert str(exc) == "No latest snapshot found"
     else:
         raise AssertionError("performance_job.main() should fail closed")
+
+    assert collector_called["value"] is True
 
 
 
@@ -222,3 +254,95 @@ def test_parse_collector_result_tolerates_prefix_noise():
         'notice before json\n{"fills_considered":13,"rows_persisted":7}\n'
     )
     assert parsed == {"fills_considered": 13, "rows_persisted": 7}
+
+
+
+def test_render_cron_identity_is_restored_before_snapshot_load(monkeypatch):
+    snapshot = {
+        "run_id": "run-render-cron",
+        "collected_at_utc": "2026-09-27T15:03:00+00:00",
+        "symbols": [],
+    }
+    observed = {}
+
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "Alpha-Hunter")
+    monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.delenv("ALPHA_HUNTER_RUN_SOURCE", raising=False)
+    monkeypatch.delenv("ALPHA_HUNTER_RUNTIME_ROLE", raising=False)
+
+    monkeypatch.setattr(
+        performance_job,
+        "load_env_file",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        performance_job,
+        "load_config",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(
+        performance_job.SupabaseConfig,
+        "from_environment",
+        lambda config: _Settings(),
+    )
+
+    def fake_load_previous_snapshot(config_path, config, cloud_settings=None):
+        observed["run_source"] = performance_job.os.getenv(
+            "ALPHA_HUNTER_RUN_SOURCE"
+        )
+        observed["runtime_role"] = performance_job.os.getenv(
+            "ALPHA_HUNTER_RUNTIME_ROLE"
+        )
+        observed["cloud_settings"] = cloud_settings
+        return snapshot, "SUPABASE_CANONICAL"
+
+    monkeypatch.setattr(
+        performance_job,
+        "load_previous_snapshot",
+        fake_load_previous_snapshot,
+    )
+
+    class _Storage:
+        def __init__(self, url, key):
+            pass
+
+        def save_signals(self, received):
+            return 0
+
+    monkeypatch.setattr(performance_job, "PerformanceStorage", _Storage)
+    monkeypatch.setattr(
+        performance_job.subprocess,
+        "run",
+        lambda *args, **kwargs: type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": '{"fills_considered":0,"rows_persisted":0,'
+                '"order_details_connected":0,"order_detail_failures":0,'
+                '"read_only_get":true,"no_order_write_path":true}',
+                "stderr": "",
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        performance_job.requests,
+        "post",
+        lambda *args, **kwargs: _Response(),
+    )
+
+    assert performance_job.main() == 0
+    assert observed["run_source"] == "RENDER_CRON"
+    assert observed["runtime_role"] == "RENDER_CRON"
+    assert isinstance(observed["cloud_settings"], _Settings)
+
+
+def test_explicit_runtime_identity_is_not_overwritten(monkeypatch):
+    monkeypatch.setenv("RENDER_SERVICE_NAME", "Alpha-Hunter")
+    monkeypatch.delenv("PORT", raising=False)
+    monkeypatch.setenv("ALPHA_HUNTER_RUN_SOURCE", "EXPLICIT_SOURCE")
+    monkeypatch.setenv("ALPHA_HUNTER_RUNTIME_ROLE", "EXPLICIT_ROLE")
+
+    assert performance_job._align_render_cron_identity() == "RENDER_CRON"
+    assert performance_job.os.getenv("ALPHA_HUNTER_RUN_SOURCE") == "EXPLICIT_SOURCE"
+    assert performance_job.os.getenv("ALPHA_HUNTER_RUNTIME_ROLE") == "EXPLICIT_ROLE"
