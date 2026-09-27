@@ -61,3 +61,14 @@ def test_monitor_does_not_change_stage_commands_or_trade_authority():
         assert forbidden not in LOWER
     assert "false as trade_permission" in LOWER
     assert "'none'::text as order_path" in LOWER
+
+
+
+def test_scheduled_capture_uses_current_hour_but_seed_uses_previous_completed_hour():
+    assert (
+        "$cmd$select private.alpha_hunter_capture_control_plane_stage_runtime_v01("
+        "clock_timestamp());$cmd$"
+    ) in SQL
+    assert (
+        "date_trunc('hour',clock_timestamp())-interval '1 second'"
+    ) in SQL
