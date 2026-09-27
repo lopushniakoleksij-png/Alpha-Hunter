@@ -22,7 +22,9 @@ from alpha_hunter.env import load_env_file
 from alpha_hunter.storage import SupabaseConfig
 
 
-TARGET_VIEW = "alpha_hunter_candidate_retention_targets_v01"
+DISCOVERY_VIEW = "alpha_hunter_candidate_retention_targets_v01"
+TARGET_TABLE = "alpha_hunter_candidate_retention_shadow_targets_v02"
+COLLECTION_VIEW = "alpha_hunter_candidate_retention_collection_targets_v02"
 CANDLE_TABLE = "alpha_hunter_candidate_retention_shadow_candles_v01"
 RUN_TABLE = "alpha_hunter_candidate_retention_shadow_runs_v01"
 PRODUCT_TYPE = "USDT-FUTURES"
@@ -52,9 +54,12 @@ def _headers(settings: SupabaseConfig, *, prefer: str | None = None) -> dict[str
     return headers
 
 
-def _load_targets(settings: SupabaseConfig) -> list[dict[str, Any]]:
+def _load_targets(
+    settings: SupabaseConfig,
+    view_name: str,
+) -> list[dict[str, Any]]:
     response = requests.get(
-        f"{settings.url}/rest/v1/{TARGET_VIEW}",
+        f"{settings.url}/rest/v1/{view_name}",
         params={
             "select": (
                 "episode_id,first_candidate_observation_id,symbol,strategy_id,"
@@ -83,6 +88,7 @@ def _build_rows_for_symbol(
     targets: list[dict[str, Any]],
     raw_candles: list[list[str]],
     checked_at: datetime,
+    existing_keys: set[tuple[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     parsed = parse_candles(raw_candles)
     closed: list[dict[str, float | int]] = []
@@ -97,6 +103,7 @@ def _build_rows_for_symbol(
 
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    existing = existing_keys if existing_keys is not None else set()
 
     for target in targets:
         episode_id = str(target["episode_id"])
@@ -116,9 +123,10 @@ def _build_rows_for_symbol(
                 continue
 
             key = (episode_id, _iso(candle_open))
-            if key in seen:
+            if key in seen or key in existing:
                 continue
             seen.add(key)
+            existing.add(key)
 
             retention_row_id = hashlib.sha256(
                 (
@@ -266,7 +274,12 @@ def main() -> int:
         raise SystemExit("Supabase is not configured")
 
     checked_at = datetime.now(timezone.utc)
-    targets = _load_targets(settings)
+
+    discovered_targets = _load_targets(settings, DISCOVERY_VIEW)
+    _persist_targets(settings, discovered_targets, checked_at)
+
+    targets = _load_targets(settings, COLLECTION_VIEW)
+    existing_keys = _load_existing_keys(settings, checked_at)
 
     by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for target in targets:
@@ -324,6 +337,7 @@ def main() -> int:
                 symbol_targets,
                 raw,
                 checked_at,
+                existing_keys,
             )
             all_rows.extend(rows)
             candles_considered += considered
