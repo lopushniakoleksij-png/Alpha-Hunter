@@ -1,4 +1,4 @@
--- Alpha Hunter runtime-fingerprint deployment guard v0.3
+-- Alpha Hunter runtime-fingerprint deployment target precedence v0.3.1
 --
 -- Operations-only deployment observability, outside the sealed V14 scientific
 -- fingerprint.
@@ -10,6 +10,7 @@
 -- runtime file set. Git SHAs remain diagnostic metadata only.
 --
 -- Existing public deployment-drift view schema is preserved exactly.
+-- Fingerprinted runtime targets always outrank later unfingerprinted manual baselines.
 
 alter table public.alpha_hunter_production_release_targets_v01
   add column if not exists runtime_fingerprint_sha256 text;
