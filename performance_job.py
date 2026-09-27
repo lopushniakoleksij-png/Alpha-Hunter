@@ -11,7 +11,7 @@ from pathlib import Path
 import requests
 
 from alpha_hunter.env import load_env_file
-from alpha_hunter.performance import PerformanceStorage
+from alpha_hunter.performance import extract_signal_rows
 from alpha_hunter.storage import SupabaseConfig
 from alpha_hunter.collector import load_config, load_previous_snapshot
 
@@ -146,6 +146,82 @@ def _persist_collector_telemetry(
         )
 
 
+def _verify_canonical_signal_rows(
+    settings: SupabaseConfig,
+    snapshot: dict,
+) -> dict:
+    run_id = str(snapshot.get("run_id") or "")
+    if not run_id:
+        raise RuntimeError("Canonical snapshot is missing run_id")
+
+    expected_rows = extract_signal_rows(snapshot)
+    expected_ids = {
+        str(row.get("signal_id") or "")
+        for row in expected_rows
+        if row.get("signal_id")
+    }
+
+    response = requests.get(
+        f"{settings.url}/rest/v1/alpha_hunter_signals",
+        params={
+            "select": "signal_id",
+            "run_id": f"eq.{run_id}",
+            "limit": "2000",
+        },
+        headers={
+            "apikey": settings.key,
+            "Authorization": f"Bearer {settings.key}",
+        },
+        timeout=settings.timeout_seconds,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Canonical signal verification failed: "
+            f"HTTP {response.status_code}"
+        )
+
+    try:
+        rows = response.json()
+    except ValueError as exc:
+        raise RuntimeError(
+            "Canonical signal verification returned invalid JSON"
+        ) from exc
+
+    if not isinstance(rows, list):
+        raise RuntimeError(
+            "Canonical signal verification returned unexpected shape"
+        )
+
+    observed_ids = {
+        str(row.get("signal_id") or "")
+        for row in rows
+        if isinstance(row, dict) and row.get("signal_id")
+    }
+    missing_ids = expected_ids - observed_ids
+    unexpected_ids = observed_ids - expected_ids
+
+    result = {
+        "run_id": run_id,
+        "expected_count": len(expected_ids),
+        "observed_count": len(observed_ids),
+        "missing_count": len(missing_ids),
+        "unexpected_count": len(unexpected_ids),
+        "verified": not missing_ids and not unexpected_ids,
+        "write_path": "NONE",
+    }
+
+    if not result["verified"]:
+        raise RuntimeError(
+            "Canonical signal verification mismatch: "
+            f"expected={result['expected_count']} "
+            f"observed={result['observed_count']} "
+            f"missing={result['missing_count']} "
+            f"unexpected={result['unexpected_count']}"
+        )
+
+    return result
+
+
 def main() -> int:
     root = Path(__file__).resolve().parent
     load_env_file(root / ".env")
@@ -238,8 +314,13 @@ def main() -> int:
 
     print(f"PERFORMANCE SNAPSHOT SOURCE: {snapshot_source}")
 
-    count = PerformanceStorage(settings.url, settings.key).save_signals(snapshot)
-    print(f"PERFORMANCE SIGNALS SAVED: {count}")
+    signal_verification = _verify_canonical_signal_rows(settings, snapshot)
+    print(
+        "PERFORMANCE SIGNALS VERIFIED: "
+        f"{signal_verification['observed_count']}/"
+        f"{signal_verification['expected_count']} "
+        "write_path=NONE"
+    )
     return 0
 
 
