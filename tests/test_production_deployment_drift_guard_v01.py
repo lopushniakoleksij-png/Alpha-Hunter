@@ -50,9 +50,25 @@ def test_no_trade_authority_added():
         assert forbidden not in SQL
 
 
-def test_workflow_tracks_main_push_without_printing_secrets():
+def test_workflow_tracks_only_render_cron_runtime_pushes_without_printing_secrets():
     assert "branches:" in WORKFLOW
     assert "- main" in WORKFLOW
+    assert "paths:" in WORKFLOW
+    for path in [
+        "alpha_hunter/**",
+        "run.py",
+        "hourly.py",
+        "performance_job.py",
+        "config.json",
+        "requirements.txt",
+        ".python-version",
+        "ops/collect_execution_quality_readonly.py",
+    ]:
+        assert f'- "{path}"' in WORKFLOW
+    assert '"ops/sql/**"' not in WORKFLOW
+    assert "GITHUB_RUNTIME_PUSH" in WORKFLOW
+    assert "GITHUB_MAIN_PUSH" not in WORKFLOW
+    assert "workflow_dispatch" not in WORKFLOW
     assert "SUPABASE_URL: ${{ secrets.SUPABASE_URL }}" in WORKFLOW
     assert (
         "SUPABASE_SERVICE_ROLE_KEY: "
@@ -60,6 +76,6 @@ def test_workflow_tracks_main_push_without_printing_secrets():
     ) in WORKFLOW
     assert "TARGET_SHA: ${{ github.sha }}" in WORKFLOW
     assert "resolution=ignore-duplicates,return=minimal" in WORKFLOW
-    assert 'print("Production release target recorded' in WORKFLOW
+    assert 'print("Render Cron runtime release target recorded.' in WORKFLOW
     assert 'print(key)' not in WORKFLOW
     assert 'print(os.environ["SUPABASE_SERVICE_ROLE_KEY"])' not in WORKFLOW
