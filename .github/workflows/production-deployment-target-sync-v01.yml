@@ -4,7 +4,15 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
+    paths:
+      - "alpha_hunter/**"
+      - "run.py"
+      - "hourly.py"
+      - "performance_job.py"
+      - "config.json"
+      - "requirements.txt"
+      - ".python-version"
+      - "ops/collect_execution_quality_readonly.py"
 
 permissions:
   contents: read
@@ -42,7 +50,7 @@ jobs:
               "release_target_id": sha,
               "git_commit": sha,
               "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
-              "source": "GITHUB_MAIN_PUSH",
+              "source": "GITHUB_RUNTIME_PUSH",
               "repository": repository,
               "shadow_only": True,
               "trade_permission": False,
@@ -68,4 +76,4 @@ jobs:
                       f"release target sync failed: HTTP {response.status}"
                   )
 
-          print("Production release target recorded for current main commit.")
+          print("Render Cron runtime release target recorded.")
