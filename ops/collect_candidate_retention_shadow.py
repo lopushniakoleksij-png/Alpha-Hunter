@@ -83,6 +83,105 @@ def _load_targets(
     return [row for row in payload if isinstance(row, dict)]
 
 
+def _persist_targets(
+    settings: SupabaseConfig,
+    targets: list[dict[str, Any]],
+    checked_at: datetime,
+) -> None:
+    if not targets:
+        return
+
+    rows: list[dict[str, Any]] = []
+    for target in targets:
+        rows.append(
+            {
+                "episode_id": str(target["episode_id"]),
+                "first_candidate_observation_id": str(
+                    target["first_candidate_observation_id"]
+                ),
+                "symbol": str(target["symbol"]).upper(),
+                "strategy_id": str(target["strategy_id"]),
+                "direction": str(target["direction"]).upper(),
+                "first_observed_at_utc": str(target["first_observed_at_utc"]),
+                "first_candidate_at_utc": str(target["first_candidate_at_utc"]),
+                "first_candidate_action": str(
+                    target["first_candidate_action"]
+                ),
+                "retention_start_utc": str(target["retention_start_utc"]),
+                "retention_horizon_end_utc": str(
+                    target["retention_horizon_end_utc"]
+                ),
+                "expected_closed_1h_candles": int(
+                    target["expected_closed_1h_candles"]
+                ),
+                "target_registered_at_utc": _iso(checked_at),
+                "target_source": "SEALED_CANDIDATE_EPISODES_ONLY",
+                "scientific_role": "V15_PARALLEL_SHADOW",
+                "audit_only": True,
+                "counted_in_v14": False,
+                "mutation_permitted": False,
+                "shadow_only": True,
+                "trade_permission": False,
+                "production_promotion_permitted": False,
+                "order_path": "NONE",
+            }
+        )
+
+    for offset in range(0, len(rows), 500):
+        chunk = rows[offset : offset + 500]
+        response = requests.post(
+            f"{settings.url}/rest/v1/{TARGET_TABLE}",
+            headers=_headers(
+                settings,
+                prefer="resolution=ignore-duplicates,return=minimal",
+            ),
+            data=json.dumps(chunk, separators=(",", ":")),
+            timeout=settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201, 204}:
+            raise RuntimeError(
+                "Retention target persistence failed: "
+                f"HTTP {response.status_code}"
+            )
+
+
+def _load_existing_keys(
+    settings: SupabaseConfig,
+    checked_at: datetime,
+) -> set[tuple[str, str]]:
+    cutoff = checked_at - timedelta(hours=30)
+    response = requests.get(
+        f"{settings.url}/rest/v1/{CANDLE_TABLE}",
+        params={
+            "select": "episode_id,candle_open_utc",
+            "candle_open_utc": f"gte.{_iso(cutoff)}",
+            "limit": "10000",
+        },
+        headers=_headers(settings),
+        timeout=settings.timeout_seconds,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Retention existing-key load failed: "
+            f"HTTP {response.status_code}"
+        )
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise RuntimeError(
+            "Retention existing-key load returned unexpected shape"
+        )
+
+    keys: set[tuple[str, str]] = set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        episode_id = str(row.get("episode_id") or "")
+        candle_open_utc = str(row.get("candle_open_utc") or "")
+        if episode_id and candle_open_utc:
+            keys.add((episode_id, candle_open_utc))
+    return keys
+
+
 def _build_rows_for_symbol(
     symbol: str,
     targets: list[dict[str, Any]],
