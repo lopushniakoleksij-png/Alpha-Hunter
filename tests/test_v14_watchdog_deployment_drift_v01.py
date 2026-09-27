@@ -6,17 +6,21 @@ BASE = BASE_PATH.read_text(encoding="utf-8").lower()
 MIGRATION = MIGRATION_PATH.read_text(encoding="utf-8").lower()
 
 
-def test_watchdog_joins_deployment_drift_status():
+def test_watchdog_consumes_deployment_drift_status_internally():
     assert "alpha_hunter_production_deployment_drift_v01" in BASE
-    assert "deployment_status" in BASE
-    assert "deployment_drift" in BASE
-    assert "deployment_target_git_commit" in BASE
-    assert "deployment_live_git_commit" in BASE
+    assert "left join deployment d on true" in BASE
+    assert "coalesce(d.deployment_drift,false)" in BASE
+
+
+def test_watchdog_public_schema_is_not_expanded_by_drift_metadata():
+    assert "deployment_target_git_commit" not in BASE
+    assert "deployment_live_git_commit" not in BASE
+    assert "deployment_target_recorded_at_utc" not in BASE
 
 
 def test_watchdog_surfaces_render_cron_deployment_drift_warning():
     assert "render_cron_deployment_drift" in BASE
-    assert "coalesce(b.deployment_drift,false)" in BASE
+    assert "coalesce(d.deployment_drift,false)" in BASE
 
 
 def test_deployment_drift_is_warning_not_critical():
