@@ -13,6 +13,7 @@ on:
       - "requirements.txt"
       - ".python-version"
       - "ops/collect_execution_quality_readonly.py"
+      - "ops/collect_candidate_retention_shadow.py"
 
 permissions:
   contents: read
