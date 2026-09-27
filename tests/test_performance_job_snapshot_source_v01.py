@@ -17,8 +17,6 @@ def test_performance_job_unpacks_snapshot_source(monkeypatch, capsys):
         "collected_at_utc": "2026-09-27T11:23:18+00:00",
         "symbols": [],
     }
-    saved = {}
-
     monkeypatch.setattr(
         performance_job,
         "load_env_file",
@@ -40,16 +38,19 @@ def test_performance_job_unpacks_snapshot_source(monkeypatch, capsys):
         lambda config: _Settings(),
     )
 
-    class _Storage:
-        def __init__(self, url, key):
-            assert url == _Settings.url
-            assert key == _Settings.key
-
-        def save_signals(self, received):
-            saved["snapshot"] = received
-            return 0
-
-    monkeypatch.setattr(performance_job, "PerformanceStorage", _Storage)
+    monkeypatch.setattr(
+        performance_job,
+        "_verify_canonical_signal_rows",
+        lambda settings, received: {
+            "run_id": received["run_id"],
+            "expected_count": 0,
+            "observed_count": 0,
+            "missing_count": 0,
+            "unexpected_count": 0,
+            "verified": True,
+            "write_path": "NONE",
+        },
+    )
     monkeypatch.setattr(
         performance_job.subprocess,
         "run",
@@ -72,11 +73,10 @@ def test_performance_job_unpacks_snapshot_source(monkeypatch, capsys):
     )
 
     assert performance_job.main() == 0
-    assert saved["snapshot"] is snapshot
 
     out = capsys.readouterr().out
     assert "PERFORMANCE SNAPSHOT SOURCE: SUPABASE_CANONICAL" in out
-    assert "PERFORMANCE SIGNALS SAVED: 0" in out
+    assert "PERFORMANCE SIGNALS VERIFIED: 0/0 write_path=NONE" in out
 
 
 def test_performance_job_fails_closed_when_no_snapshot_but_collector_still_runs(
@@ -165,14 +165,19 @@ def test_readonly_execution_quality_failure_is_nonfatal(monkeypatch, capsys):
         lambda config: _Settings(),
     )
 
-    class _Storage:
-        def __init__(self, url, key):
-            pass
-
-        def save_signals(self, received):
-            return 60
-
-    monkeypatch.setattr(performance_job, "PerformanceStorage", _Storage)
+    monkeypatch.setattr(
+        performance_job,
+        "_verify_canonical_signal_rows",
+        lambda settings, received: {
+            "run_id": received["run_id"],
+            "expected_count": 60,
+            "observed_count": 60,
+            "missing_count": 0,
+            "unexpected_count": 0,
+            "verified": True,
+            "write_path": "NONE",
+        },
+    )
     monkeypatch.setattr(
         performance_job.subprocess,
         "run",
@@ -197,7 +202,7 @@ def test_readonly_execution_quality_failure_is_nonfatal(monkeypatch, capsys):
     assert performance_job.main() == 0
 
     captured = capsys.readouterr()
-    assert "PERFORMANCE SIGNALS SAVED: 60" in captured.out
+    assert "PERFORMANCE SIGNALS VERIFIED: 60/60 write_path=NONE" in captured.out
     assert "READ-ONLY EXECUTION QUALITY COLLECTION DEGRADED" in captured.err
 
 
@@ -302,14 +307,19 @@ def test_render_cron_identity_is_restored_before_snapshot_load(monkeypatch):
         fake_load_previous_snapshot,
     )
 
-    class _Storage:
-        def __init__(self, url, key):
-            pass
-
-        def save_signals(self, received):
-            return 0
-
-    monkeypatch.setattr(performance_job, "PerformanceStorage", _Storage)
+    monkeypatch.setattr(
+        performance_job,
+        "_verify_canonical_signal_rows",
+        lambda settings, received: {
+            "run_id": received["run_id"],
+            "expected_count": 0,
+            "observed_count": 0,
+            "missing_count": 0,
+            "unexpected_count": 0,
+            "verified": True,
+            "write_path": "NONE",
+        },
+    )
     monkeypatch.setattr(
         performance_job.subprocess,
         "run",
@@ -346,3 +356,57 @@ def test_explicit_runtime_identity_is_not_overwritten(monkeypatch):
     assert performance_job._align_render_cron_identity() == "RENDER_CRON"
     assert performance_job.os.getenv("ALPHA_HUNTER_RUN_SOURCE") == "EXPLICIT_SOURCE"
     assert performance_job.os.getenv("ALPHA_HUNTER_RUNTIME_ROLE") == "EXPLICIT_ROLE"
+
+
+
+def test_canonical_signal_verification_is_get_only(monkeypatch):
+    snapshot = {
+        "run_id": "run-read-only",
+        "symbols": [{"symbol": "BTCUSDT"}],
+    }
+    captured = {}
+
+    monkeypatch.setattr(
+        performance_job,
+        "extract_signal_rows",
+        lambda received: [{"signal_id": "sig-1"}],
+    )
+
+    class _GetResponse:
+        status_code = 200
+
+        def json(self):
+            return [{"signal_id": "sig-1"}]
+
+    def fake_get(url, *, params, headers, timeout):
+        captured["url"] = url
+        captured["params"] = params
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return _GetResponse()
+
+    monkeypatch.setattr(performance_job.requests, "get", fake_get)
+
+    result = performance_job._verify_canonical_signal_rows(
+        _Settings(),
+        snapshot,
+    )
+
+    assert result["verified"] is True
+    assert result["expected_count"] == 1
+    assert result["observed_count"] == 1
+    assert result["write_path"] == "NONE"
+    assert captured["url"].endswith("/rest/v1/alpha_hunter_signals")
+    assert captured["params"]["run_id"] == "eq.run-read-only"
+
+
+def test_performance_job_has_no_signal_write_path():
+    source = performance_job.Path(performance_job.__file__).read_text(
+        encoding="utf-8"
+    )
+    assert "PerformanceStorage" not in source
+    assert ".save_signals(" not in source
+    assert (
+        'requests.post(\n        f"{settings.url}/rest/v1/alpha_hunter_signals"'
+        not in source
+    )
