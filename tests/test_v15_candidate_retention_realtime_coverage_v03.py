@@ -19,10 +19,13 @@ def test_realtime_denominator_counts_only_due_closed_candles():
     assert "least(" in LOWER
 
 
-def test_waiting_future_candles_are_not_labeled_lagging():
+def test_waiting_and_recently_closed_candles_are_not_labeled_lagging():
     assert "waiting_for_first_due_candle" in LOWER
-    assert "complete_to_date" in LOWER
-    assert "lagging_to_date" in LOWER
+    assert "complete_to_now" in LOWER
+    assert "within_capture_sla" in LOWER
+    assert "lagging_capture_sla" in LOWER
+    assert "interval '90 minutes'" in LOWER
+    assert "expected_capture_due_by_sla" in LOWER
     assert (
         "when j.expected_closed_1h_candles_by_now=0"
         in LOWER
@@ -36,11 +39,13 @@ def test_forward_and_total_capture_are_reported_separately():
     assert "forward_first_cycle_rows" in LOWER
 
 
-def test_realtime_health_uses_due_candles_not_full_horizon():
+def test_realtime_health_uses_sla_due_candles_not_full_horizon():
     assert "realtime_capture_health" in LOWER
-    assert "pass_to_date" in LOWER
-    assert "degraded_to_date" in LOWER
+    assert "pass_sla" in LOWER
+    assert "degraded_sla" in LOWER
     assert "targets_with_due_candles" in LOWER
+    assert "lagging_capture_sla_targets" in LOWER
+    assert "retention_coverage_against_sla_due_pct" in LOWER
 
 
 def test_metric_is_not_profitability_rule_and_v14_excluded():
