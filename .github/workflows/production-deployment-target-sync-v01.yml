@@ -1,0 +1,71 @@
+name: Production Deployment Target Sync v0.1
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync-production-target:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TARGET_SHA: ${{ github.sha }}
+      TARGET_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+
+      - name: Append production release target
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.request
+          from datetime import datetime, timezone
+
+          url = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          sha = os.environ["TARGET_SHA"]
+          repository = os.environ["TARGET_REPOSITORY"]
+
+          payload = {
+              "release_target_id": sha,
+              "git_commit": sha,
+              "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+              "source": "GITHUB_MAIN_PUSH",
+              "repository": repository,
+              "shadow_only": True,
+              "trade_permission": False,
+              "production_promotion_permitted": False,
+              "order_path": "NONE",
+          }
+
+          request = urllib.request.Request(
+              url + "/rest/v1/alpha_hunter_production_release_targets_v01",
+              data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+              method="POST",
+              headers={
+                  "apikey": key,
+                  "Authorization": "Bearer " + key,
+                  "Content-Type": "application/json",
+                  "Prefer": "resolution=ignore-duplicates,return=minimal",
+              },
+          )
+
+          with urllib.request.urlopen(request, timeout=20) as response:
+              if response.status not in (200, 201, 204):
+                  raise SystemExit(
+                      f"release target sync failed: HTTP {response.status}"
+                  )
+
+          print("Production release target recorded for current main commit.")
