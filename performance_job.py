@@ -309,6 +309,46 @@ def main() -> int:
             flush=True,
         )
 
+    retention_collector = (
+        root / "ops" / "collect_candidate_retention_shadow.py"
+    )
+    if retention_collector.exists():
+        retention_completed = subprocess.run(
+            [sys.executable, str(retention_collector)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if retention_completed.stdout:
+            print(
+                retention_completed.stdout,
+                end=(
+                    ""
+                    if retention_completed.stdout.endswith("\n")
+                    else "\n"
+                ),
+            )
+        if retention_completed.returncode != 0:
+            print(
+                "V15 CANDIDATE RETENTION SHADOW DEGRADED: "
+                f"exit code {retention_completed.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print(
+                "V15 CANDIDATE RETENTION SHADOW: PASS",
+                flush=True,
+            )
+    else:
+        print(
+            "V15 CANDIDATE RETENTION SHADOW DEGRADED: "
+            "collector script not found",
+            file=sys.stderr,
+            flush=True,
+        )
+
     if not snapshot:
         raise SystemExit("No latest snapshot found")
 
