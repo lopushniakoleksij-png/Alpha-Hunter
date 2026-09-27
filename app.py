@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import subprocess
@@ -28,6 +29,11 @@ CANONICAL_RUN_SOURCE = os.getenv(
     "RENDER_CRON",
 ).strip().upper()
 SERVICE_STARTED_AT_UTC = datetime.now(timezone.utc).isoformat()
+
+OPERATOR_USER = os.getenv("ALPHA_HUNTER_OPERATOR_USER", "").strip()
+OPERATOR_PASSWORD = os.getenv("ALPHA_HUNTER_OPERATOR_PASSWORD", "")
+EXECUTION_FREEZE_RPC = "alpha_hunter_freeze_execution_decision_api_v01"
+EXECUTION_FREEZE_CONFIRM_HEADER = "X-Alpha-Hunter-Freeze-Confirm"
 
 SUPABASE_READ_ATTEMPTS = 3
 SUPABASE_READ_TIMEOUT_SECONDS = 12
@@ -139,6 +145,134 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
         return rows
 
     raise RuntimeError("Supabase read retry budget exhausted")
+
+
+class StaleExecutionDecision(RuntimeError):
+    pass
+
+
+def operator_auth_configured() -> bool:
+    return bool(OPERATOR_USER and OPERATOR_PASSWORD)
+
+
+def operator_authorized() -> bool:
+    if not operator_auth_configured():
+        return False
+    auth = request.authorization
+    if auth is None:
+        return False
+    return (
+        hmac.compare_digest(auth.username or "", OPERATOR_USER)
+        and hmac.compare_digest(auth.password or "", OPERATOR_PASSWORD)
+    )
+
+
+def operator_auth_response():
+    if not operator_auth_configured():
+        return jsonify({
+            "error": "operator_auth_not_configured",
+            "message": (
+                "Set ALPHA_HUNTER_OPERATOR_USER and "
+                "ALPHA_HUNTER_OPERATOR_PASSWORD on the Render web service."
+            ),
+        }), 503
+
+    response = jsonify({"error": "operator_auth_required"})
+    response.status_code = 401
+    response.headers["WWW-Authenticate"] = (
+        'Basic realm="Alpha Hunter Freeze", charset="UTF-8"'
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def execution_freeze_candidates() -> list[dict[str, Any]]:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_attribution_candidates_v01",
+        {
+            "select": (
+                "spec_id,decision_observation_id,strategy_instance_id,"
+                "decision_run_id,symbol,strategy_id,direction,action,"
+                "decision_observed_at_utc,decision_captured_at_utc,"
+                "reference_price,planned_entry_price,stop_price,target_price,"
+                "reward_risk,best_bid,best_ask,midpoint,entry_cross_price,"
+                "entry_cross_half_spread_bps,quote_complete,"
+                "prospective_capture,run_source,git_commit,config_sha256,"
+                "freeze_available,trade_permission,"
+                "production_promotion_permitted,order_path"
+            ),
+            "freeze_available": "eq.true",
+            "order": "decision_observed_at_utc.desc",
+            "limit": "20",
+        },
+    )
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def existing_execution_freeze(
+    decision_observation_id: str,
+) -> dict[str, Any] | None:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_decision_freezes_v01",
+        {
+            "select": (
+                "execution_event_id,decision_observation_id,symbol,direction,"
+                "action,frozen_at_utc,trade_permission,order_path"
+            ),
+            "decision_observation_id": f"eq.{decision_observation_id}",
+            "order": "frozen_at_utc.desc",
+            "limit": "1",
+        },
+    )
+    if rows and isinstance(rows[0], dict):
+        return rows[0]
+    return None
+
+
+def freeze_execution_decision(
+    decision_observation_id: str,
+) -> dict[str, Any]:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise RuntimeError("Supabase environment variables are not configured")
+
+    try:
+        response = requests.post(
+            f"{SUPABASE_URL}/rest/v1/rpc/{EXECUTION_FREEZE_RPC}",
+            headers=supabase_headers(),
+            json={"p_decision_observation_id": decision_observation_id},
+            timeout=SUPABASE_READ_TIMEOUT_SECONDS,
+        )
+    except requests.RequestException:
+        # A transport failure can happen after Postgres committed the freeze.
+        # Resolve that ambiguity by reading the append-only freeze ledger before
+        # returning an error. Never retry this write blindly.
+        existing = existing_execution_freeze(decision_observation_id)
+        if existing is not None:
+            recovered = dict(existing)
+            recovered["fill_binding_status"] = (
+                "WAITING_FOR_EXPLICIT_USER_CONFIRMED_FILL"
+            )
+            recovered["recovered_after_transport_error"] = True
+            recovered["trade_permission"] = False
+            recovered["order_path"] = "NONE"
+            return recovered
+        raise
+
+    if response.status_code >= 400:
+        detail = response.text or ""
+        if "Decision is not a current prospective attribution candidate" in detail:
+            raise StaleExecutionDecision(
+                "Decision expired before the freeze was committed"
+            )
+        response.raise_for_status()
+
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Unexpected freeze RPC response shape")
+
+    payload["trade_permission"] = False
+    payload["order_path"] = "NONE"
+    return payload
 
 
 def _hydrate_dashboard_snapshot(
@@ -739,7 +873,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V{{ data.build.version }}</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div><div class="small" style="margin-top:5px">Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · deployed {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start fallback){% endif %}</div></div>
-    <div><div class="toolbar"><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
+    <div><div class="toolbar"><a href="/execution-freeze" style="color:#24d18f;text-decoration:none;font-weight:800">Freeze Decision</a><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
   </div>
 
   <div class="cards">
@@ -871,6 +1005,119 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 let scanPollTimer=null;
 async function runScan(){const b=document.getElementById('runScanButton'),m=document.getElementById('scanMessage');b.disabled=true;m.textContent='Starting fresh scan...';try{const r=await fetch('/api/run-scan',{method:'POST'}),x=await r.json();if(!r.ok)throw new Error(x.error||'Unable to start scan');m.textContent='Scan running...';if(scanPollTimer)clearInterval(scanPollTimer);scanPollTimer=setInterval(checkScanStatus,3000)}catch(e){m.textContent='Scan failed: '+e.message;b.disabled=false}}
 async function checkScanStatus(){const b=document.getElementById('runScanButton'),m=document.getElementById('scanMessage');try{const r=await fetch('/api/scan-status'),x=await r.json();if(x.running){m.textContent='Scan running...';b.disabled=true;return}if(x.status==='completed'){clearInterval(scanPollTimer);m.textContent='Scan complete. Refreshing...';setTimeout(()=>location.reload(),700);return}if(x.status==='failed'){clearInterval(scanPollTimer);m.textContent='Scan failed: '+(x.error||'unknown error');b.disabled=false;return}b.disabled=false}catch(e){m.textContent='Unable to read scan status';b.disabled=false}}
+</script>
+</body>
+</html>
+"""
+
+
+EXECUTION_FREEZE_PAGE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="8">
+  <title>Alpha Hunter — Freeze Decision</title>
+  <style>
+    :root{--bg:#071018;--panel:#0d1822;--line:#1d2e3a;--text:#e8f0f6;--muted:#91a3b1;--ok:#2bd39a;--warn:#ffbf47;--bad:#ff6474;--blue:#4db6ff}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
+    .wrap{max-width:760px;margin:auto;padding:14px}.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+    h1{font-size:25px;margin:0 0 5px}.small,.muted{color:var(--muted)}.small{font-size:12px}.link{color:var(--blue);text-decoration:none}
+    .notice,.candidate,.empty{background:rgba(13,24,34,.97);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:12px}
+    .notice{border-color:#6f5b2a}.symbol{font-size:24px;font-weight:900}.side-long{color:var(--ok)}.side-short{color:var(--bad)}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.metric{background:#09131c;border:1px solid #162734;border-radius:10px;padding:9px}
+    .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}.value{font-weight:800;margin-top:3px;overflow-wrap:anywhere}
+    button{width:100%;border:0;border-radius:12px;padding:15px;font-size:16px;font-weight:900;background:#24d18f;color:#03120d;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}.status{margin-top:9px;font-size:13px;line-height:1.4}.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Freeze Decision</h1><div class="small">Phone-first prospective evidence capture</div></div>
+    <a class="link" href="/">Money Action</a>
+  </div>
+
+  <div class="notice small">
+    A tap freezes only the exact current decision shown below. It does not place,
+    modify or cancel a Bitget order. Expired decisions fail closed. No automatic
+    substitution is permitted.
+  </div>
+
+  {% if candidates %}
+    {% for c in candidates %}
+    <div class="candidate">
+      <div class="symbol">{{ c.symbol }}</div>
+      <div class="{{ 'side-long' if c.direction=='LONG' else 'side-short' }}">
+        <b>{{ c.direction }}</b> · {{ c.action }} · {{ c.strategy_id }}
+      </div>
+
+      <div class="grid">
+        <div class="metric"><div class="label">Entry</div><div class="value">{{ c.planned_entry_price }}</div></div>
+        <div class="metric"><div class="label">Stop</div><div class="value">{{ c.stop_price }}</div></div>
+        <div class="metric"><div class="label">Target</div><div class="value">{{ c.target_price }}</div></div>
+        <div class="metric"><div class="label">R:R</div><div class="value">{{ '%.2f'|format(c.reward_risk or 0) }}</div></div>
+        <div class="metric"><div class="label">Observed UTC</div><div class="value">{{ c.decision_observed_at_utc }}</div></div>
+        <div class="metric"><div class="label">Quote</div><div class="value">{{ 'COMPLETE' if c.quote_complete else 'INCOMPLETE' }}</div></div>
+      </div>
+
+      <button
+        id="freeze-{{ c.decision_observation_id }}"
+        onclick="freezeDecision('{{ c.decision_observation_id }}','{{ c.symbol }}')">
+        FREEZE {{ c.symbol }} DECISION
+      </button>
+      <div class="status" id="status-{{ c.decision_observation_id }}"></div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">
+      <b>No current freeze-eligible candidate.</b>
+      <div class="small" style="margin-top:6px">This page refreshes every 8 seconds.</div>
+    </div>
+  {% endif %}
+
+  <div class="small">
+    Safety: shadow_only=true · trade_permission=false ·
+    production_promotion_permitted=false · order_path=NONE
+  </div>
+</div>
+<script>
+async function freezeDecision(id,symbol){
+  const button=document.getElementById('freeze-'+id);
+  const status=document.getElementById('status-'+id);
+  button.disabled=true;
+  status.className='status warn';
+  status.textContent='Freezing exact '+symbol+' decision...';
+  try{
+    const response=await fetch('/api/execution-freeze/'+encodeURIComponent(id),{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-Alpha-Hunter-Freeze-Confirm':id
+      },
+      body:JSON.stringify({decision_observation_id:id})
+    });
+    const payload=await response.json();
+    if(response.status===409){
+      status.className='status bad';
+      status.textContent='EXPIRED — candidate changed before freeze. Nothing was frozen.';
+      setTimeout(()=>location.reload(),1200);
+      return;
+    }
+    if(!response.ok){
+      throw new Error(payload.message||payload.error||'Freeze failed');
+    }
+    status.className='status ok';
+    status.textContent='FROZEN · '+payload.execution_event_id+
+      ' · waiting for exact Bitget order/fill binding';
+    document.querySelectorAll('button').forEach(x=>x.disabled=true);
+  }catch(error){
+    status.className='status bad';
+    status.textContent='Freeze failed: '+error.message;
+    button.disabled=false;
+  }
+}
 </script>
 </body>
 </html>
@@ -1058,6 +1305,85 @@ def api_run_scan():
 def api_scan_status():
     with scan_lock:
         return jsonify(dict(scan_state))
+
+
+@app.get("/execution-freeze")
+def execution_freeze_page():
+    auth_failure = None if operator_authorized() else operator_auth_response()
+    if auth_failure is not None:
+        return auth_failure
+
+    try:
+        response = app.make_response(
+            render_template_string(
+                EXECUTION_FREEZE_PAGE,
+                candidates=execution_freeze_candidates(),
+            )
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception:
+        app.logger.exception("Execution-freeze candidate read failed")
+        return jsonify({"error": "execution_freeze_unavailable"}), 503
+
+
+@app.post("/api/execution-freeze/<decision_observation_id>")
+def api_execution_freeze(decision_observation_id: str):
+    auth_failure = None if operator_authorized() else operator_auth_response()
+    if auth_failure is not None:
+        return auth_failure
+
+    if (
+        len(decision_observation_id) != 32
+        or any(ch not in "0123456789abcdef" for ch in decision_observation_id.lower())
+    ):
+        return jsonify({"error": "invalid_decision_observation_id"}), 400
+
+    if request.headers.get(EXECUTION_FREEZE_CONFIRM_HEADER) != decision_observation_id:
+        return jsonify({"error": "explicit_freeze_confirmation_required"}), 400
+
+    body = request.get_json(silent=True) or {}
+    if body.get("decision_observation_id") != decision_observation_id:
+        return jsonify({"error": "decision_identity_mismatch"}), 400
+
+    try:
+        current = {
+            row.get("decision_observation_id"): row
+            for row in execution_freeze_candidates()
+        }
+        if decision_observation_id not in current:
+            return jsonify({
+                "error": "decision_expired",
+                "message": (
+                    "Candidate is no longer current. Nothing was frozen and "
+                    "no substitute candidate was selected."
+                ),
+                "trade_permission": False,
+                "order_path": "NONE",
+            }), 409
+
+        result = freeze_execution_decision(decision_observation_id)
+        result["trade_permission"] = False
+        result["production_promotion_permitted"] = False
+        result["order_path"] = "NONE"
+        return jsonify(result), 200
+    except StaleExecutionDecision:
+        return jsonify({
+            "error": "decision_expired",
+            "message": (
+                "Candidate expired during the freeze transaction. Nothing was "
+                "backdated and no substitute candidate was selected."
+            ),
+            "trade_permission": False,
+            "order_path": "NONE",
+        }), 409
+    except Exception:
+        app.logger.exception("Execution-decision freeze failed")
+        return jsonify({
+            "error": "execution_freeze_failed",
+            "trade_permission": False,
+            "order_path": "NONE",
+        }), 503
 
 
 @app.get("/control-tower")
