@@ -238,6 +238,7 @@ def test_collector_telemetry_persists_only_sanitized_health(monkeypatch):
             "read_only_get": True,
             "no_order_write_path": True,
         },
+        runtime_release_fingerprint_sha256="a" * 64,
     )
 
     row = captured["row"]
@@ -250,6 +251,11 @@ def test_collector_telemetry_persists_only_sanitized_health(monkeypatch):
     assert row["trade_permission"] is False
     assert row["evidence"]["credential_values_persisted"] is False
     assert row["evidence"]["raw_order_ids_persisted_here"] is False
+    assert (
+        row["evidence"]["runtime_release_fingerprint_sha256"]
+        == "a" * 64
+    )
+    assert row["evidence"]["runtime_release_fingerprint_secret"] is False
     assert "BITGET_API_KEY" not in performance_job.json.dumps(row)
     assert "BITGET_SECRET_KEY" not in performance_job.json.dumps(row)
 
