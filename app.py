@@ -1772,11 +1772,14 @@ def api_execution_bind(execution_event_id: str, fill_evidence_id: str):
         result["production_promotion_permitted"] = False
         result["order_path"] = "NONE"
         return jsonify(result), 200
-    except Exception as exc:
+    except Exception:
         app.logger.exception("Explicit execution-fill binding failed")
         return jsonify({
             "error": "execution_fill_binding_rejected",
-            "message": str(exc)[:500],
+            "message": (
+                "Binding was rejected by the exact evidence gate. "
+                "Refresh the page and verify the Bitget trade/order identity."
+            ),
             "trade_permission": False,
             "order_path": "NONE",
         }), 409
