@@ -14,7 +14,21 @@
 
 create or replace view public.alpha_hunter_candidate_retention_targets_v01
 with (security_invoker=true,security_barrier=true) as
-with first_candidate as (
+with active as (
+  select
+    e.spec_id,
+    v.started_at_utc,
+    s.required_run_source
+  from public.alpha_hunter_test_engine_latest_v01 e
+  join public.alpha_hunter_profitability_validation_status_v01 v
+    on v.spec_id=e.spec_id
+  join public.alpha_hunter_profitability_test_specs_v01 s
+    on s.spec_id=e.spec_id
+  where v.test_activated=true
+  order by e.evaluated_at_utc desc
+  limit 1
+),
+first_candidate as (
   select distinct on (o.strategy_instance_id)
     o.strategy_instance_id as episode_id,
     o.observation_id as first_candidate_observation_id,
@@ -24,9 +38,14 @@ with first_candidate as (
     o.observed_at_utc as first_candidate_at_utc,
     o.action as first_candidate_action
   from public.alpha_hunter_strategy_observations_v01 o
+  join public.alpha_hunter_snapshots s
+    on s.run_id=o.run_id
+  cross join active a
   where o.strategy_instance_id is not null
     and o.status='SHADOW_CANDIDATE'
     and o.action in ('EXECUTE_NOW','PLACE_LIMIT')
+    and o.observed_at_utc>=a.started_at_utc
+    and s.payload->'validation_identity'->>'run_source'=a.required_run_source
   order by o.strategy_instance_id,o.observed_at_utc,o.observation_id
 )
 select
@@ -65,7 +84,14 @@ select
 from first_candidate c
 join public.alpha_hunter_strategy_episodes_v01 e
   on e.episode_id=c.episode_id
-where e.first_observed_at_utc+interval '24 hours' > clock_timestamp()-interval '2 hours'
+join public.alpha_hunter_strategy_observations_v01 o0
+  on o0.observation_id=e.first_observation_id
+join public.alpha_hunter_snapshots s0
+  on s0.run_id=o0.run_id
+cross join active a
+where e.first_observed_at_utc>=a.started_at_utc
+  and s0.payload->'validation_identity'->>'run_source'=a.required_run_source
+  and e.first_observed_at_utc+interval '24 hours' > clock_timestamp()-interval '2 hours'
   and c.first_candidate_at_utc <= clock_timestamp();
 
 revoke all on public.alpha_hunter_candidate_retention_targets_v01
