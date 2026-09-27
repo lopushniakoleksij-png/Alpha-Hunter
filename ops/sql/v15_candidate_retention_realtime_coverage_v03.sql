@@ -60,6 +60,23 @@ joined as (
         )::integer
       )
     ) as expected_closed_1h_candles_by_now,
+    greatest(
+      0,
+      least(
+        t.expected_closed_1h_candles,
+        floor(
+          extract(
+            epoch from (
+              least(
+                clock_timestamp()-interval '90 minutes',
+                t.retention_horizon_end_utc
+              )
+              - t.retention_start_utc
+            )
+          )/3600.0
+        )::integer
+      )
+    ) as expected_capture_due_by_sla,
     coalesce(c.retained_rows,0) as retained_rows,
     coalesce(c.forward_first_cycle_rows,0) as forward_first_cycle_rows,
     coalesce(c.late_backfill_rows,0) as late_backfill_rows,
@@ -101,8 +118,10 @@ select
     when j.expected_closed_1h_candles_by_now=0
       then 'WAITING_FOR_FIRST_DUE_CANDLE'
     when j.retained_rows>=j.expected_closed_1h_candles_by_now
-      then 'COMPLETE_TO_DATE'
-    else 'LAGGING_TO_DATE'
+      then 'COMPLETE_TO_NOW'
+    when j.retained_rows>=j.expected_capture_due_by_sla
+      then 'WITHIN_CAPTURE_SLA'
+    else 'LAGGING_CAPTURE_SLA'
   end as realtime_capture_status,
   case
     when clock_timestamp()>=j.retention_horizon_end_utc
@@ -148,13 +167,18 @@ select
     where realtime_capture_status='WAITING_FOR_FIRST_DUE_CANDLE'
   )::integer as waiting_first_due_candle_targets,
   count(*) filter(
-    where realtime_capture_status='COMPLETE_TO_DATE'
-  )::integer as complete_to_date_targets,
+    where realtime_capture_status='COMPLETE_TO_NOW'
+  )::integer as complete_to_now_targets,
   count(*) filter(
-    where realtime_capture_status='LAGGING_TO_DATE'
-  )::integer as lagging_to_date_targets,
+    where realtime_capture_status='WITHIN_CAPTURE_SLA'
+  )::integer as within_capture_sla_targets,
+  count(*) filter(
+    where realtime_capture_status='LAGGING_CAPTURE_SLA'
+  )::integer as lagging_capture_sla_targets,
   sum(expected_closed_1h_candles_by_now)::bigint
     as expected_closed_1h_candles_by_now,
+  sum(expected_capture_due_by_sla)::bigint
+    as expected_capture_due_by_sla,
   sum(retained_rows)::bigint as retained_rows,
   sum(forward_first_cycle_rows)::bigint as forward_first_cycle_rows,
   sum(late_backfill_rows)::bigint as late_backfill_rows,
@@ -175,14 +199,22 @@ select
     )
   end as forward_first_cycle_coverage_to_date_pct,
   case
+    when sum(expected_capture_due_by_sla)=0 then null
+    else least(
+      100.0,
+      100.0*sum(retained_rows)::double precision
+        /sum(expected_capture_due_by_sla)
+    )
+  end as retention_coverage_against_sla_due_pct,
+  case
     when count(*)=0 then 'NO_TARGETS'
     when count(*) filter(
       where expected_closed_1h_candles_by_now>0
     )=0 then 'WAITING_FOR_FIRST_DUE_CANDLE'
     when count(*) filter(
-      where realtime_capture_status='LAGGING_TO_DATE'
-    )=0 then 'PASS_TO_DATE'
-    else 'DEGRADED_TO_DATE'
+      where realtime_capture_status='LAGGING_CAPTURE_SLA'
+    )=0 then 'PASS_SLA'
+    else 'DEGRADED_SLA'
   end as realtime_capture_health,
   'OPS_REALTIME_COVERAGE_NOT_PROFITABILITY_RULE'::text as coverage_policy,
   'V15_PARALLEL_SHADOW'::text as scientific_role,
