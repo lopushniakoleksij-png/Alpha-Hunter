@@ -13,9 +13,14 @@ def main() -> int:
     root = Path(__file__).resolve().parent
     load_env_file(root / ".env")
     config = load_config(root / "config.json")
-    snapshot = load_previous_snapshot(root / "config.json", config)
+    snapshot, snapshot_source = load_previous_snapshot(
+        root / "config.json",
+        config,
+    )
     if not snapshot:
         raise SystemExit("No latest snapshot found")
+
+    print(f"PERFORMANCE SNAPSHOT SOURCE: {snapshot_source}")
 
     settings = SupabaseConfig.from_environment(config)
     if settings is None:
