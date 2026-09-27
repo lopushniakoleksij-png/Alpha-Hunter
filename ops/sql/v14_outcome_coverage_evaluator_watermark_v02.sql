@@ -1,3 +1,15 @@
+-- Alpha Hunter V14 outcome coverage evaluator watermark v0.2
+--
+-- Operations/scientific observability only, outside the sealed V14 fingerprint.
+--
+-- Corrects audit cadence semantics: an episode is considered due for a 24h
+-- outcome only if it had matured by the start time of the latest successful
+-- forward-outcome evaluator run. This prevents false "matured_without_24h"
+-- counts for candidates that matured after the last evaluator and are simply
+-- waiting for the next hourly :53 job.
+--
+-- No outcome/economics evidence is modified.
+
 -- Alpha Hunter V14 outcome coverage audit v0.1
 --
 -- Operations/scientific observability only. Lives under ops/sql and is outside
@@ -180,3 +192,4 @@ revoke all on public.alpha_hunter_v14_outcome_coverage_audit_v01
   from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_v14_outcome_coverage_audit_v01
   to service_role;
+
