@@ -114,9 +114,10 @@ def test_build_rows_uses_only_fully_closed_future_candles():
         }
     ]
     raw = [
-        ["1758992400000", "10", "11", "9", "10.5", "100", "1000"],
-        ["1758996000000", "10.5", "12", "10", "11", "110", "1200"],
-        ["1758999600000", "11", "13", "10.5", "12", "120", "1400"],
+        ["1790524800000", "9", "10", "8", "9.5", "90", "900"],
+        ["1790528400000", "10", "11", "9", "10.5", "100", "1000"],
+        ["1790532000000", "10.5", "12", "10", "11", "110", "1200"],
+        ["1790535600000", "11", "13", "10.5", "12", "120", "1400"],
     ]
 
     rows, considered = retention._build_rows_for_symbol(
@@ -126,7 +127,8 @@ def test_build_rows_uses_only_fully_closed_future_candles():
         checked_at,
     )
 
-    assert considered >= 1
+    assert considered == 3
+    assert len(rows) == 2
     assert all(row["fully_closed"] is True for row in rows)
     assert all(row["counted_in_v14"] is False for row in rows)
     assert all(row["trade_permission"] is False for row in rows)
