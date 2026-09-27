@@ -1,0 +1,100 @@
+name: V15 Retention Drift Fallback v0.1
+
+on:
+  schedule:
+    - cron: "8 * * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/v15-retention-drift-fallback-v01.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retention-drift-fallback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Checkout production main
+        uses: actions/checkout@v4
+
+      - name: Set up pinned Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install production dependencies
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Check Render runtime deployment status
+        id: drift
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          base = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          query = urllib.parse.urlencode({
+              "select": "deployment_status,target_git_commit,live_git_commit",
+              "limit": "1",
+          })
+          request = urllib.request.Request(
+              base
+              + "/rest/v1/alpha_hunter_production_deployment_drift_v01?"
+              + query,
+              headers={
+                  "apikey": key,
+                  "Authorization": "Bearer " + key,
+              },
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              if response.status != 200:
+                  raise SystemExit(
+                      f"deployment drift read failed: HTTP {response.status}"
+                  )
+              payload = json.loads(response.read().decode("utf-8"))
+
+          if not isinstance(payload, list) or len(payload) != 1:
+              raise SystemExit("deployment drift read returned unexpected shape")
+
+          status = str(payload[0].get("deployment_status") or "")
+          if status == "DRIFT":
+              should_run = "true"
+          elif status == "MATCHED":
+              should_run = "false"
+          else:
+              raise SystemExit(
+                  f"unexpected deployment status {status!r}; fail closed"
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"should_run={should_run}\n")
+              handle.write(f"deployment_status={status}\n")
+
+          print(
+              "V15 retention fallback decision: "
+              f"deployment_status={status} should_run={should_run}"
+          )
+
+      - name: Run targeted V15 retention fallback
+        if: steps.drift.outputs.should_run == 'true'
+        shell: bash
+        run: |
+          python ops/collect_candidate_retention_shadow.py
+
+      - name: Confirm Render owns collection when matched
+        if: steps.drift.outputs.should_run == 'false'
+        shell: bash
+        run: |
+          echo "Render runtime is MATCHED; fallback collector skipped."
