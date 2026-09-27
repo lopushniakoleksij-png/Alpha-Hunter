@@ -206,8 +206,7 @@ classified as (
         then 'BITGET_ACCOUNT_IDENTITY_UNPINNED' end,
       case when not coalesce(b.cost_model_validated,false)
         then 'EXECUTION_COST_MODEL_NOT_VALIDATED' end,
-      case when coalesce(b.legacy_control_plane_status,'MISSING')
-                  in ('FAILED','DEGRADED')
+      case when coalesce(b.legacy_control_plane_status,'MISSING')='FAILED'
         then 'LEGACY_CONTROL_PLANE_NOT_PASSING' end,
       case when coalesce(b.live_toast_review_tables,0)>0
         then 'STORAGE_LIVE_TOAST_REVIEW_REQUIRED' end
