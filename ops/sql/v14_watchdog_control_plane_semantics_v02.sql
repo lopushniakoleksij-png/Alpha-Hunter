@@ -13,12 +13,8 @@
 do $outer$
 declare
   v_def text;
-  v_old text := $old$
-WHEN COALESCE(b.legacy_control_plane_status, 'MISSING'::text) = ANY (ARRAY['FAILED'::text, 'DEGRADED'::text]) THEN 'LEGACY_CONTROL_PLANE_NOT_PASSING'::text
-$old$;
-  v_new text := $new$
-WHEN COALESCE(b.legacy_control_plane_status, 'MISSING'::text) = 'FAILED'::text THEN 'LEGACY_CONTROL_PLANE_NOT_PASSING'::text
-$new$;
+  v_old text := $old$WHEN COALESCE(b.legacy_control_plane_status, 'MISSING'::text) = ANY (ARRAY['FAILED'::text, 'DEGRADED'::text]) THEN 'LEGACY_CONTROL_PLANE_NOT_PASSING'::text$old$;
+  v_new text := $new$WHEN COALESCE(b.legacy_control_plane_status, 'MISSING'::text) = 'FAILED'::text THEN 'LEGACY_CONTROL_PLANE_NOT_PASSING'::text$new$;
 begin
   select pg_get_viewdef(
     'public.alpha_hunter_v14_watchdog_status_v01'::regclass,
