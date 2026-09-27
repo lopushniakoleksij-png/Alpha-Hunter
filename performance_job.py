@@ -53,6 +53,36 @@ def _parse_collector_result(stdout: str) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _runtime_release_fingerprint(root: Path) -> str | None:
+    script = root / "ops" / "runtime_release_fingerprint.py"
+    if not script.exists():
+        return None
+
+    completed = subprocess.run(
+        [sys.executable, str(script), "--json"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+
+    try:
+        payload = json.loads(completed.stdout)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+    fingerprint = str(
+        payload.get("runtime_fingerprint_sha256") or ""
+    ).strip().lower()
+    if len(fingerprint) != 64:
+        return None
+    if any(character not in "0123456789abcdef" for character in fingerprint):
+        return None
+    return fingerprint
+
+
 def _optional_int(value):
     try:
         if value in (None, ""):
@@ -72,6 +102,7 @@ def _persist_collector_telemetry(
     subprocess_started: bool,
     subprocess_exit_code: int | None,
     result: dict,
+    runtime_release_fingerprint_sha256: str | None,
 ) -> None:
     checked_at = datetime.now(timezone.utc).isoformat()
     source_run_id = str(snapshot.get("run_id") or "") or None
@@ -124,6 +155,9 @@ def _persist_collector_telemetry(
             "credential_values_persisted": False,
             "raw_order_ids_persisted_here": False,
             "raw_client_oids_persisted_here": False,
+            "runtime_release_fingerprint_sha256":
+                runtime_release_fingerprint_sha256,
+            "runtime_release_fingerprint_secret": False,
         },
     }
 
@@ -238,6 +272,20 @@ def main() -> int:
         cloud_settings=settings,
     )
 
+    runtime_release_fingerprint_sha256 = _runtime_release_fingerprint(root)
+    if runtime_release_fingerprint_sha256:
+        print(
+            "RUNTIME RELEASE FINGERPRINT: "
+            f"{runtime_release_fingerprint_sha256}",
+            flush=True,
+        )
+    else:
+        print(
+            "RUNTIME RELEASE FINGERPRINT: UNAVAILABLE",
+            file=sys.stderr,
+            flush=True,
+        )
+
     collector = root / "ops" / "collect_execution_quality_readonly.py"
     collector_exists = collector.exists()
     bitget_credentials_configured = bool(
@@ -300,6 +348,9 @@ def main() -> int:
             subprocess_started=subprocess_started,
             subprocess_exit_code=subprocess_exit_code,
             result=collector_result,
+            runtime_release_fingerprint_sha256=(
+                runtime_release_fingerprint_sha256
+            ),
         )
     except Exception as exc:
         print(
