@@ -9,11 +9,14 @@ on:
       - "run.py"
       - "hourly.py"
       - "performance_job.py"
+      - "feature_job.py"
+      - "outcome_job.py"
       - "config.json"
       - "requirements.txt"
       - ".python-version"
       - "ops/collect_execution_quality_readonly.py"
       - "ops/collect_candidate_retention_shadow.py"
+      - "ops/runtime_release_fingerprint.py"
 
 permissions:
   contents: read
@@ -28,6 +31,15 @@ jobs:
       TARGET_SHA: ${{ github.sha }}
       TARGET_REPOSITORY: ${{ github.repository }}
     steps:
+      - name: Checkout runtime source
+        uses: actions/checkout@v4
+
+      - name: Compute runtime release fingerprint
+        id: runtime
+        shell: bash
+        run: |
+          python ops/runtime_release_fingerprint.py --github-output
+
       - name: Validate required secrets
         shell: bash
         run: |
@@ -36,6 +48,8 @@ jobs:
 
       - name: Append production release target
         shell: python
+        env:
+          TARGET_RUNTIME_FINGERPRINT: ${{ steps.runtime.outputs.runtime_fingerprint_sha256 }}
         run: |
           import json
           import os
@@ -46,10 +60,15 @@ jobs:
           key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
           sha = os.environ["TARGET_SHA"]
           repository = os.environ["TARGET_REPOSITORY"]
+          runtime_fingerprint = os.environ["TARGET_RUNTIME_FINGERPRINT"]
+
+          if len(runtime_fingerprint) != 64:
+              raise SystemExit("runtime fingerprint is not a SHA-256 hex digest")
 
           payload = {
               "release_target_id": sha,
               "git_commit": sha,
+              "runtime_fingerprint_sha256": runtime_fingerprint,
               "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
               "source": "GITHUB_RUNTIME_PUSH",
               "repository": repository,
