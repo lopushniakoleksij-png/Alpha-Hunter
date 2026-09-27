@@ -220,11 +220,11 @@ begin
   perform cron.schedule(
     'alpha-hunter-control-plane-stage-runtime-hourly-v01',
     '22 * * * *',
-    $cmd$select private.alpha_hunter_capture_control_plane_stage_runtime_v01(
-  date_trunc('hour',clock_timestamp())-interval '1 second'
-);$cmd$
+    $cmd$select private.alpha_hunter_capture_control_plane_stage_runtime_v01(clock_timestamp());$cmd$
   );
 end;
 $outer$;
 
-select private.alpha_hunter_capture_control_plane_stage_runtime_v01(clock_timestamp());
+select private.alpha_hunter_capture_control_plane_stage_runtime_v01(
+  date_trunc('hour',clock_timestamp())-interval '1 second'
+);
