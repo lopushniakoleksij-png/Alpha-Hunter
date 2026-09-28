@@ -1,0 +1,122 @@
+name: Production Phone Workflow Smoke v0.1
+
+on:
+  push:
+    paths:
+      - "app.py"
+      - ".github/workflows/production-phone-smoke-v01.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-phone-smoke-v01
+  cancel-in-progress: true
+
+jobs:
+  live-render-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://alpha-hunter-j5i3.onrender.com
+      MIN_REQUIRED_COMMIT: 8408a35742851dbdf86bd653c4f5f8d05806e138
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify live build contains phone freeze and bind
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 4 --retry-all-errors --retry-delay 3             --connect-timeout 15 --max-time 60             -sS -o "$body" -w '%{http_code}'             "$BASE_URL/api/build")"
+          if [[ "$code" != "200" ]]; then
+            echo "Expected /api/build HTTP 200, got $code"
+            cat "$body"
+            exit 1
+          fi
+
+          LIVE_COMMIT="$(python - "$body" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+value = str(payload.get("git_commit") or "").strip()
+if not value or value == "unknown":
+    raise SystemExit("Live /api/build did not expose a usable git_commit")
+print(value)
+PY
+)"
+          echo "Live Render commit: $LIVE_COMMIT"
+
+          git cat-file -e "$MIN_REQUIRED_COMMIT^{commit}"
+          git cat-file -e "$LIVE_COMMIT^{commit}"
+          if ! git merge-base --is-ancestor "$MIN_REQUIRED_COMMIT" "$LIVE_COMMIT"; then
+            echo "Live Render commit does not contain required phone workflow commit $MIN_REQUIRED_COMMIT"
+            exit 1
+          fi
+
+      - name: Verify freeze page is operator-protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 3 --retry-all-errors --retry-delay 2             --connect-timeout 15 --max-time 60             -sS -o "$body" -w '%{http_code}'             "$BASE_URL/execution-freeze")"
+
+          if [[ "$code" == "503" ]]; then
+            echo "Phone freeze route is fail-closed because operator auth is not configured."
+            cat "$body"
+            exit 1
+          fi
+
+          if [[ "$code" != "401" ]]; then
+            echo "Expected unauthenticated /execution-freeze HTTP 401, got $code"
+            cat "$body"
+            exit 1
+          fi
+
+          python - "$body" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+if payload.get("error") != "operator_auth_required":
+    raise SystemExit(f"Unexpected freeze auth payload: {payload}")
+PY
+
+      - name: Verify bind page is operator-protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 3 --retry-all-errors --retry-delay 2             --connect-timeout 15 --max-time 60             -sS -o "$body" -w '%{http_code}'             "$BASE_URL/execution-bind/smoke-nonexistent")"
+
+          if [[ "$code" == "503" ]]; then
+            echo "Phone bind route is fail-closed because operator auth is not configured."
+            cat "$body"
+            exit 1
+          fi
+
+          if [[ "$code" != "401" ]]; then
+            echo "Expected unauthenticated /execution-bind HTTP 401, got $code"
+            cat "$body"
+            exit 1
+          fi
+
+          python - "$body" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+if payload.get("error") != "operator_auth_required":
+    raise SystemExit(f"Unexpected bind auth payload: {payload}")
+PY
+
+      - name: Safety summary
+        run: |
+          echo "PASS: live Render contains phone freeze/bind workflow."
+          echo "PASS: unauthenticated freeze/bind endpoints expose no candidate/fill evidence."
+          echo "Safety remains trade_permission=false and order_path=NONE."
