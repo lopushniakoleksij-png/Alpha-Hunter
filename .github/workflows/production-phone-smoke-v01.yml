@@ -39,6 +39,7 @@ jobs:
             exit 1
           fi
 
+          python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); print("Live Render branch:", p.get("git_branch")); print("Live Render service:", p.get("render_service")); print("Live Render repo:", p.get("git_repo")); print("Live deployed-at source:", p.get("deployed_at_source"))' "$body"
           LIVE_COMMIT="$(python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); v=str(p.get("git_commit") or "").strip(); print(v) if v and v != "unknown" else (_ for _ in ()).throw(SystemExit("Live /api/build did not expose a usable git_commit"))' "$body")"
           echo "Live Render commit: $LIVE_COMMIT"
 
