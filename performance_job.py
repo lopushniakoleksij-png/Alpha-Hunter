@@ -400,6 +400,46 @@ def main() -> int:
             flush=True,
         )
 
+    ranking_challenger = (
+        root / "ops" / "collect_v15_ranking_challenger.py"
+    )
+    if ranking_challenger.exists():
+        ranking_completed = subprocess.run(
+            [sys.executable, str(ranking_challenger)],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if ranking_completed.stdout:
+            print(
+                ranking_completed.stdout,
+                end=(
+                    ""
+                    if ranking_completed.stdout.endswith("\n")
+                    else "\n"
+                ),
+            )
+        if ranking_completed.returncode != 0:
+            print(
+                "V15 RANKING CHALLENGER SHADOW DEGRADED: "
+                f"exit code {ranking_completed.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print(
+                "V15 RANKING CHALLENGER SHADOW: PASS",
+                flush=True,
+            )
+    else:
+        print(
+            "V15 RANKING CHALLENGER SHADOW DEGRADED: "
+            "collector script not found",
+            file=sys.stderr,
+            flush=True,
+        )
+
     if not snapshot:
         raise SystemExit("No latest snapshot found")
 
