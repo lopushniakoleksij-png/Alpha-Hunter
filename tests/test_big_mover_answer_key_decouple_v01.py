@@ -36,7 +36,7 @@ def test_parent_direction_refuses_stale_shadow():
 
 def test_heavy_shadow_scoring_is_isolated_after_core_chain():
     assert "alpha-hunter-big-mover-shadow-model-research-v01" in SQL
-    assert "'46 * * * *'" in SQL
+    assert "'11 * * * *'" in SQL
     assert "set statement_timeout='240s'" in SQL
     assert "select public.alpha_hunter_run_big_mover_shadow();" in SQL
 
