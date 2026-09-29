@@ -375,7 +375,9 @@ from public,anon,authenticated,service_role;
 grant execute on function private.alpha_hunter_reconcile_calibrated_paper_orders_v01()
 to postgres;
 
-create or replace view private.alpha_hunter_calibrated_paper_status_v01
+drop view if exists private.alpha_hunter_calibrated_paper_status_v01;
+
+create view private.alpha_hunter_calibrated_paper_status_v01
 with (security_invoker=true,security_barrier=true)
 as
 select
