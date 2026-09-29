@@ -6,9 +6,9 @@ SQL = Path("ops/sql/volume_growth_forward_scorecard_v01.sql").read_text(
 
 
 def test_capture_is_forward_only_latest_run():
-    assert "latest_selection_run_only_below_5pct" in SQL
+    assert "post_preregistration_latest_selection_run_below_5pct" in SQL
     assert "s.selection_run_id=v_selection_run_id" in SQL
-    assert "no historical candidate row is backfilled" in SQL
+    assert "no candidate observed before the preregistered experiment start is admitted" in SQL
 
 
 def test_capture_requires_pre_move_state():
@@ -50,3 +50,10 @@ def test_no_production_or_trade_authority():
         "production_promotion_permitted=true",
     ]:
         assert forbidden not in SQL
+
+
+def test_experiment_has_explicit_preregistration_boundary():
+    assert "alpha_hunter_volume_growth_forward_specs_v01" in SQL
+    assert "vg-forward-top30-v01" in SQL
+    assert "experiment_started_at_utc" in SQL
+    assert "s.observed_at_utc>=v_experiment_started_at_utc" in SQL
