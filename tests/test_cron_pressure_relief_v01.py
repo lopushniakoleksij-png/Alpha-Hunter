@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pglast import parse_sql
+
 
 SQL = Path("ops/sql/cron_pressure_relief_v01.sql").read_text(
     encoding="utf-8"
@@ -7,6 +9,10 @@ SQL = Path("ops/sql/cron_pressure_relief_v01.sql").read_text(
 WORKFLOW = Path(
     ".github/workflows/production-deployment-target-sync-v01.yml"
 ).read_text(encoding="utf-8")
+
+
+def test_cron_pressure_relief_sql_parses():
+    assert parse_sql(SQL)
 
 
 def test_cron_relief_changes_schedules_only():
