@@ -439,3 +439,23 @@ def test_signal_feature_and_parent_payloads_are_compact():
     assert readiness_rows[0]["symbol"] == "SUIUSDT"
     assert readiness_rows[0]["reward_risk"] == 6.0
     assert readiness_rows[0]["trade_permission"] is False
+
+
+def test_render_burst_prioritizes_scanner_before_auxiliary_jobs():
+    source = Path("hourly.py").read_text(encoding="utf-8")
+    burst = source.split("def run_render_cron_burst(", 1)[1]
+    assert "run_auxiliary_jobs=False" in burst
+    assert "run_auxiliary_jobs_with_deadline" in burst
+    assert "DEFAULT_AUXILIARY_JOB_TIMEOUT_SECONDS = 300" in source
+    assert "DEFAULT_BURST_EXIT_BUFFER_SECONDS = 90" in source
+
+
+def test_auxiliary_deadline_cannot_grant_order_authority():
+    source = Path("hourly.py").read_text(encoding="utf-8").lower()
+    for forbidden in [
+        "place_order(",
+        "cancel_order(",
+        "modify_order(",
+        "set_leverage(",
+    ]:
+        assert forbidden not in source

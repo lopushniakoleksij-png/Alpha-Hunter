@@ -12,6 +12,8 @@ from typing import Mapping
 
 DEFAULT_SCAN_INTERVAL_MINUTES = 20
 DEFAULT_MINIMUM_BURST_START_GAP_MINUTES = 15
+DEFAULT_AUXILIARY_JOB_TIMEOUT_SECONDS = 300
+DEFAULT_BURST_EXIT_BUFFER_SECONDS = 90
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
@@ -251,6 +253,67 @@ def run_once(
         release_lock(lock_path)
 
 
+def run_auxiliary_jobs_with_deadline(
+    project_root: Path,
+    deadline_utc: datetime,
+    *,
+    per_job_timeout_seconds: int = DEFAULT_AUXILIARY_JOB_TIMEOUT_SECONDS,
+    exit_buffer_seconds: int = DEFAULT_BURST_EXIT_BUFFER_SECONDS,
+) -> None:
+    """Run hourly auxiliary evidence jobs without risking scanner cadence.
+
+    Render burst mode gives canonical scans absolute priority. Auxiliary jobs
+    run only after the final aligned scanner boundary and each job is capped.
+    The helper stops before the next hourly Render invocation so a slow
+    evidence job cannot hold the scanner lock into the next burst.
+    """
+    jobs = [
+        ("Performance signal save", "performance_job.py", {0}),
+        ("Feature capture", "feature_job.py", {0}),
+        ("Outcome evaluation", "outcome_job.py", {0, 2}),
+    ]
+
+    for label, script, allowed_codes in jobs:
+        remaining = (
+            deadline_utc - datetime.now(timezone.utc)
+        ).total_seconds() - float(exit_buffer_seconds)
+
+        if remaining <= 0:
+            print(
+                "Auxiliary evidence deferred: scanner deadline reached.",
+                flush=True,
+            )
+            return
+
+        timeout = max(
+            1.0,
+            min(float(per_job_timeout_seconds), remaining),
+        )
+
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(project_root / script)],
+                cwd=project_root,
+                check=False,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            print(
+                f"{label} timed out after {timeout:.0f}s; "
+                "deferred without delaying canonical scans.",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
+
+        if completed.returncode not in allowed_codes:
+            print(
+                f"{label} failed with exit code {completed.returncode}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+
 def run_render_cron_burst(
     project_root: Path,
     config: str,
@@ -259,10 +322,10 @@ def run_render_cron_burst(
 ) -> int:
     """Use one hourly Render cron invocation to produce :00/:20/:40 scans.
 
-    The external Render schedule can remain hourly. The cron process stays
-    alive for the current hour, runs the initial full cycle immediately, then
-    scanner-only cycles at the remaining aligned boundaries. It exits before
-    the next hourly invocation, avoiding overlap.
+    The external Render schedule can remain hourly. Scanner cadence has absolute
+    priority: the initial and aligned :20/:40 cycles are scanner-only. Hourly
+    auxiliary evidence jobs run only after the final aligned scan, with capped
+    runtimes and a hard exit buffer before the next Render invocation.
 
     A failed intermediate scan does not prevent later boundaries from running;
     the first non-zero return code is returned at the end for cron visibility.
@@ -277,7 +340,7 @@ def run_render_cron_burst(
         overall_code = run_once(
             project_root,
             config,
-            run_auxiliary_jobs=True,
+            run_auxiliary_jobs=False,
             run_source_override="RENDER_CRON",
         )
     else:
@@ -318,6 +381,17 @@ def run_render_cron_burst(
         )
         if overall_code == 0 and code != 0:
             overall_code = code
+
+    next_hour = burst_started_at.replace(
+        minute=0,
+        second=0,
+        microsecond=0,
+    ) + timedelta(hours=1)
+
+    run_auxiliary_jobs_with_deadline(
+        project_root,
+        next_hour,
+    )
 
     return overall_code
 
