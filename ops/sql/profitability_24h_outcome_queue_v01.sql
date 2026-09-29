@@ -58,17 +58,16 @@ insert into private.alpha_hunter_strategy_24h_outcome_queue_v01(
 select
   e.episode_id,
   e.first_observed_at_utc+interval '24 hours',
-  case
-    when exists (
-      select 1
-      from public.alpha_hunter_strategy_forward_outcomes_v01 o
-      where o.episode_id=e.episode_id
-        and o.horizon_hours=24
-    ) then 'DONE'
-    else 'PENDING'
-  end
+  'PENDING'
 from public.alpha_hunter_strategy_episodes_v01 e
-where e.first_observed_at_utc>=clock_timestamp()-interval '48 hours'
+where e.first_observed_at_utc>=coalesce(
+  (
+    select max(o.evaluated_at_utc)-interval '24 hours'
+    from public.alpha_hunter_strategy_forward_outcomes_v01 o
+    where o.horizon_hours=24
+  ),
+  clock_timestamp()-interval '48 hours'
+)
 on conflict(episode_id) do nothing;
 
 create or replace function private.alpha_hunter_capture_strategy_24h_queue_v01()
