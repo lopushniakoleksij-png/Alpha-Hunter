@@ -110,10 +110,8 @@ jobs:
                           raise RuntimeError(
                               f"unexpected HTTP {response.status}"
                           )
-                  print(
-                      "Render Cron runtime release target recorded "
-                      f"on attempt {attempt}."
-                  )
+                  print("Render Cron runtime release target recorded. "
+                        f"attempt={attempt}.")
                   break
               except urllib.error.HTTPError as exc:
                   last_error = f"HTTP {exc.code}"
