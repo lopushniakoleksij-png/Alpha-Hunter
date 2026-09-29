@@ -146,7 +146,7 @@ begin
       'latest_shadow_at_utc',v_latest_shadow_at,
       'shadow_scoring_fresh',v_shadow_fresh,
       'heavy_scoring_inline',false,
-      'heavy_scoring_schedule','46 * * * *'
+      'heavy_scoring_schedule','11 * * * *'
     )
   );
 end;
@@ -233,7 +233,7 @@ $cron$;
 
 select cron.schedule(
   'alpha-hunter-big-mover-shadow-model-research-v01',
-  '46 * * * *',
+  '11 * * * *',
   $cmd$
     set statement_timeout='240s';
     select public.alpha_hunter_run_big_mover_shadow();
