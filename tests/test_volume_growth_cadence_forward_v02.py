@@ -63,3 +63,9 @@ def test_no_trade_or_selector_authority():
         "production_promotion_permitted=true",
     ]:
         assert forbidden not in SQL
+
+
+def test_ranked_sql_alias_does_not_collide_with_plpgsql_record():
+    assert "from ranked ranked_row" in SQL
+    assert "md5(ranked_row.observation_id)" in SQL
+    assert "from ranked r\n" not in SQL
