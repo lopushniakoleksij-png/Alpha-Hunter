@@ -11,6 +11,36 @@
 --   * compare shadow top-30 against production deep-scan selection;
 --   * no trading, threshold, selector, or production mutation is permitted.
 
+create table if not exists private.alpha_hunter_volume_growth_forward_specs_v01 (
+  spec_id text primary key,
+  experiment_started_at_utc timestamptz not null,
+  outcome_horizon_hours integer not null,
+  mover_threshold_pct double precision not null,
+  capture_abs_change_lt_pct double precision not null,
+  scientific_role text not null,
+  shadow_only boolean not null default true check(shadow_only=true),
+  trade_permission boolean not null default false check(trade_permission=false),
+  production_promotion_permitted boolean not null default false
+    check(production_promotion_permitted=false),
+  order_path text not null default 'NONE' check(order_path='NONE'),
+  created_at timestamptz not null default clock_timestamp()
+);
+
+insert into private.alpha_hunter_volume_growth_forward_specs_v01(
+  spec_id,experiment_started_at_utc,outcome_horizon_hours,
+  mover_threshold_pct,capture_abs_change_lt_pct,scientific_role,
+  shadow_only,trade_permission,production_promotion_permitted,order_path
+) values (
+  'VG-FORWARD-TOP30-V01',
+  clock_timestamp(),
+  24,
+  5.0,
+  5.0,
+  'FORWARD_RANKING_CHALLENGER_PREREGISTRATION',
+  true,false,false,'NONE'
+)
+on conflict(spec_id) do nothing;
+
 create table if not exists private.alpha_hunter_volume_growth_forward_candidates_v01 (
   candidate_id text primary key,
   observation_id text not null unique,
@@ -86,6 +116,7 @@ as $function$
 declare
   v_now timestamptz:=clock_timestamp();
   v_selection_run_id text;
+  v_experiment_started_at_utc timestamptz;
   v_inserted integer:=0;
   v_evaluated integer:=0;
   v_pending integer:=0;
@@ -93,6 +124,15 @@ declare
   r private.alpha_hunter_volume_growth_forward_candidates_v01%rowtype;
   m public.alpha_hunter_big_mover_answer_key%rowtype;
 begin
+  select experiment_started_at_utc
+    into v_experiment_started_at_utc
+  from private.alpha_hunter_volume_growth_forward_specs_v01
+  where spec_id='VG-FORWARD-TOP30-V01';
+
+  if v_experiment_started_at_utc is null then
+    raise exception 'forward ranking scorecard spec is missing';
+  end if;
+
   select s.selection_run_id
     into v_selection_run_id
   from public.alpha_hunter_volume_growth_ranking_shadow_v01 s
@@ -132,7 +172,8 @@ begin
           'challenger_rule',s.challenger_rule,
           'measurement_quality',s.measurement_quality,
           'ranking_eligible',s.ranking_eligible,
-          'capture_rule','LATEST_SELECTION_RUN_ONLY_BELOW_5PCT',
+          'capture_rule','POST_PREREGISTRATION_LATEST_SELECTION_RUN_BELOW_5PCT',
+          'experiment_started_at_utc',v_experiment_started_at_utc,
           'future_outcome_used_for_selection',false,
           'production_selector_changed',false
         ),
@@ -140,6 +181,7 @@ begin
         true,false,false,false,'NONE'
       from public.alpha_hunter_volume_growth_ranking_shadow_v01 s
       where s.selection_run_id=v_selection_run_id
+        and s.observed_at_utc>=v_experiment_started_at_utc
         and s.ranking_eligible
         and abs(s.change_24h_pct)<5.0
         and (s.shadow_top30_selected or s.production_deep_scan_selected)
@@ -306,6 +348,8 @@ select
   'FORWARD_SELECTION_PRECISION_ONLY_NOT_EXECUTION_EDGE'::text as claim_ceiling
 from e;
 
+revoke all on private.alpha_hunter_volume_growth_forward_specs_v01
+from public,anon,authenticated,service_role;
 revoke all on private.alpha_hunter_volume_growth_forward_candidates_v01
 from public,anon,authenticated,service_role;
 revoke all on private.alpha_hunter_volume_growth_forward_runs_v01
@@ -313,6 +357,8 @@ from public,anon,authenticated,service_role;
 revoke all on private.alpha_hunter_volume_growth_forward_scorecard_v01
 from public,anon,authenticated,service_role;
 
+grant select on private.alpha_hunter_volume_growth_forward_specs_v01
+to service_role;
 grant select on private.alpha_hunter_volume_growth_forward_candidates_v01
 to service_role;
 grant select on private.alpha_hunter_volume_growth_forward_runs_v01
@@ -342,4 +388,4 @@ select cron.schedule(
   $cmd$
 );
 
--- No historical candidate row is backfilled by this script.
+-- No candidate observed before the preregistered experiment start is admitted.
