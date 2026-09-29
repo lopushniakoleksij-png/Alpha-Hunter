@@ -48,3 +48,8 @@ def test_no_historical_backfill_or_live_exchange_authority():
         "trade_permission=true",
     ]:
         assert forbidden not in SQL
+
+
+def test_status_view_is_drop_recreated_for_column_compatibility():
+    assert "drop view if exists private.alpha_hunter_calibrated_paper_status_v01" in SQL
+    assert "create view private.alpha_hunter_calibrated_paper_status_v01" in SQL
