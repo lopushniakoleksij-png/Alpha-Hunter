@@ -20,7 +20,6 @@ as $function$
 declare
   s public.alpha_hunter_strategy_observations_v01%rowtype;
   sp public.alpha_hunter_profitability_test_specs_v01%rowtype;
-  a public.alpha_hunter_profitability_test_activations_v01%rowtype;
   p public.alpha_hunter_snapshots%rowtype;
   v_execution_event_id text;
 begin
@@ -54,7 +53,7 @@ begin
     return new;
   end if;
 
-  select spec.*,act.* into sp,a
+  select spec.* into sp
   from public.alpha_hunter_profitability_test_specs_v01 spec
   join public.alpha_hunter_profitability_test_activations_v01 act
     on act.spec_id=spec.spec_id
@@ -185,7 +184,6 @@ declare
   q public.alpha_hunter_shadow_decision_quotes_v01%rowtype;
   s public.alpha_hunter_strategy_observations_v01%rowtype;
   sp public.alpha_hunter_profitability_test_specs_v01%rowtype;
-  a public.alpha_hunter_profitability_test_activations_v01%rowtype;
   p public.alpha_hunter_snapshots%rowtype;
   v_latest_run_id text;
   v_seed_at timestamptz:=clock_timestamp();
@@ -227,7 +225,7 @@ begin
       continue;
     end if;
 
-    select spec.*,act.* into sp,a
+    select spec.* into sp
     from public.alpha_hunter_profitability_test_specs_v01 spec
     join public.alpha_hunter_profitability_test_activations_v01 act
       on act.spec_id=spec.spec_id

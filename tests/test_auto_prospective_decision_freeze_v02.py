@@ -65,3 +65,8 @@ def test_private_trigger_function_is_not_api_exposed():
         "private.alpha_hunter_auto_freeze_execution_decision_v02()"
     ) in SQL
     assert "from public,anon,authenticated,service_role" in SQL
+
+
+def test_plpgsql_record_assignment_is_valid():
+    assert "into sp,a" not in SQL
+    assert "select spec.* into sp" in SQL
