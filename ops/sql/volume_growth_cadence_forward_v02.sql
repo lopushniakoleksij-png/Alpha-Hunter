@@ -313,32 +313,32 @@ begin
         production_promotion_permitted,order_path
       )
       select
-        'vg-rank-v02-'||md5(r.observation_id),
+        'vg-rank-v02-'||md5(ranked_row.observation_id),
         v_spec_id,
-        r.observation_id,
+        ranked_row.observation_id,
         v_now,
-        r.observed_at_utc,
-        r.selection_run_id,
-        r.symbol,
-        r.last_price,
-        r.change_24h_pct,
-        r.quote_volume_24h,
-        r.deep_scan_selected,
-        r.previous_observed_at_utc,
-        r.previous_quote_volume_24h,
-        r.previous_gap_seconds,
-        r.volume_log_growth,
-        r.volume_growth_rank,
-        r.volume_growth_rank<=30,
+        ranked_row.observed_at_utc,
+        ranked_row.selection_run_id,
+        ranked_row.symbol,
+        ranked_row.last_price,
+        ranked_row.change_24h_pct,
+        ranked_row.quote_volume_24h,
+        ranked_row.deep_scan_selected,
+        ranked_row.previous_observed_at_utc,
+        ranked_row.previous_quote_volume_24h,
+        ranked_row.previous_gap_seconds,
+        ranked_row.volume_log_growth,
+        ranked_row.volume_growth_rank,
+        ranked_row.volume_growth_rank<=30,
         jsonb_build_object(
           'model_version','volume-growth-ranking-cadence-aware-v0.2',
           'prior_window_minutes',jsonb_build_array(v_prior_min,v_prior_max),
           'prior_target_minutes',v_prior_target,
-          'measurement_quality',r.measurement_quality,
+          'measurement_quality',ranked_row.measurement_quality,
           'production_selector_changed',false
         ),
         true,false,false,false,'NONE'
-      from ranked r
+      from ranked ranked_row
       on conflict(observation_id) do nothing
       returning 1
     )
