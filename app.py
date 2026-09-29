@@ -596,6 +596,23 @@ def safe_optional_float(value: Any) -> float | None:
         return None
 
 
+def symbol_label(value: Any) -> str:
+    """Make leading-zero Bitget contract symbols unambiguous on small screens."""
+    symbol = str(value or "")
+    if (
+        symbol.startswith("0")
+        and symbol.endswith("USDT")
+        and len(symbol) > len("0USDT")
+    ):
+        base = symbol[:-4]
+        remainder = base[1:] or "?"
+        return f"{symbol} (ZERO-{remainder})"
+    return symbol
+
+
+app.jinja_env.filters["symbol_label"] = symbol_label
+
+
 def execution_checks(row: dict[str, Any]) -> dict[str, bool]:
     setup = row.get("execution_setup", {})
     raw = setup.get("checks", {})
@@ -1097,7 +1114,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     {% set row=data.best_action %}{% set a=row._action %}
     <div class="panel {{ 'action-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'action-retest' }}">
       <div class="action-title {{ 'ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'retest' }}">🟢 MONEY ACTION NOW — {{ a.label }}</div>
-      <h2 style="margin:8px 0 0">{{ row.symbol }} {{ a.direction }}</h2>
+      <h2 style="margin:8px 0 0">{{ row.symbol|symbol_label }} {{ a.direction }}</h2>
       <div class="action-grid">
         <div class="metric"><span class="label">Status</span><b>{{ a.status }}</b></div>
         <div class="metric"><span class="label">Entry / zone</span><b>{{ a.entry }}</b></div>
@@ -1128,7 +1145,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Gate action</th><th>Setup intent</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
     {% for s in data.strategy_shadow %}
       <tr>
-        <td><b>{{ s.symbol }}</b></td>
+        <td><b>{{ s.symbol|symbol_label }}</b></td>
         <td><b>{{ s.strategy_id }}</b> {{ s.strategy_name }}</td>
         <td><span class="badge {{ 'badge-ready' if s.status=='SHADOW_CANDIDATE' else 'badge-retest' if s.status=='WATCH' else 'badge-research' }}">{{ s.status }}</span></td>
         <td>{{ s._persistence_state }}</td>
@@ -1157,7 +1174,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% if data.actionable %}
         <table><thead><tr><th>Symbol</th><th>Action</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Distance</th></tr></thead><tbody>
         {% for row in data.actionable %}{% set a=row._action %}
-        <tr><td><b>{{ row.symbol }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td></tr>
+        <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td></tr>
         {% endfor %}</tbody></table>
         {% else %}<div class="empty">No executable or valid retest plan in the current snapshot.</div>{% endif %}
       </div>
@@ -1167,18 +1184,18 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <div class="small" style="margin-bottom:10px">These rows are information, not trade recommendations. They become actionable only through the Money Action block above.</div>
         <table><thead><tr><th>#</th><th>Symbol</th><th>Price</th><th>Phase</th><th>Timing</th><th>Behaviour</th><th>State</th><th>R:R</th><th>Execution</th><th>Reason</th></tr></thead><tbody>
         {% for row in data.research %}
-        <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
+        <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
         {% endfor %}</tbody></table>
       </div>
 
       <div class="panel"><h2 style="margin-top:0">Bitget Open Positions</h2>
       {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th></tr></thead><tbody>
-      {% for p in data.positions %}<tr><td><b>{{ p.symbol }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td></tr>{% endfor %}
+      {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td></tr>{% endfor %}
       </tbody></table>{% else %}<div class="empty">No open Bitget positions detected.</div>{% endif %}</div>
     </main>
 
     <aside>
-      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
+      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
       <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>READY NOW keeps the existing V7 execution permission. S1-S10 READY SETUP means the strategy candidate passed its own safety/data gates, valid geometry and the configured 5R minimum; it is decision support, not order authority.<br><br>RETEST PLAN requires direction + structure + momentum + participation + funding + integrity, with only price/R:R still needing improvement.<br><br>No threshold is relaxed.</div></div>
     </aside>
   </div>
@@ -1230,7 +1247,7 @@ EXECUTION_FREEZE_PAGE = """
   {% if candidates %}
     {% for c in candidates %}
     <div class="candidate">
-      <div class="symbol">{{ c.symbol }}</div>
+      <div class="symbol">{{ c.symbol|symbol_label }}</div>
       <div class="{{ 'side-long' if c.direction=='LONG' else 'side-short' }}">
         <b>{{ c.direction }}</b> · {{ c.action }} · {{ c.strategy_id }}
       </div>
@@ -1247,7 +1264,7 @@ EXECUTION_FREEZE_PAGE = """
       <button
         id="freeze-{{ c.decision_observation_id }}"
         onclick="freezeDecision('{{ c.decision_observation_id }}','{{ c.symbol }}')">
-        FREEZE {{ c.symbol }} DECISION
+        FREEZE {{ c.symbol|symbol_label }} DECISION
       </button>
       <div class="status" id="status-{{ c.decision_observation_id }}"></div>
     </div>
@@ -1338,7 +1355,7 @@ EXECUTION_BIND_PAGE = """
 
   <div class="panel">
     <div class="label">Frozen decision</div>
-    <div class="value">{{ frozen.symbol }} · {{ frozen.direction }} · {{ frozen.action }}</div>
+    <div class="value">{{ frozen.symbol|symbol_label }} · {{ frozen.direction }} · {{ frozen.action }}</div>
     <div class="grid">
       <div class="metric"><div class="label">Execution event</div><div class="value">{{ frozen.execution_event_id }}</div></div>
       <div class="metric"><div class="label">Frozen UTC</div><div class="value">{{ frozen.frozen_at_utc }}</div></div>
@@ -1357,7 +1374,7 @@ EXECUTION_BIND_PAGE = """
   {% elif fills %}
     {% for f in fills %}
     <div class="panel fill {{ 'ready' if f._binding_ready else 'blocked' }}">
-      <div class="value">{{ f.symbol }} · {{ f.side }} · {{ f.trade_side }}</div>
+      <div class="value">{{ f.symbol|symbol_label }} · {{ f.side }} · {{ f.trade_side }}</div>
       <div class="grid">
         <div class="metric"><div class="label">Trade ID</div><div class="value">{{ f.trade_id }}</div></div>
         <div class="metric"><div class="label">Order ID</div><div class="value">{{ f.order_id }}</div></div>
