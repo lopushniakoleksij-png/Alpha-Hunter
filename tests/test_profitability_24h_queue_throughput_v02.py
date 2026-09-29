@@ -13,7 +13,7 @@ def test_burst_reuses_bounded_queue_collector():
 
 
 def test_burst_schedule_avoids_render_scan_boundaries():
-    assert "schedule := '1,14,26,35 * * * *'" in SQL
+    assert "schedule := '1,17,26,35 * * * *'" in SQL
 
 
 def test_burst_stays_paper_only_and_no_trade_authority():
