@@ -45,7 +45,7 @@ select cron.alter_job(
     from cron.job
     where jobname='alpha-hunter-strategy-24h-profitability-catchup-v01'
   ),
-  schedule := '14,35 * * * *',
+  schedule := '14,26,35 * * * *',
   command := 'select private.alpha_hunter_capture_strategy_24h_queue_burst_v02();',
   active := true
 );
