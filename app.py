@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hmac
 import json
+import math
 import os
 import subprocess
 import sys
 import threading
 import time
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +70,18 @@ MINIMUM_EXECUTION_RR = float(
     RUNTIME_CONFIG.get("candidate_quality", {}).get(
         "minimum_execution_reward_risk",
         RUNTIME_CONFIG.get("minimum_reward_risk", 5.0),
+    )
+)
+MAXIMUM_ACTION_RR = float(
+    RUNTIME_CONFIG.get("candidate_quality", {}).get(
+        "maximum_action_reward_risk",
+        25.0,
+    )
+)
+MAXIMUM_ACTION_SNAPSHOT_AGE_SECONDS = float(
+    RUNTIME_CONFIG.get("candidate_quality", {}).get(
+        "maximum_action_snapshot_age_seconds",
+        5400.0,
     )
 )
 
@@ -596,6 +610,285 @@ def safe_optional_float(value: Any) -> float | None:
         return None
 
 
+def parse_utc(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def snapshot_action_blockers(
+    snapshot: dict[str, Any],
+    *,
+    observed_at: datetime | None = None,
+) -> list[str]:
+    """Return global fail-closed blockers for a paper-action decision."""
+    blockers: list[str] = []
+    freshness = snapshot.get("canonical_market_freshness")
+    if not isinstance(freshness, dict) or freshness.get("verified") is not True:
+        blockers.append("CANONICAL_MARKET_FRESHNESS_UNVERIFIED")
+
+    collected_at = parse_utc(snapshot.get("collected_at_utc"))
+    now = observed_at or datetime.now(timezone.utc)
+    if collected_at is None:
+        blockers.append("SNAPSHOT_TIMESTAMP_MISSING")
+    else:
+        age_seconds = (now - collected_at).total_seconds()
+        if age_seconds < -300:
+            blockers.append("SNAPSHOT_TIMESTAMP_IN_FUTURE")
+        elif age_seconds > MAXIMUM_ACTION_SNAPSHOT_AGE_SECONDS:
+            blockers.append("SNAPSHOT_STALE_FOR_ACTION")
+    return blockers
+
+
+def _price_tick(instrument: dict[str, Any]) -> Decimal | None:
+    try:
+        places = int(instrument.get("price_place"))
+        end_step = Decimal(str(instrument.get("price_end_step")))
+    except (TypeError, ValueError, InvalidOperation):
+        return None
+    if places < 0 or end_step <= 0:
+        return None
+    tick = end_step * (Decimal(10) ** -places)
+    return tick if tick > 0 else None
+
+
+def normalize_price(value: Any, instrument: dict[str, Any]) -> float | None:
+    number = safe_optional_float(value)
+    tick = _price_tick(instrument)
+    if number is None or tick is None:
+        return None
+    try:
+        decimal_value = Decimal(str(number))
+        ticks = (decimal_value / tick).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        return float(ticks * tick)
+    except (InvalidOperation, ValueError, OverflowError):
+        return None
+
+
+def _action_market_row(row: dict[str, Any]) -> dict[str, Any]:
+    source = row.get("_market_row")
+    return source if isinstance(source, dict) else row
+
+
+def action_quality_blockers(row: dict[str, Any]) -> list[str]:
+    """Validate final paper-action geometry, cost floor and venue precision."""
+    action = row.get("_action")
+    if not isinstance(action, dict):
+        return ["ACTION_PAYLOAD_MISSING"]
+
+    direction = str(action.get("direction") or "").upper()
+    entry = safe_optional_float(action.get("entry"))
+    stop = safe_optional_float(action.get("stop"))
+    target = safe_optional_float(action.get("target"))
+    declared_rr = safe_optional_float(action.get("rr"))
+    blockers: list[str] = []
+
+    if direction not in {"LONG", "SHORT"}:
+        blockers.append("DIRECTION_INVALID")
+    if None in (entry, stop, target, declared_rr):
+        blockers.append("EXECUTION_GEOMETRY_MISSING")
+        return blockers
+    assert entry is not None and stop is not None and target is not None
+    assert declared_rr is not None
+
+    if not all(math.isfinite(value) and value > 0 for value in (entry, stop, target, declared_rr)):
+        blockers.append("EXECUTION_GEOMETRY_NON_FINITE")
+        return blockers
+
+    if direction == "LONG":
+        geometry_ok = stop < entry < target
+        risk = entry - stop
+        reward = target - entry
+    else:
+        geometry_ok = target < entry < stop
+        risk = stop - entry
+        reward = entry - target
+    if not geometry_ok or risk <= 0:
+        blockers.append("EXECUTION_GEOMETRY_INVALID")
+        return blockers
+
+    calculated_rr = reward / risk
+    rr_error = abs(declared_rr - calculated_rr) / calculated_rr
+    if rr_error > 0.02:
+        blockers.append("DECLARED_RR_MISMATCH")
+    if calculated_rr > MAXIMUM_ACTION_RR:
+        blockers.append("EXECUTION_RR_OUTLIER")
+
+    market = _action_market_row(row)
+    instrument = market.get("instrument_constraints")
+    if not isinstance(instrument, dict) or _price_tick(instrument) is None:
+        blockers.append("BITGET_PRICE_PRECISION_MISSING")
+    else:
+        normalized = {
+            name: normalize_price(action.get(name), instrument)
+            for name in ("entry", "stop", "target")
+        }
+        if any(value is None for value in normalized.values()):
+            blockers.append("BITGET_PRICE_NORMALIZATION_FAILED")
+        else:
+            action.update(normalized)
+            entry = normalized["entry"]
+            stop = normalized["stop"]
+            target = normalized["target"]
+            assert entry is not None and stop is not None and target is not None
+            normalized_geometry_ok = (
+                stop < entry < target
+                if direction == "LONG"
+                else target < entry < stop
+            )
+            if not normalized_geometry_ok:
+                blockers.append("BITGET_NORMALIZED_GEOMETRY_INVALID")
+
+    bid = safe_optional_float(market.get("bid_price"))
+    ask = safe_optional_float(market.get("ask_price"))
+    taker_fee_bps = safe_optional_float(
+        instrument.get("public_taker_fee_bps")
+        if isinstance(instrument, dict)
+        else None
+    )
+    if bid is None or ask is None or bid <= 0 or ask < bid or taker_fee_bps is None:
+        blockers.append("EXECUTION_COST_EVIDENCE_MISSING")
+    else:
+        midpoint = (bid + ask) / 2.0
+        spread_pct = (ask - bid) / midpoint * 100.0
+        round_trip_fee_pct = 2.0 * taker_fee_bps / 100.0
+        cost_floor_pct = spread_pct + round_trip_fee_pct
+        risk_pct = risk / entry * 100.0
+        action["cost_floor_pct"] = cost_floor_pct
+        action["risk_pct"] = risk_pct
+        action["cost_to_stop_ratio"] = cost_floor_pct / risk_pct if risk_pct > 0 else None
+        if cost_floor_pct >= risk_pct:
+            blockers.append("EXECUTION_COST_FLOOR_CONSUMES_STOP")
+
+    return list(dict.fromkeys(blockers))
+
+
+def _blocked_copy(row: dict[str, Any], blockers: list[str]) -> dict[str, Any]:
+    blocked = dict(row)
+    action = dict(row.get("_action") or {})
+    action.update(
+        status="BLOCKED",
+        label="BLOCKED — SAFETY GATE",
+        priority=0,
+        reason="Blocked: " + ", ".join(blockers),
+        blockers=list(blockers),
+        execution_authority=False,
+    )
+    blocked["_action"] = action
+    return blocked
+
+
+def canonicalize_action_queue(
+    rows: list[dict[str, Any]],
+    snapshot: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Produce one fail-closed paper decision per symbol without losing evidence."""
+    global_blockers = snapshot_action_blockers(snapshot)
+    eligible: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+
+    for row in rows:
+        action = row.get("_action")
+        if not isinstance(action, dict):
+            blocked.append(_blocked_copy(row, ["ACTION_PAYLOAD_MISSING"]))
+            continue
+        raw_status = str(action.get("status") or "")
+        if raw_status == "RETEST_PLAN":
+            if global_blockers:
+                blocked.append(_blocked_copy(row, list(global_blockers)))
+                continue
+            action = dict(action)
+            action.update(
+                status="WAIT_FOR_TRIGGER",
+                label="WAIT FOR TRIGGER",
+                priority=1,
+                execution_authority=False,
+            )
+            row = dict(row)
+            row["_action"] = action
+            eligible.append(row)
+            continue
+
+        blockers = list(global_blockers)
+        blockers.extend(action_quality_blockers(row))
+        if blockers:
+            blocked.append(_blocked_copy(row, list(dict.fromkeys(blockers))))
+            continue
+
+        action = dict(row["_action"])
+        if raw_status in {"READY_NOW", "STRATEGY_READY_NOW"}:
+            action.update(
+                status="EXECUTE_NOW_PAPER",
+                label="PAPER — EXECUTE NOW",
+                execution_authority=False,
+            )
+        elif raw_status == "STRATEGY_LIMIT_READY":
+            action.update(
+                status="PLACE_LIMIT_PAPER",
+                label="PAPER — PLACE LIMIT",
+                execution_authority=False,
+            )
+        row = dict(row)
+        row["_action"] = action
+        eligible.append(row)
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in eligible:
+        grouped.setdefault(str(row.get("symbol") or ""), []).append(row)
+
+    canonical: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    for symbol, candidates in grouped.items():
+        executable = [
+            row for row in candidates
+            if row["_action"].get("status") in {
+                "EXECUTE_NOW_PAPER",
+                "PLACE_LIMIT_PAPER",
+            }
+        ]
+        directions = {
+            str(row["_action"].get("direction") or "").upper()
+            for row in executable
+        }
+        if len(directions) > 1:
+            for row in candidates:
+                blocked.append(_blocked_copy(row, ["DIRECTION_CONFLICT"]))
+            continue
+
+        ranked = sorted(
+            candidates,
+            key=lambda row: (
+                safe_float(row["_action"].get("priority")),
+                -safe_float(row["_action"].get("distance_pct")),
+                safe_float(row.get("_behaviour")),
+                safe_float(row.get("_score")),
+            ),
+            reverse=True,
+        )
+        canonical.append(ranked[0])
+        for row in ranked[1:]:
+            suppressed.append(_blocked_copy(row, ["SUPERSEDED_BY_CANONICAL_SYMBOL_DECISION"]))
+
+    canonical.sort(
+        key=lambda row: (
+            safe_float(row["_action"].get("priority")),
+            -safe_float(row["_action"].get("distance_pct")),
+            safe_float(row.get("_behaviour")),
+            safe_float(row.get("_score")),
+        ),
+        reverse=True,
+    )
+    blocked.sort(key=lambda row: str(row.get("symbol") or ""))
+    return canonical, blocked, suppressed
+
+
 def symbol_label(value: Any) -> str:
     """Make leading-zero Bitget contract symbols unambiguous on small screens."""
     symbol = str(value or "")
@@ -860,6 +1153,10 @@ def dashboard_payload(
         row["_strategies"] = list(engine.get("strategies", [])) if isinstance(engine, dict) else []
 
     discovery_symbols = [row for row in symbols if not row["_reference"]]
+    market_rows_by_symbol = {
+        str(row.get("symbol") or ""): row
+        for row in discovery_symbols
+    }
 
     strategy_shadow = []
     for row in discovery_symbols:
@@ -906,6 +1203,9 @@ def dashboard_payload(
             "_behaviour": 0.0,
             "_action": action,
             "_strategy_payload": item,
+            "_market_row": market_rows_by_symbol.get(
+                str(item.get("symbol") or "")
+            ),
         })
 
     actionable = sorted(
@@ -929,19 +1229,18 @@ def dashboard_payload(
         reverse=True,
     )
 
-    trade_ready = [row for row in actionable if row["_action"]["status"] == "READY_NOW"]
-    retest_plans = [row for row in actionable if row["_action"]["status"] == "RETEST_PLAN"]
-
-    combined_actionable = sorted(
+    combined_actionable, blocked_actions, suppressed_actions = canonicalize_action_queue(
         actionable + strategy_ready,
-        key=lambda row: (
-            row["_action"]["priority"],
-            -safe_float(row["_action"].get("distance_pct")),
-            safe_float(row.get("_behaviour")),
-            safe_float(row.get("_score")),
-        ),
-        reverse=True,
+        snapshot,
     )
+    trade_ready = [
+        row for row in combined_actionable
+        if row["_action"]["status"] == "EXECUTE_NOW_PAPER"
+    ]
+    retest_plans = [
+        row for row in combined_actionable
+        if row["_action"]["status"] == "WAIT_FOR_TRIGGER"
+    ]
     best_action = combined_actionable[0] if combined_actionable else None
 
     account = snapshot.get("private_account", {})
@@ -973,6 +1272,8 @@ def dashboard_payload(
         "snapshot": snapshot,
         "best_action": best_action,
         "actionable": combined_actionable[:10],
+        "blocked_actions": blocked_actions[:25],
+        "suppressed_actions": suppressed_actions[:25],
         "trade_ready": trade_ready,
         "strategy_ready": strategy_ready[:10],
         "retest_plans": retest_plans,
@@ -1170,13 +1471,24 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   <div class="layout">
     <main>
       <div class="panel">
-        <h2 style="margin-top:0">Action Queue</h2>
+        <h2 style="margin-top:0">Paper Action Queue</h2>
+        <div class="small" style="margin-bottom:10px">PAPER ONLY · NO ORDER AUTHORITY · Canonical snapshot {{ data.updated or 'timestamp unavailable' }}</div>
         {% if data.actionable %}
-        <table><thead><tr><th>Symbol</th><th>Action</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Distance</th></tr></thead><tbody>
+        <table><thead><tr><th>Symbol</th><th>Action</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Distance</th><th>Reason</th></tr></thead><tbody>
         {% for row in data.actionable %}{% set a=row._action %}
-        <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td></tr>
+        <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
         {% endfor %}</tbody></table>
-        {% else %}<div class="empty">No executable or valid retest plan in the current snapshot.</div>{% endif %}
+        {% else %}<div class="empty">NO SAFE PAPER TRADE in the current canonical snapshot.</div>{% endif %}
+      </div>
+
+      <div class="panel">
+        <h2 style="margin-top:0">Safety Blocks</h2>
+        {% if data.blocked_actions %}
+        <table><thead><tr><th>Symbol</th><th>Side</th><th>State</th><th>Reason</th></tr></thead><tbody>
+        {% for row in data.blocked_actions %}{% set a=row._action %}
+        <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction or '—' }}</td><td><span class="badge badge-research">BLOCKED</span></td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
+        {% endfor %}</tbody></table>
+        {% else %}<div class="empty">No final action-gate blocks in this snapshot.</div>{% endif %}
       </div>
 
       <div class="panel">
@@ -1196,7 +1508,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
     <aside>
       <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
-      <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>READY NOW keeps the existing V7 execution permission. S1-S10 READY SETUP means the strategy candidate passed its own safety/data gates, valid geometry and the configured 5R minimum; it is decision support, not order authority.<br><br>RETEST PLAN requires direction + structure + momentum + participation + funding + integrity, with only price/R:R still needing improvement.<br><br>No threshold is relaxed.</div></div>
+      <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>EXECUTE_NOW_PAPER and PLACE_LIMIT_PAPER require canonical freshness, one direction per symbol, valid bounded geometry, public fee/spread evidence and Bitget price precision.<br><br>WAIT_FOR_TRIGGER is monitoring only. BLOCKED rows retain their evidence and state the failed gate.<br><br>No screen grants real-order authority and no threshold is relaxed.</div></div>
     </aside>
   </div>
 </div>

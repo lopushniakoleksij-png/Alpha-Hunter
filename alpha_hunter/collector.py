@@ -783,6 +783,37 @@ def collect_symbol(
         "symbol":
             symbol,
 
+        "instrument_constraints": {
+            "price_place":
+                metadata.get("pricePlace"),
+            "price_end_step":
+                metadata.get("priceEndStep"),
+            "size_multiplier":
+                metadata.get("sizeMultiplier"),
+            "minimum_trade_number":
+                metadata.get("minTradeNum"),
+            "minimum_trade_usdt":
+                metadata.get("minTradeUSDT"),
+            "public_maker_fee_bps": (
+                to_float(metadata.get("makerFeeRate")) * 10000.0
+                if to_float(metadata.get("makerFeeRate")) is not None
+                else None
+            ),
+            "public_taker_fee_bps": (
+                to_float(metadata.get("takerFeeRate")) * 10000.0
+                if to_float(metadata.get("takerFeeRate")) is not None
+                else None
+            ),
+            "fee_rate_source": (
+                "BITGET_V3_PUBLIC_INSTRUMENT_METADATA"
+                if (
+                    to_float(metadata.get("makerFeeRate")) is not None
+                    and to_float(metadata.get("takerFeeRate")) is not None
+                )
+                else None
+            ),
+        },
+
         "collected_at_utc":
             datetime.now(
                 timezone.utc

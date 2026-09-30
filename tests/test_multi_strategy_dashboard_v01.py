@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app import build_strategy_money_action, dashboard_payload
 
 
@@ -5,6 +7,15 @@ def legacy_blocked_row():
     return {
         "symbol": "TESTUSDT",
         "last_price": 105.0,
+        "bid_price": 104.99,
+        "ask_price": 105.01,
+        "instrument_constraints": {
+            "price_place": 2,
+            "price_end_step": "1",
+            "public_maker_fee_bps": 2.0,
+            "public_taker_fee_bps": 6.0,
+            "fee_rate_source": "BITGET_V3_PUBLIC_INSTRUMENT_METADATA",
+        },
         "state": "DIRECTION_EMERGING_LONG",
         "market_phase": "IGNITION",
         "opportunity_timing": "EARLY",
@@ -57,6 +68,8 @@ def legacy_blocked_row():
 
 def test_shadow_strategy_candidate_feeds_money_action_decision_support():
     snapshot = {
+        "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "canonical_market_freshness": {"verified": True},
         "symbols": [legacy_blocked_row()],
         "universe": {"selected_count": 1},
         "private_account": {},
@@ -75,7 +88,7 @@ def test_shadow_strategy_candidate_feeds_money_action_decision_support():
     assert data["best_action"] is not None
     assert data["best_action"]["symbol"] == "TESTUSDT"
     action = data["best_action"]["_action"]
-    assert action["status"] == "STRATEGY_LIMIT_READY"
+    assert action["status"] == "PLACE_LIMIT_PAPER"
     assert action["entry"] == 102.0
     assert action["stop"] == 100.0
     assert action["target"] == 130.0

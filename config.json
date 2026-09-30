@@ -68,7 +68,9 @@
     "minimum_data_integrity": 88,
     "minimum_discovery_score": 5,
     "minimum_execution_score": 7.5,
-    "minimum_execution_reward_risk": 5
+    "minimum_execution_reward_risk": 5,
+    "maximum_action_reward_risk": 25,
+    "maximum_action_snapshot_age_seconds": 5400
   },
   "behaviour_engine": {
     "enabled": true,
