@@ -52,7 +52,7 @@ declare
   v_event_id text;
 begin
   if jsonb_typeof(new.source_payload->'timeframes')='object'
-     and jsonb_object_length(new.source_payload->'timeframes')>0
+     and coalesce(new.source_payload->'timeframes','{}'::jsonb)<>'{}'::jsonb
   then
     return new;
   end if;
