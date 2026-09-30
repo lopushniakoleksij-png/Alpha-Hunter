@@ -10,6 +10,11 @@ from typing import Any
 import requests
 
 from .feature_capture import compact_source_payload, extract_feature_rows
+from .paper_lifecycle import (
+    DECISION_TABLE as PAPER_DECISION_TABLE,
+    EVENT_TABLE as PAPER_EVENT_TABLE,
+    build_initial_paper_lifecycle,
+)
 
 
 class SupabaseStorageError(RuntimeError):
@@ -325,6 +330,32 @@ class SupabaseStorage:
                 f"Supabase upsert failed for {table}: HTTP {response.status_code}: {body}"
             )
 
+    def _insert_immutable(
+        self,
+        table: str,
+        rows: list[dict[str, Any]],
+        on_conflict: str,
+    ) -> None:
+        """Idempotently append deterministic evidence without issuing UPDATE."""
+        if not rows:
+            return
+        headers = dict(self.headers)
+        headers["Prefer"] = "resolution=ignore-duplicates,return=minimal"
+        response = self.request_with_retry(
+            "post",
+            f"{self.settings.url}/rest/v1/{table}",
+            params={"on_conflict": on_conflict},
+            headers=headers,
+            data=json.dumps(rows, separators=(",", ":")),
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201, 204}:
+            body = response.text[:500]
+            raise SupabaseStorageError(
+                f"Supabase immutable insert failed for {table}: "
+                f"HTTP {response.status_code}: {body}"
+            )
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
@@ -450,5 +481,16 @@ class SupabaseStorage:
             self.settings.readiness_table,
             readiness_rows,
             "run_id,symbol",
+        )
+        paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
+        self._insert_immutable(
+            PAPER_DECISION_TABLE,
+            paper_decisions,
+            "decision_id",
+        )
+        self._insert_immutable(
+            PAPER_EVENT_TABLE,
+            paper_events,
+            "event_id",
         )
         return run_id
