@@ -646,7 +646,45 @@ def _btc_regime(
 # COMPACT CANONICAL SOURCE PAYLOAD
 # =========================================================
 
-COMPACT_SOURCE_PAYLOAD_VERSION = "signal-source-v0.2"
+COMPACT_SOURCE_PAYLOAD_VERSION = "signal-source-v0.3-geometry-context"
+
+
+def _compact_timeframe_context(item: dict[str, Any]) -> dict[str, Any]:
+    """Preserve only geometry/science fields needed downstream."""
+    result: dict[str, Any] = {}
+
+    for timeframe in ("15m", "1H", "4H"):
+        tf = _timeframe(item, timeframe)
+        if not tf:
+            continue
+
+        indicators = tf.get("indicators", {})
+        if not isinstance(indicators, dict):
+            indicators = {}
+
+        volume_anomaly = indicators.get("volume_anomaly", {})
+        if not isinstance(volume_anomaly, dict):
+            volume_anomaly = {}
+
+        result[timeframe] = {
+            "trend": tf.get("trend"),
+            "support": tf.get("support"),
+            "resistance": tf.get("resistance"),
+            "indicators": {
+                "atr_pct": indicators.get("atr_pct"),
+                "volume_anomaly": {
+                    "state": volume_anomaly.get("state"),
+                    "ratio": volume_anomaly.get("ratio"),
+                    "z_score": volume_anomaly.get("z_score"),
+                    "source": volume_anomaly.get("source"),
+                    "candle_interval_ms": volume_anomaly.get("candle_interval_ms"),
+                    "ignored_incomplete_candle": volume_anomaly.get("ignored_incomplete_candle"),
+                },
+            },
+        }
+
+    return result
+
 
 _COMPACT_SOURCE_KEYS = (
     "symbol",
@@ -700,6 +738,11 @@ def compact_source_payload(item: dict[str, Any]) -> dict[str, Any]:
         for key in _COMPACT_SOURCE_KEYS
         if key in item
     }
+    timeframes = _compact_timeframe_context(item)
+    if timeframes:
+        compact["timeframes"] = timeframes
+        compact["_geometry_context_version"] = "geometry-context-v0.1"
+
     compact["_storage_contract"] = COMPACT_SOURCE_PAYLOAD_VERSION
     return compact
 
