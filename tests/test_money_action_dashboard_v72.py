@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app import build_money_action, dashboard_payload, required_entry_for_rr
 
 
@@ -87,6 +89,8 @@ def test_dashboard_does_not_promote_research_to_action_queue():
     bad["symbol"] = "BADUSDT"
     bad["execution_setup"]["checks"]["participation_confirmed"] = False
     snapshot = {
+        "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+        "canonical_market_freshness": {"verified": True},
         "symbols": [bad, good],
         "universe": {"selected_count": 2},
         "private_account": {},
