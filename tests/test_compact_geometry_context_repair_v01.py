@@ -52,3 +52,8 @@ def test_no_trade_or_promotion_authority():
         "production_promotion_permitted=true",
     ]:
         assert forbidden not in SQL
+
+
+def test_postgres_compatible_nonempty_timeframes_check():
+    assert "jsonb_object_length" not in SQL
+    assert "coalesce(new.source_payload->'timeframes','{}'::jsonb)<>'{}'::jsonb" in SQL
