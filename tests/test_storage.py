@@ -411,14 +411,18 @@ def test_signal_feature_and_parent_payloads_are_compact():
     feature_source = feature_rows[0]["source_payload"]
 
     for compact in (signal_payload, feature_source):
-        assert compact["_storage_contract"] == "signal-source-v0.2"
+        assert compact["_storage_contract"] == "signal-source-v0.3-geometry-context"
         assert compact["symbol"] == "SUIUSDT"
         assert compact["change_24h_pct"] == 2.5
         assert compact["market_phase"] == "IGNITION"
         assert compact["opportunity_timing"] == "EARLY"
         assert compact["execution_setup"]["rr"] == 6.0
         assert compact["behaviour"]["score"] == 81.0
-        assert "timeframes" not in compact
+        assert "timeframes" in compact
+        assert set(compact["timeframes"]) == {"1H"}
+        assert compact["_geometry_context_version"] == "geometry-context-v0.1"
+        assert "latest_candle" not in compact["timeframes"]["1H"]
+        assert "last_closed_candle" not in compact["timeframes"]["1H"]
         assert "multi_strategy_engine" not in compact
         assert "microstructure" not in compact
         assert "catalyst" not in compact
