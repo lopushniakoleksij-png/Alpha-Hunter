@@ -926,7 +926,7 @@ select
   s.minimum_symbols,
   s.minimum_utc_days,
   s.minimum_candidates_per_direction,
-  'IMPLEMENT_FROZEN_PUBLIC_3M_FIRST_TOUCH_EVALUATOR; DO NOT CHANGE SPEC OR READ PRIMARY OUTCOMES BEFORE COHORT FREEZE'::text as next_gate,
+  'CONTINUE_PROSPECTIVE_CAPTURE_UNTIL_MINIMUM_UTC_DAYS_AND_SAMPLE_GATES; SEALED_PUBLIC_3M_EVALUATOR_ACTIVE; DO_NOT_READ_PRIMARY_OUTCOMES_BEFORE_COHORT_FREEZE'::text as next_gate,
   'NONE'::text as scientific_conclusion,
   s.spec_hash,
   s.source_schema_fingerprint,
