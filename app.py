@@ -1124,6 +1124,16 @@ def build_strategy_money_action(strategy: dict[str, Any]) -> dict[str, Any] | No
     }
 
 
+# Release 2.1 makes the dashboard and persistence job consume one shared gate.
+# These imports intentionally replace the legacy local definitions above while
+# keeping the surrounding dashboard diff small and regression-friendly.
+from alpha_hunter.action_queue import (  # noqa: E402
+    build_money_action,
+    build_strategy_money_action,
+    canonicalize_action_queue,
+)
+
+
 def dashboard_payload(
     snapshot: dict[str, Any],
     test_engine: dict[str, Any] | None = None,
