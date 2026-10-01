@@ -8,6 +8,7 @@ from alpha_hunter.paper_lifecycle import (
     build_initial_paper_lifecycle,
     transition_allowed,
 )
+from alpha_hunter.paper_execution import build_initial_paper_execution
 
 
 def _strategy(direction="LONG", *, strategy_id="S1"):
@@ -120,3 +121,26 @@ def test_sql_ledger_is_append_only_private_and_has_no_live_path():
     assert "order_path='none'" in sql
     assert "grant update" not in sql
     assert "grant delete" not in sql
+
+
+def test_opposite_to_canonical_direction_cannot_create_a_paper_order():
+    decisions, events = build_initial_paper_lifecycle(
+        _snapshot([_strategy("SHORT", strategy_id="S6")])
+    )
+
+    assert len(decisions) == 1
+    decision = decisions[0]
+    assert decision["disposition"] == "BLOCKED"
+    assert decision["action_status"] == "BLOCKED_DIRECTION_CONFLICT"
+    assert decision["paper_authority"] is False
+    assert decision["blockers"] == ["CANONICAL_DIRECTION_CONFLICT"]
+    assert decision["evidence"]["market_state"] == "DIRECTION_EMERGING_LONG"
+    action = decision["evidence"]["action"]
+    assert action["candidate_direction"] == "SHORT"
+    assert action["canonical_direction"] == "LONG"
+    assert [event["state"] for event in events] == ["CREATED", "BLOCKED"]
+
+    orders, fills, execution_events = build_initial_paper_execution(decisions)
+    assert orders == []
+    assert fills == []
+    assert execution_events == []
