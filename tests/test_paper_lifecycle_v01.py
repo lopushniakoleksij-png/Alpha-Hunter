@@ -119,6 +119,7 @@ def test_sql_ledger_is_append_only_private_and_has_no_live_path():
     assert "exchange_authority=false" in sql
     assert "trade_permission=false" in sql
     assert "order_path='none'" in sql
+    assert "blocked_direction_conflict" in sql
     assert "grant update" not in sql
     assert "grant delete" not in sql
 

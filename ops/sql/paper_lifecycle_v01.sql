@@ -31,7 +31,8 @@ create table if not exists public.alpha_hunter_paper_decisions_v01 (
   direction text check (direction is null or direction in ('LONG','SHORT')),
   action_status text not null check (
     action_status in (
-      'EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER','WAIT_FOR_TRIGGER','BLOCKED'
+      'EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER','WAIT_FOR_TRIGGER','BLOCKED',
+      'BLOCKED_DIRECTION_CONFLICT'
     )
   ),
   disposition text not null check (
