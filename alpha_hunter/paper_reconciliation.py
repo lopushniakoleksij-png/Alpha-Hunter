@@ -194,6 +194,11 @@ def _attempt(
         "evidence": {
             "model_version": MODEL_VERSION,
             "captured_quote_only": True,
+            "quote_source": (
+                quote.get("_reconciliation_quote_source")
+                if quote
+                else "MISSING"
+            ),
             "exchange_request_added": False,
         },
         **_safe_fields(),
@@ -275,7 +280,10 @@ def _modeled_fill(
         ),
         "accrued_funding_usdt": 0.0,
         "funding_status": "NOT_ACCRUED",
-        "liquidity_source": "BITGET_TOP_OF_BOOK_SNAPSHOT",
+        "liquidity_source": str(
+            quote.get("_reconciliation_quote_source")
+            or "BITGET_TOP_OF_BOOK_SNAPSHOT"
+        ),
         "model_quality": "DETERMINISTIC_PAPER_MODEL_NOT_EXCHANGE_EXECUTION",
         **_safe_fields(),
     }
@@ -288,6 +296,7 @@ def reconcile_open_orders(
     open_orders: list[dict[str, Any]],
     *,
     attempted_order_ids: set[str] | None = None,
+    quote_overrides: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[
     list[dict[str, Any]],
     list[dict[str, Any]],
@@ -300,6 +309,12 @@ def reconcile_open_orders(
     if not run_id or not observed_at:
         raise ValueError("Reconciliation requires immutable run identity")
     quotes = _quote_map(snapshot)
+    if quote_overrides:
+        quotes.update({
+            str(symbol).upper(): dict(quote)
+            for symbol, quote in quote_overrides.items()
+            if isinstance(quote, dict)
+        })
     attempted = attempted_order_ids or set()
     attempts: list[dict[str, Any]] = []
     fills: list[dict[str, Any]] = []
@@ -312,6 +327,10 @@ def reconcile_open_orders(
             continue
         order["source_run_id"] = run_id
         quote = quotes.get(str(order.get("symbol") or "").upper())
+        quote_observed_at = str(
+            (quote or {}).get("_captured_at_utc")
+            or observed_at
+        )
         if quote is None:
             attempts.append(
                 _attempt(
@@ -319,11 +338,11 @@ def reconcile_open_orders(
                     None,
                     outcome="INPUT_MISSING",
                     blockers=["SYMBOL_QUOTE_MISSING"],
-                    observed_at_utc=observed_at,
+                    observed_at_utc=quote_observed_at,
                 )
             )
             continue
-        fill, blockers, completed = _modeled_fill(order, quote, observed_at)
+        fill, blockers, completed = _modeled_fill(order, quote, quote_observed_at)
         if blockers:
             attempts.append(
                 _attempt(
@@ -331,7 +350,7 @@ def reconcile_open_orders(
                     quote,
                     outcome="INPUT_MISSING",
                     blockers=blockers,
-                    observed_at_utc=observed_at,
+                    observed_at_utc=quote_observed_at,
                 )
             )
             continue
@@ -342,7 +361,7 @@ def reconcile_open_orders(
                     quote,
                     outcome="NO_CROSS",
                     blockers=[],
-                    observed_at_utc=observed_at,
+                    observed_at_utc=quote_observed_at,
                 )
             )
             continue
@@ -353,7 +372,7 @@ def reconcile_open_orders(
                 quote,
                 outcome="FILL_MODELED",
                 blockers=[],
-                observed_at_utc=observed_at,
+                observed_at_utc=quote_observed_at,
             )
         )
         fills.append(fill)
@@ -362,7 +381,7 @@ def reconcile_open_orders(
             _event(
                 order,
                 sequence=int(order["event_sequence"]) + 1,
-                occurred_at_utc=observed_at,
+                occurred_at_utc=quote_observed_at,
                 state=state,
                 fill=fill,
             )
@@ -373,7 +392,7 @@ def reconcile_open_orders(
                     order=order,
                     fill=fill,
                     quantity=float(order["ordered_quantity"]),
-                    created_at_utc=observed_at,
+                    created_at_utc=quote_observed_at,
                 )
             )
     return attempts, fills, events, protections
