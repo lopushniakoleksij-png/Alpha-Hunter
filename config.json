@@ -99,6 +99,13 @@
   "snapshot_directory": "data/snapshots",
   "funding_history_limit": 30,
   "minimum_reward_risk": 5,
+  "paper_execution": {
+    "model_version": "paper-execution-v0.2",
+    "virtual_equity_usdt": 1000,
+    "risk_fraction": 0.0025,
+    "base_market_slippage_bps": 1,
+    "maximum_market_slippage_bps": 5
+  },
   "state_history_file": "data/state-history.jsonl",
   "supabase": {
     "enabled": true,

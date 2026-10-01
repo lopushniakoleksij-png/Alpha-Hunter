@@ -858,10 +858,24 @@ def collect_symbol(
                 )
             ),
 
+        "bid_size":
+            to_float(
+                ticker.get(
+                    "bidSz"
+                )
+            ),
+
         "ask_price":
             to_float(
                 ticker.get(
                     "askPr"
+                )
+            ),
+
+        "ask_size":
+            to_float(
+                ticker.get(
+                    "askSz"
                 )
             ),
 

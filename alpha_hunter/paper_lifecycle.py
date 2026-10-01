@@ -144,6 +144,11 @@ def _decision_row(
         "reward_risk": safe_optional_float(action.get("rr")),
         "best_bid": safe_optional_float(market.get("bid_price")),
         "best_ask": safe_optional_float(market.get("ask_price")),
+        "best_bid_size": safe_optional_float(market.get("bid_size")),
+        "best_ask_size": safe_optional_float(market.get("ask_size")),
+        "public_maker_fee_bps": safe_optional_float(
+            instrument.get("public_maker_fee_bps")
+        ),
         "public_taker_fee_bps": safe_optional_float(
             instrument.get("public_taker_fee_bps")
         ),
@@ -154,6 +159,10 @@ def _decision_row(
             "market_state": row.get("state"),
             "market_phase": market.get("market_phase"),
             "opportunity_timing": market.get("opportunity_timing"),
+            "instrument_constraints": instrument,
+            "funding_rate": safe_optional_float(market.get("funding_rate")),
+            "funding_interval_hours": market.get("funding_interval_hours"),
+            "next_funding_time_ms": market.get("next_funding_time_ms"),
             "canonical_market_freshness": snapshot.get("canonical_market_freshness"),
             "validation_identity": snapshot.get("validation_identity"),
         },
