@@ -32,7 +32,15 @@ def _strategy(
     }
 
 
-def _market(symbol, price, strategies, *, price_place=6, spread_pct=0.01):
+def _market(
+    symbol,
+    price,
+    strategies,
+    *,
+    price_place=6,
+    spread_pct=0.01,
+    state="DIRECTION_EMERGING_LONG",
+):
     half_spread = price * spread_pct / 200.0
     return {
         "symbol": symbol,
@@ -46,7 +54,7 @@ def _market(symbol, price, strategies, *, price_place=6, spread_pct=0.01):
             "public_taker_fee_bps": 6.0,
             "fee_rate_source": "BITGET_V3_PUBLIC_INSTRUMENT_METADATA",
         },
-        "state": "DIRECTION_EMERGING_LONG",
+        "state": state,
         "market_phase": "IGNITION",
         "opportunity_timing": "EARLY",
         "behaviour_score": 7.0,
@@ -125,6 +133,7 @@ def test_valid_single_side_is_paper_only_and_bitget_normalized():
         1.224,
         [_strategy("SHORT", 1.22404, 1.2324689617, 1.1818951915)],
         price_place=4,
+        state="DIRECTION_EMERGING_SHORT",
     )
 
     data = dashboard_payload(_snapshot([row]))
@@ -183,3 +192,43 @@ def test_same_side_duplicates_reduce_to_one_canonical_decision():
     assert data["suppressed_actions"][0]["_action"]["blockers"] == [
         "SUPERSEDED_BY_CANONICAL_SYMBOL_DECISION"
     ]
+
+
+def test_single_strategy_opposite_to_canonical_state_is_blocked():
+    jasmy = _market(
+        "JASMYUSDT",
+        0.006121,
+        [_strategy("SHORT", 0.006121, 0.006224, 0.00436, strategy_id="S6")],
+        state="DIRECTION_EMERGING_LONG",
+    )
+
+    data = dashboard_payload(_snapshot([jasmy]))
+
+    assert data["actionable"] == []
+    blocked = [
+        row for row in data["blocked_actions"]
+        if row["symbol"] == "JASMYUSDT"
+    ]
+    assert len(blocked) == 1
+    action = blocked[0]["_action"]
+    assert action["status"] == "BLOCKED_DIRECTION_CONFLICT"
+    assert action["blockers"] == ["CANONICAL_DIRECTION_CONFLICT"]
+    assert action["candidate_direction"] == "SHORT"
+    assert action["canonical_direction"] == "LONG"
+    assert action["canonical_market_state"] == "DIRECTION_EMERGING_LONG"
+    assert action["execution_authority"] is False
+
+
+def test_single_strategy_matching_canonical_state_remains_eligible():
+    row = _market(
+        "MATCHUSDT",
+        10.0,
+        [_strategy("LONG", 10.0, 9.5, 12.5, strategy_id="S3")],
+        state="WATCH_LONG",
+    )
+
+    data = dashboard_payload(_snapshot([row]))
+
+    assert len(data["actionable"]) == 1
+    assert data["actionable"][0]["_action"]["status"] == "EXECUTE_NOW_PAPER"
+    assert data["actionable"][0]["_action"]["direction"] == "LONG"
