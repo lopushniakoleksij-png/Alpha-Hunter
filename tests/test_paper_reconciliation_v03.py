@@ -192,3 +192,39 @@ def test_reconciliation_requires_immutable_run_identity(field):
     value[field] = ""
     with pytest.raises(ValueError, match="immutable run identity"):
         reconcile_open_orders(value, [open_order()])
+
+
+def test_current_public_quote_override_reconciles_symbol_absent_from_deep_scan():
+    value = snapshot()
+    value["symbols"] = []
+    captured_at = "2026-10-01T07:01:00+00:00"
+    quote_overrides = {
+        "TESTUSDT": {
+            "symbol": "TESTUSDT",
+            "bid_price": 9.9,
+            "ask_price": 10.0,
+            "bid_size": 10.0,
+            "ask_size": 10.0,
+            "funding_rate": 0.0001,
+            "_captured_at_utc": captured_at,
+            "_reconciliation_quote_source":
+                "BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE",
+        }
+    }
+
+    attempts, fills, events, protections = reconcile_open_orders(
+        value,
+        [open_order()],
+        quote_overrides=quote_overrides,
+    )
+
+    assert attempts[0]["outcome"] == "FILL_MODELED"
+    assert attempts[0]["observed_at_utc"] == captured_at
+    assert attempts[0]["evidence"]["quote_source"] == (
+        "BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE"
+    )
+    assert fills[0]["liquidity_source"] == (
+        "BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE"
+    )
+    assert events[0]["occurred_at_utc"] == captured_at
+    assert len(protections) == 2
