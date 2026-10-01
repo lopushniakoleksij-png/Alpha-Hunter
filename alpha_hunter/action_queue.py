@@ -115,6 +115,49 @@ def _action_market_row(row: dict[str, Any]) -> dict[str, Any]:
     return source if isinstance(source, dict) else row
 
 
+def _canonical_market_direction(row: dict[str, Any]) -> tuple[str | None, str]:
+    """Map the canonical discovery state to one explicit directional side.
+
+    A strategy may use a different setup model, but paper execution must not
+    contradict an explicit canonical LONG/SHORT state from the same snapshot.
+    Neutral or unavailable states do not invent a direction.
+    """
+    market = _action_market_row(row)
+    state = str(market.get("state") or "").upper()
+    if state in {"DIRECTION_EMERGING_LONG", "WATCH_LONG"}:
+        return "LONG", state
+    if state in {"DIRECTION_EMERGING_SHORT", "WATCH_SHORT"}:
+        return "SHORT", state
+    return None, state
+
+
+def _blocked_direction_copy(
+    row: dict[str, Any],
+    *,
+    canonical_direction: str,
+    canonical_state: str,
+) -> dict[str, Any]:
+    candidate_direction = str(
+        (row.get("_action") or {}).get("direction") or ""
+    ).upper()
+    blocked = _blocked_copy(row, ["CANONICAL_DIRECTION_CONFLICT"])
+    action = dict(blocked["_action"])
+    action.update(
+        status="BLOCKED_DIRECTION_CONFLICT",
+        label="BLOCKED — DIRECTION CONFLICT",
+        reason=(
+            f"Blocked: candidate {candidate_direction or 'UNKNOWN'} conflicts with "
+            f"canonical {canonical_direction} ({canonical_state})."
+        ),
+        candidate_direction=candidate_direction or None,
+        canonical_direction=canonical_direction,
+        canonical_market_state=canonical_state,
+        execution_authority=False,
+    )
+    blocked["_action"] = action
+    return blocked
+
+
 def action_quality_blockers(row: dict[str, Any]) -> list[str]:
     """Validate final paper-action geometry, cost floor and venue precision."""
     action = row.get("_action")
@@ -303,6 +346,49 @@ def canonicalize_action_queue(
             for row in candidates:
                 blocked.append(_blocked_copy(row, ["DIRECTION_CONFLICT"]))
             continue
+
+        if executable and len(directions) == 1:
+            candidate_direction = next(iter(directions))
+            canonical_evidence = {
+                _canonical_market_direction(row)
+                for row in executable
+            }
+            explicit_canonical = {
+                (direction, state)
+                for direction, state in canonical_evidence
+                if direction is not None
+            }
+            if len({direction for direction, _ in explicit_canonical}) > 1:
+                for row in executable:
+                    blocked.append(
+                        _blocked_copy(
+                            row,
+                            ["CANONICAL_DIRECTION_EVIDENCE_CONFLICT"],
+                        )
+                    )
+                executable_ids = {id(row) for row in executable}
+                candidates = [
+                    row for row in candidates if id(row) not in executable_ids
+                ]
+                if not candidates:
+                    continue
+            elif explicit_canonical:
+                canonical_direction, canonical_state = next(iter(explicit_canonical))
+                if candidate_direction != canonical_direction:
+                    for row in executable:
+                        blocked.append(
+                            _blocked_direction_copy(
+                                row,
+                                canonical_direction=canonical_direction,
+                                canonical_state=canonical_state,
+                            )
+                        )
+                    executable_ids = {id(row) for row in executable}
+                    candidates = [
+                        row for row in candidates if id(row) not in executable_ids
+                    ]
+                    if not candidates:
+                        continue
 
         ranked = sorted(
             candidates,
