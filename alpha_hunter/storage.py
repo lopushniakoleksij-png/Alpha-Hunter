@@ -20,6 +20,14 @@ from .paper_execution import (
     ORDER_TABLE as PAPER_ORDER_TABLE,
     build_initial_paper_execution,
 )
+from .paper_reconciliation import (
+    ATTEMPT_TABLE as PAPER_RECONCILIATION_ATTEMPT_TABLE,
+    OPEN_VIEW as PAPER_RECONCILIATION_OPEN_VIEW,
+    PROTECTIVE_TABLE as PAPER_PROTECTIVE_TABLE,
+    build_initial_protective_orders,
+    reconcile_open_orders,
+    snapshot_has_reconciliation_quotes,
+)
 
 
 class SupabaseStorageError(RuntimeError):
@@ -361,6 +369,68 @@ class SupabaseStorage:
                 f"HTTP {response.status_code}: {body}"
             )
 
+    def _select_json(
+        self,
+        table: str,
+        params: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        response = self.request_with_retry(
+            "get",
+            f"{self.settings.url}/rest/v1/{table}",
+            params=params,
+            headers=self.headers,
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code != 200:
+            body = response.text[:500]
+            raise SupabaseStorageError(
+                f"Supabase select failed for {table}: "
+                f"HTTP {response.status_code}: {body}"
+            )
+        try:
+            rows = response.json()
+        except ValueError as exc:
+            raise SupabaseStorageError(
+                f"Supabase select returned invalid JSON for {table}"
+            ) from exc
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise SupabaseStorageError(
+                f"Supabase select returned unexpected shape for {table}"
+            )
+        return rows
+
+    def _commit_paper_reconciliation(
+        self,
+        attempts: list[dict[str, Any]],
+        fills: list[dict[str, Any]],
+        events: list[dict[str, Any]],
+        protections: list[dict[str, Any]],
+    ) -> None:
+        """Commit one scan's reconciliation evidence in one database transaction."""
+        if not attempts:
+            return
+        response = self.request_with_retry(
+            "post",
+            f"{self.settings.url}/rest/v1/rpc/alpha_hunter_commit_paper_reconciliation_v03",
+            headers=self.headers,
+            data=json.dumps(
+                {
+                    "attempt_rows": attempts,
+                    "fill_rows": fills,
+                    "event_rows": events,
+                    "protective_rows": protections,
+                },
+                separators=(",", ":"),
+            ),
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201, 204}:
+            body = response.text[:500]
+            raise SupabaseStorageError(
+                "Supabase atomic paper reconciliation failed: "
+                f"HTTP {response.status_code}: {body}"
+            )
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
@@ -491,6 +561,11 @@ class SupabaseStorage:
         paper_orders, paper_fills, execution_events = build_initial_paper_execution(
             paper_decisions
         )
+        initial_protections = build_initial_protective_orders(
+            paper_decisions,
+            paper_orders,
+            paper_fills,
+        )
         self._insert_immutable(
             PAPER_DECISION_TABLE,
             paper_decisions,
@@ -507,8 +582,42 @@ class SupabaseStorage:
             "fill_id",
         )
         self._insert_immutable(
+            PAPER_PROTECTIVE_TABLE,
+            initial_protections,
+            "protective_order_id",
+        )
+        self._insert_immutable(
             PAPER_EVENT_TABLE,
             [*paper_events, *execution_events],
             "event_id",
         )
+        if snapshot_has_reconciliation_quotes(snapshot):
+            open_orders = self._select_json(
+                PAPER_RECONCILIATION_OPEN_VIEW,
+                {"select": "*", "limit": "1000"},
+            )
+            existing_attempts = self._select_json(
+                PAPER_RECONCILIATION_ATTEMPT_TABLE,
+                {
+                    "select": "order_id",
+                    "source_run_id": f"eq.{run_id}",
+                    "limit": "1000",
+                },
+            )
+            attempted_order_ids = {
+                str(row["order_id"])
+                for row in existing_attempts
+                if row.get("order_id")
+            }
+            attempts, fills, events, protections = reconcile_open_orders(
+                snapshot,
+                open_orders,
+                attempted_order_ids=attempted_order_ids,
+            )
+            self._commit_paper_reconciliation(
+                attempts,
+                fills,
+                events,
+                protections,
+            )
         return run_id
