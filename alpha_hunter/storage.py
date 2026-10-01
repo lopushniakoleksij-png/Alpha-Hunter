@@ -5,10 +5,12 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
 
+from .bitget import BitgetAPIError, BitgetClient
 from .feature_capture import compact_source_payload, extract_feature_rows
 from .paper_lifecycle import (
     DECISION_TABLE as PAPER_DECISION_TABLE,
@@ -142,9 +144,18 @@ def build_run_id(snapshot: dict[str, Any]) -> str:
 
 
 class SupabaseStorage:
-    def __init__(self, settings: SupabaseConfig, session: requests.Session | None = None) -> None:
+    def __init__(
+        self,
+        settings: SupabaseConfig,
+        session: requests.Session | None = None,
+        bitget_client: BitgetClient | None = None,
+    ) -> None:
         self.settings = settings
         self.session = session or requests.Session()
+        self.bitget_client = bitget_client or BitgetClient(
+            timeout=min(12, settings.timeout_seconds),
+            max_retries=2,
+        )
 
     @property
     def headers(self) -> dict[str, str]:
@@ -431,6 +442,56 @@ class SupabaseStorage:
                 f"HTTP {response.status_code}: {body}"
             )
 
+    def _capture_missing_reconciliation_quotes(
+        self,
+        snapshot: dict[str, Any],
+        open_orders: list[dict[str, Any]],
+    ) -> dict[str, dict[str, Any]]:
+        """Capture current public Bitget quotes for open orders absent from deep scan."""
+        snapshot_quotes = {
+            str(row.get("symbol") or "").upper()
+            for row in snapshot.get("symbols", [])
+            if isinstance(row, dict)
+            and "error" not in row
+            and row.get("symbol")
+            and row.get("bid_price") is not None
+            and row.get("ask_price") is not None
+        }
+        missing = {
+            str(order.get("symbol") or "").upper()
+            for order in open_orders
+            if order.get("symbol")
+        } - snapshot_quotes
+        if not missing:
+            return {}
+
+        product_type = str(snapshot.get("product_type") or "USDT-FUTURES")
+        try:
+            ticker_rows = self.bitget_client.tickers(product_type)
+        except BitgetAPIError:
+            return {}
+
+        captured_at = datetime.now(timezone.utc).isoformat()
+        quotes: dict[str, dict[str, Any]] = {}
+        for row in ticker_rows:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol") or "").upper()
+            if symbol not in missing:
+                continue
+            quotes[symbol] = {
+                "symbol": symbol,
+                "bid_price": row.get("bidPr"),
+                "ask_price": row.get("askPr"),
+                "bid_size": row.get("bidSz"),
+                "ask_size": row.get("askSz"),
+                "funding_rate": row.get("fundingRate"),
+                "_captured_at_utc": captured_at,
+                "_reconciliation_quote_source":
+                    "BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE",
+            }
+        return quotes
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
@@ -609,10 +670,15 @@ class SupabaseStorage:
                 for row in existing_attempts
                 if row.get("order_id")
             }
+            quote_overrides = self._capture_missing_reconciliation_quotes(
+                snapshot,
+                open_orders,
+            )
             attempts, fills, events, protections = reconcile_open_orders(
                 snapshot,
                 open_orders,
                 attempted_order_ids=attempted_order_ids,
+                quote_overrides=quote_overrides,
             )
             self._commit_paper_reconciliation(
                 attempts,

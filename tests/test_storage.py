@@ -459,3 +459,74 @@ def test_auxiliary_deadline_cannot_grant_order_authority():
         "set_leverage(",
     ]:
         assert forbidden not in source
+
+
+class FakeBitgetTickerClient:
+    def __init__(self):
+        self.calls = []
+
+    def tickers(self, product_type):
+        self.calls.append(product_type)
+        return [
+            {
+                "symbol": "ALICEUSDT",
+                "bidPr": "0.2016",
+                "askPr": "0.2017",
+                "bidSz": "900",
+                "askSz": "700",
+                "fundingRate": "0.0001",
+            },
+            {
+                "symbol": "SUIUSDT",
+                "bidPr": "0.749",
+                "askPr": "0.751",
+                "bidSz": "1000",
+                "askSz": "1000",
+                "fundingRate": "0.0002",
+            },
+        ]
+
+
+def test_open_order_quote_capture_fetches_only_missing_deep_scan_symbols():
+    client = FakeBitgetTickerClient()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=FakeSession(),
+        bitget_client=client,
+    )
+    value = sample_snapshot()
+    value["symbols"][0]["bid_price"] = 0.749
+    value["symbols"][0]["ask_price"] = 0.751
+
+    quotes = storage._capture_missing_reconciliation_quotes(
+        value,
+        [{"symbol": "ALICEUSDT"}, {"symbol": "SUIUSDT"}],
+    )
+
+    assert client.calls == ["usdt-futures"]
+    assert set(quotes) == {"ALICEUSDT"}
+    assert quotes["ALICEUSDT"]["bid_price"] == "0.2016"
+    assert quotes["ALICEUSDT"]["ask_price"] == "0.2017"
+    assert quotes["ALICEUSDT"]["_reconciliation_quote_source"] == (
+        "BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE"
+    )
+
+
+def test_open_order_quote_capture_skips_bitget_when_snapshot_quote_exists():
+    client = FakeBitgetTickerClient()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=FakeSession(),
+        bitget_client=client,
+    )
+    value = sample_snapshot()
+    value["symbols"][0]["bid_price"] = 0.749
+    value["symbols"][0]["ask_price"] = 0.751
+
+    quotes = storage._capture_missing_reconciliation_quotes(
+        value,
+        [{"symbol": "SUIUSDT"}],
+    )
+
+    assert quotes == {}
+    assert client.calls == []
