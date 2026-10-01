@@ -156,7 +156,8 @@ def _decision_row(
         "blockers": action.get("blockers") or [],
         "evidence": {
             "action": action,
-            "market_state": row.get("state"),
+            "market_state": market.get("state"),
+            "candidate_source_state": row.get("state"),
             "market_phase": market.get("market_phase"),
             "opportunity_timing": market.get("opportunity_timing"),
             "instrument_constraints": instrument,
