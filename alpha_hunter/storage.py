@@ -15,6 +15,11 @@ from .paper_lifecycle import (
     EVENT_TABLE as PAPER_EVENT_TABLE,
     build_initial_paper_lifecycle,
 )
+from .paper_execution import (
+    FILL_TABLE as PAPER_FILL_TABLE,
+    ORDER_TABLE as PAPER_ORDER_TABLE,
+    build_initial_paper_execution,
+)
 
 
 class SupabaseStorageError(RuntimeError):
@@ -483,14 +488,27 @@ class SupabaseStorage:
             "run_id,symbol",
         )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
+        paper_orders, paper_fills, execution_events = build_initial_paper_execution(
+            paper_decisions
+        )
         self._insert_immutable(
             PAPER_DECISION_TABLE,
             paper_decisions,
             "decision_id",
         )
         self._insert_immutable(
+            PAPER_ORDER_TABLE,
+            paper_orders,
+            "order_id",
+        )
+        self._insert_immutable(
+            PAPER_FILL_TABLE,
+            paper_fills,
+            "fill_id",
+        )
+        self._insert_immutable(
             PAPER_EVENT_TABLE,
-            paper_events,
+            [*paper_events, *execution_events],
             "event_id",
         )
         return run_id
