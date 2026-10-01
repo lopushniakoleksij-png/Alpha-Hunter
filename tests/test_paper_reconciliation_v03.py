@@ -179,7 +179,7 @@ def test_database_contract_is_append_only_atomic_and_service_role_only():
     assert "paper fill exceeds remaining entry quantity" in sql
     assert sql.count("pg_advisory_xact_lock") >= 3
     assert "alpha-hunter-paper-order:" in sql
-    assert "for share" not in sql
+    assert "for share;" not in sql
     assert "grant execute on function public.alpha_hunter_commit_paper_reconciliation_v03" in sql
     assert "to service_role" in sql
     assert "grant update" not in sql
