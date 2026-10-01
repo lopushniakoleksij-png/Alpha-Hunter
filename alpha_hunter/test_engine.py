@@ -12,7 +12,7 @@ from .storage import SupabaseConfig
 
 
 ENGINE_VERSION = "realtime-test-engine-v0.1"
-AUTHORITATIVE_ENGINE_VERSION = "realtime-test-engine-db-v0.2"
+AUTHORITATIVE_ENGINE_VERSION = "realtime-test-engine-db-v0.4-direct-gates"
 MAX_LIVE_SCAN_AGE_SECONDS = 5400.0
 MAX_AUTHORITATIVE_AGE_SECONDS = 1500.0
 

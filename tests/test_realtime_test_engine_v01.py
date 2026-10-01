@@ -203,7 +203,7 @@ def authoritative_row(**overrides):
     row = {
         "test_engine_run_id": "db-run",
         "evaluated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "engine_version": "realtime-test-engine-db-v0.2",
+        "engine_version": "realtime-test-engine-db-v0.4-direct-gates",
         "spec_id": "TEST-SPEC",
         "operational_status": "BLOCKED",
         "profitability_status": "INVALIDATED_BY_BUILD_OR_CONFIG_DRIFT",
@@ -228,7 +228,7 @@ def test_authoritative_db_status_avoids_heavy_validation_views():
     })
     report = RealtimeTestEngine(settings(), session=session).load_authoritative()
 
-    assert report.row["engine_version"] == "realtime-test-engine-db-v0.2"
+    assert report.row["engine_version"] == "realtime-test-engine-db-v0.4-direct-gates"
     assert report.row["trade_permission"] is False
     assert [relation for relation, _ in session.gets] == [
         "alpha_hunter_test_engine_latest_v01"

@@ -102,11 +102,19 @@ declare
   already_filled numeric;
   expected_decision text;
 begin
+  -- SELECT ... FOR SHARE requires UPDATE privilege in PostgreSQL. Keep the
+  -- immutable order table read-only for service_role and serialize capacity
+  -- checks with a per-order transaction advisory lock instead.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'alpha-hunter-paper-order:' || new.order_id,
+      0
+    )
+  );
   select o.quantity,o.decision_id
     into ordered,expected_decision
   from public.alpha_hunter_paper_orders_v02 o
-  where o.order_id=new.order_id
-  for share;
+  where o.order_id=new.order_id;
   if ordered is null or expected_decision<>new.decision_id then
     raise exception 'paper fill does not match an existing entry order';
   end if;
@@ -144,11 +152,16 @@ declare
   expected_decision text;
   fill_matches boolean;
 begin
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'alpha-hunter-paper-order:' || new.entry_order_id,
+      0
+    )
+  );
   select o.quantity,o.decision_id
     into ordered,expected_decision
   from public.alpha_hunter_paper_orders_v02 o
-  where o.order_id=new.entry_order_id
-  for share;
+  where o.order_id=new.entry_order_id;
   select coalesce(sum(f.quantity),0),
          bool_or(f.fill_id=new.activated_by_fill_id)
     into filled,fill_matches
