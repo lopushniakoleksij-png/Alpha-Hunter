@@ -231,6 +231,7 @@ def _fill_from_order(
         "fill_id": fill_id,
         "order_id": order["order_id"],
         "decision_id": decision["decision_id"],
+        "source_run_id": decision["run_id"],
         "fill_sequence": 1,
         "filled_at_utc": decision["observed_at_utc"],
         "quantity": fill_quantity,
