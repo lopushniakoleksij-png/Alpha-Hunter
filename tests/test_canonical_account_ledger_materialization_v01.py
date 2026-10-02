@@ -88,3 +88,18 @@ def test_idempotent_with_python_writer():
     assert "on conflict(account_snapshot_id) do nothing" in SQL
     assert "on conflict(position_snapshot_id) do nothing" in SQL
     assert "on conflict(event_id) do nothing" in SQL
+
+
+def test_materializer_persists_protection_truth_without_inventing_absence():
+    required = [
+        "'protection_observation_status',v_private->>'protection_observation_status'",
+        "'pending_tpsl_order_count',v_private->'pending_tpsl_order_count'",
+        "'exchange_take_profit_source',p.value->>'take_profit_source'",
+        "'exchange_stop_loss_source',p.value->>'stop_loss_source'",
+        "'exchange_protection_observation_status',p.value->>'protection_observation_status'",
+        "'exchange_protection_orders_observed'",
+        "'exchange_protection_absence_confirmed'",
+        "p.value->>'protection_observation_status'='CONNECTED'",
+    ]
+    for text in required:
+        assert text in SQL
