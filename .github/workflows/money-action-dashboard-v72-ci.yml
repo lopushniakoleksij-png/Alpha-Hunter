@@ -6,8 +6,6 @@ on:
       - 'app.py'
       - 'tests/test_money_action_dashboard_v72.py'
       - 'tests/test_operator_protection_truth_gate_v01.py'
-      - 'tests/test_operator_protection_truth_gate_v01.py'
-      - 'tests/test_dashboard_canonical_source_v02.py'
       - 'tests/test_dashboard_canonical_source_v02.py'
       - '.github/workflows/money-action-dashboard-v72-ci.yml'
   push:
@@ -16,6 +14,7 @@ on:
     paths:
       - 'app.py'
       - 'tests/test_money_action_dashboard_v72.py'
+      - 'tests/test_operator_protection_truth_gate_v01.py'
 
 permissions:
   contents: read
