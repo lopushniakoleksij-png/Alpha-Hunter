@@ -95,6 +95,18 @@ create table if not exists public.alpha_hunter_paper_exit_fills_v04 (
   )
 );
 
+create table if not exists public.alpha_hunter_paper_exit_activation_v04 (
+  activation_id text primary key check (activation_id='PAPER_EXIT_V04'),
+  activated_at_utc timestamptz not null,
+  release_git_commit text not null,
+  evidence jsonb not null default '{}'::jsonb check (jsonb_typeof(evidence)='object'),
+  paper_only boolean not null default true check (paper_only=true),
+  exchange_authority boolean not null default false check (exchange_authority=false),
+  trade_permission boolean not null default false check (trade_permission=false),
+  order_path text not null default 'NONE' check (order_path='NONE'),
+  created_at timestamptz not null default clock_timestamp()
+);
+
 create table if not exists public.alpha_hunter_paper_exit_quarantine_v04 (
   entry_order_id text primary key
     references public.alpha_hunter_paper_orders_v02(order_id) on delete restrict,
@@ -118,6 +130,7 @@ create index if not exists idx_ah_paper_exit_fill_decision_v04
 
 alter table public.alpha_hunter_paper_exit_attempts_v04 enable row level security;
 alter table public.alpha_hunter_paper_exit_fills_v04 enable row level security;
+alter table public.alpha_hunter_paper_exit_activation_v04 enable row level security;
 alter table public.alpha_hunter_paper_exit_quarantine_v04 enable row level security;
 
 revoke all on table public.alpha_hunter_paper_exit_attempts_v04
@@ -126,6 +139,9 @@ revoke all on table public.alpha_hunter_paper_exit_fills_v04
   from public,anon,authenticated,service_role;
 grant select,insert on table public.alpha_hunter_paper_exit_attempts_v04 to service_role;
 grant select,insert on table public.alpha_hunter_paper_exit_fills_v04 to service_role;
+revoke all on table public.alpha_hunter_paper_exit_activation_v04
+  from public,anon,authenticated,service_role;
+grant select on table public.alpha_hunter_paper_exit_activation_v04 to service_role;
 revoke all on table public.alpha_hunter_paper_exit_quarantine_v04
   from public,anon,authenticated,service_role;
 grant select on table public.alpha_hunter_paper_exit_quarantine_v04 to service_role;
@@ -140,6 +156,12 @@ drop trigger if exists trg_ah_paper_exit_fill_append_only_v04
   on public.alpha_hunter_paper_exit_fills_v04;
 create trigger trg_ah_paper_exit_fill_append_only_v04
 before update or delete on public.alpha_hunter_paper_exit_fills_v04
+for each row execute function private.alpha_hunter_block_paper_lifecycle_mutation_v01();
+
+drop trigger if exists trg_ah_paper_exit_activation_append_only_v04
+  on public.alpha_hunter_paper_exit_activation_v04;
+create trigger trg_ah_paper_exit_activation_append_only_v04
+before update or delete on public.alpha_hunter_paper_exit_activation_v04
 for each row execute function private.alpha_hunter_block_paper_lifecycle_mutation_v01();
 
 drop trigger if exists trg_ah_paper_exit_quarantine_append_only_v04
@@ -224,30 +246,6 @@ create trigger trg_ah_validate_paper_exit_v04
 before insert on public.alpha_hunter_paper_exit_fills_v04
 for each row execute function private.alpha_hunter_validate_paper_exit_v04();
 
--- Preserve pre-Release-2.8 active protection as audit evidence only. A later
--- quote cannot prove when a historical stop/target first crossed.
-insert into public.alpha_hunter_paper_exit_quarantine_v04 (
-  entry_order_id,decision_id,symbol,protection_created_at_utc,reason,evidence,
-  paper_only,exchange_authority,trade_permission,order_path
-)
-select
-  p.entry_order_id,
-  p.decision_id,
-  p.symbol,
-  min(p.created_at_utc),
-  'PRE_EXIT_RECONCILIATION_GAP',
-  pg_catalog.jsonb_build_object(
-    'retroactive_exit_forbidden',true,
-    'reason','continuous protective exit reconciliation unavailable before Release 2.8'
-  ),
-  true,false,false,'NONE'
-from public.alpha_hunter_paper_protective_orders_v03 p
-left join public.alpha_hunter_paper_exit_fills_v04 x
-  on x.entry_order_id=p.entry_order_id
-where x.entry_order_id is null
-group by p.entry_order_id,p.decision_id,p.symbol
-on conflict(entry_order_id) do nothing;
-
 create or replace view public.alpha_hunter_paper_protection_open_v04
 with (security_invoker=true,security_barrier=true)
 as
@@ -283,7 +281,8 @@ protection as (
     max(p.protective_order_id) filter(where p.protection_type='TAKE_PROFIT')
       as target_protective_order_id,
     max(p.trigger_price) filter(where p.protection_type='TAKE_PROFIT')
-      as target_trigger_price
+      as target_trigger_price,
+    min(p.created_at_utc) as protection_created_at_utc
   from public.alpha_hunter_paper_protective_orders_v03 p
   group by p.entry_order_id
 )
@@ -316,6 +315,7 @@ from public.alpha_hunter_paper_orders_v02 o
 join entry_fill ef on ef.order_id=o.order_id
 join protection pr on pr.entry_order_id=o.order_id
 join latest_event le on le.decision_id=o.decision_id
+cross join public.alpha_hunter_paper_exit_activation_v04 a
 left join public.alpha_hunter_paper_exit_fills_v04 x
   on x.entry_order_id=o.order_id
 left join public.alpha_hunter_paper_exit_quarantine_v04 q
@@ -323,7 +323,8 @@ left join public.alpha_hunter_paper_exit_quarantine_v04 q
 where ef.filled_quantity >= o.quantity-0.000000000001
   and le.state='FILLED'
   and x.entry_order_id is null
-  and q.entry_order_id is null;
+  and q.entry_order_id is null
+  and pr.protection_created_at_utc >= a.activated_at_utc;
 
 revoke all on public.alpha_hunter_paper_protection_open_v04
   from public,anon,authenticated,service_role;
@@ -344,6 +345,8 @@ select
   p.trigger_price,
   p.quantity,
   case
+    when a.activation_id is null then 'PRE_ACTIVATION_GAP'
+    when p.created_at_utc < a.activated_at_utc then 'QUARANTINED_GAP'
     when q.entry_order_id is not null then 'QUARANTINED_GAP'
     when x.exit_fill_id is null then 'ACTIVE_PAPER'
     when x.triggered_protective_order_id=p.protective_order_id
@@ -360,7 +363,9 @@ from public.alpha_hunter_paper_protective_orders_v03 p
 left join public.alpha_hunter_paper_exit_fills_v04 x
   on x.entry_order_id=p.entry_order_id
 left join public.alpha_hunter_paper_exit_quarantine_v04 q
-  on q.entry_order_id=p.entry_order_id;
+  on q.entry_order_id=p.entry_order_id
+left join public.alpha_hunter_paper_exit_activation_v04 a
+  on true;
 
 revoke all on public.alpha_hunter_paper_protection_current_v04
   from public,anon,authenticated,service_role;
@@ -403,6 +408,97 @@ join public.alpha_hunter_paper_decisions_v01 d using (decision_id);
 revoke all on public.alpha_hunter_paper_completed_trades_v04
   from public,anon,authenticated,service_role;
 grant select on public.alpha_hunter_paper_completed_trades_v04 to service_role;
+
+create or replace function private.alpha_hunter_activate_paper_exit_v04(
+  requested_release_git_commit text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path=''
+as $
+declare
+  v_live_commit text;
+  v_status text;
+  v_activated_at timestamptz := clock_timestamp();
+  v_existing_commit text;
+  v_quarantined integer := 0;
+begin
+  select r.live_git_commit,r.deployment_status
+    into v_live_commit,v_status
+  from public.alpha_hunter_production_deployment_runtime_status_v03 r
+  limit 1;
+
+  if v_status is distinct from 'MATCHED'
+     or v_live_commit is distinct from requested_release_git_commit then
+    raise exception 'paper exit activation requires matched live release';
+  end if;
+
+  select a.release_git_commit
+    into v_existing_commit
+  from public.alpha_hunter_paper_exit_activation_v04 a
+  where a.activation_id='PAPER_EXIT_V04';
+
+  if v_existing_commit is not null
+     and v_existing_commit<>requested_release_git_commit then
+    raise exception 'paper exit v0.4 already activated for another release';
+  end if;
+
+  insert into public.alpha_hunter_paper_exit_activation_v04 (
+    activation_id,activated_at_utc,release_git_commit,evidence,
+    paper_only,exchange_authority,trade_permission,order_path
+  ) values (
+    'PAPER_EXIT_V04',v_activated_at,requested_release_git_commit,
+    pg_catalog.jsonb_build_object(
+      'activation_gate','PRODUCTION_RUNTIME_MATCHED',
+      'retroactive_exit_forbidden',true
+    ),
+    true,false,false,'NONE'
+  )
+  on conflict(activation_id) do nothing;
+
+  select a.activated_at_utc
+    into v_activated_at
+  from public.alpha_hunter_paper_exit_activation_v04 a
+  where a.activation_id='PAPER_EXIT_V04';
+
+  insert into public.alpha_hunter_paper_exit_quarantine_v04 (
+    entry_order_id,decision_id,symbol,protection_created_at_utc,reason,evidence,
+    paper_only,exchange_authority,trade_permission,order_path
+  )
+  select
+    p.entry_order_id,p.decision_id,p.symbol,min(p.created_at_utc),
+    'PRE_EXIT_RECONCILIATION_GAP',
+    pg_catalog.jsonb_build_object(
+      'retroactive_exit_forbidden',true,
+      'activation_at_utc',v_activated_at,
+      'reason','continuous protective exit reconciliation unavailable before Release 2.8'
+    ),
+    true,false,false,'NONE'
+  from public.alpha_hunter_paper_protective_orders_v03 p
+  left join public.alpha_hunter_paper_exit_fills_v04 x
+    on x.entry_order_id=p.entry_order_id
+  where x.entry_order_id is null
+  group by p.entry_order_id,p.decision_id,p.symbol
+  having min(p.created_at_utc)<v_activated_at
+  on conflict(entry_order_id) do nothing;
+
+  get diagnostics v_quarantined = row_count;
+
+  return pg_catalog.jsonb_build_object(
+    'activated_at_utc',v_activated_at,
+    'release_git_commit',requested_release_git_commit,
+    'quarantined_pre_activation_entries',v_quarantined,
+    'paper_only',true,
+    'exchange_authority',false,
+    'trade_permission',false,
+    'order_path','NONE'
+  );
+end;
+$;
+
+revoke all on function private.alpha_hunter_activate_paper_exit_v04(text)
+  from public,anon,authenticated,service_role;
 
 create or replace function public.alpha_hunter_commit_paper_exit_reconciliation_v04(
   attempt_rows jsonb,
