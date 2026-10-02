@@ -197,7 +197,7 @@ def test_sql_contract_is_append_only_paper_only_and_oco_derived():
     assert "order_path='none'" in sql
     assert "cancelled_oco" in sql
     assert "triggered_paper" in sql
-    assert "latest_state<>'filled'" in sql
+    assert "latest_state is distinct from 'filled'" in sql
     assert "full_economic_pnl_claim_permitted=false" in sql
     assert "pre_exit_reconciliation_gap" in sql
     assert "retroactive_exit_forbidden" in sql
