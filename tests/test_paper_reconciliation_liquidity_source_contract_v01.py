@@ -13,6 +13,9 @@ MIGRATION_SQL = (
 RECONCILIATION_PY = (
     ROOT / "alpha_hunter/paper_reconciliation.py"
 ).read_text(encoding="utf-8")
+STORAGE_PY = (
+    ROOT / "alpha_hunter/storage.py"
+).read_text(encoding="utf-8")
 
 
 def test_sql_contracts_parse():
@@ -28,7 +31,8 @@ def test_fill_table_accepts_both_read_only_quote_sources():
 
 def test_runtime_emitted_override_source_matches_database_contract():
     marker = "BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE"
-    assert marker in RECONCILIATION_PY
+    assert marker in STORAGE_PY
+    assert "_reconciliation_quote_source" in RECONCILIATION_PY
     assert marker in BASE_SQL
     assert marker in MIGRATION_SQL
 
