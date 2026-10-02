@@ -202,3 +202,6 @@ def test_sql_contract_is_append_only_paper_only_and_oco_derived():
     assert "pre_exit_reconciliation_gap" in sql
     assert "retroactive_exit_forbidden" in sql
     assert "quarantined_gap" in sql
+    assert "pre_activation_gap" in sql
+    assert "alpha_hunter_activate_paper_exit_v04" in sql
+    assert "production_runtime_matched" in sql
