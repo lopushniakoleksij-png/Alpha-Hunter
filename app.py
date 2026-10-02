@@ -906,6 +906,78 @@ def symbol_label(value: Any) -> str:
 app.jinja_env.filters["symbol_label"] = symbol_label
 
 
+def position_protection_view(
+    position: dict[str, Any],
+    observed_at_utc: str | None = None,
+) -> dict[str, Any]:
+    """Build a truthful operator view of exchange protection evidence.
+
+    Blank TP/SL fields are never interpreted as "no protection" unless the
+    dedicated Bitget protection observer completed successfully.
+    """
+    row = dict(position)
+    observation_status = str(
+        position.get("protection_observation_status") or "UNKNOWN"
+    ).upper()
+    raw_orders = position.get("protection_orders")
+    orders = raw_orders if isinstance(raw_orders, list) else []
+
+    def present(value: Any) -> bool:
+        return value is not None and str(value).strip() != ""
+
+    def unique_levels(plan_types: set[str], scalar: Any) -> list[str]:
+        levels: list[str] = []
+        if present(scalar):
+            levels.append(str(scalar).strip())
+        for order in orders:
+            if not isinstance(order, dict):
+                continue
+            plan_type = str(order.get("plan_type") or "").strip().lower()
+            trigger = order.get("trigger_price")
+            if plan_type in plan_types and present(trigger):
+                value = str(trigger).strip()
+                if value not in levels:
+                    levels.append(value)
+        return levels
+
+    tp_levels = unique_levels({"profit_plan", "pos_profit"}, position.get("take_profit"))
+    sl_levels = unique_levels({"loss_plan", "pos_loss"}, position.get("stop_loss"))
+
+    observer_complete = observation_status == "CONNECTED"
+    any_protection = bool(tp_levels or sl_levels)
+
+    if not observer_complete:
+        protection_state = "UNKNOWN"
+        protection_warning = "Protection observation unavailable — do not infer no SL/TP."
+    elif any_protection:
+        protection_state = "OBSERVED"
+        if not tp_levels or not sl_levels:
+            protection_warning = "Partial protection observed."
+        else:
+            protection_warning = None
+    else:
+        protection_state = "NONE_OBSERVED"
+        protection_warning = "Observer completed and no active TP/SL was observed."
+
+    row.update(
+        {
+            "_protection_state": protection_state,
+            "_protection_observation_status": observation_status,
+            "_protection_observed_at_utc": observed_at_utc,
+            "_take_profit_levels": tp_levels,
+            "_stop_loss_levels": sl_levels,
+            "_take_profit_display": ", ".join(tp_levels)
+            if tp_levels
+            else ("None observed" if observer_complete else "Unknown"),
+            "_stop_loss_display": ", ".join(sl_levels)
+            if sl_levels
+            else ("None observed" if observer_complete else "Unknown"),
+            "_protection_warning": protection_warning,
+        }
+    )
+    return row
+
+
 def execution_checks(row: dict[str, Any]) -> dict[str, bool]:
     setup = row.get("execution_setup", {})
     raw = setup.get("checks", {})
@@ -1298,7 +1370,11 @@ def dashboard_payload(
             [row for row in symbols if row["_reference"]],
             key=lambda row: row.get("symbol", ""),
         ),
-        "positions": account.get("open_positions", []),
+        "positions": [
+            position_protection_view(position, snapshot.get("collected_at_utc"))
+            for position in account.get("open_positions", [])
+            if isinstance(position, dict)
+        ],
         "account_status": account.get("status", "UNKNOWN"),
         "universe": universe,
         "updated": snapshot.get("collected_at_utc"),
@@ -1511,9 +1587,11 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       </div>
 
       <div class="panel"><h2 style="margin-top:0">Bitget Open Positions</h2>
-      {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th></tr></thead><tbody>
-      {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td></tr>{% endfor %}
-      </tbody></table>{% else %}<div class="empty">No open Bitget positions detected.</div>{% endif %}</div>
+      {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th><th>SL</th><th>TP</th><th>Protection</th></tr></thead><tbody>
+      {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td><td>{{ p._stop_loss_display }}</td><td>{{ p._take_profit_display }}</td><td><span class="badge {{ 'badge-ready' if p._protection_state=='OBSERVED' else 'badge-research' }}">{{ p._protection_state }}</span>{% if p._protection_warning %}<div class="small warning">{{ p._protection_warning }}</div>{% endif %}<div class="small muted">observer={{ p._protection_observation_status }} · {{ p._protection_observed_at_utc or 'time unavailable' }}</div></td></tr>{% endfor %}
+      </tbody></table>
+      {% elif data.account_status == 'CONNECTED' %}<div class="empty">No open Bitget positions observed in the completed account snapshot.</div>
+      {% else %}<div class="warning">Open-position observation unavailable (account status: {{ data.account_status }}). Do not infer that no position exists.</div>{% endif %}</div>
     </main>
 
     <aside>
