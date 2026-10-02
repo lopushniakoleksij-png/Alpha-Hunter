@@ -199,3 +199,6 @@ def test_sql_contract_is_append_only_paper_only_and_oco_derived():
     assert "triggered_paper" in sql
     assert "latest_state<>'filled'" in sql
     assert "full_economic_pnl_claim_permitted=false" in sql
+    assert "pre_exit_reconciliation_gap" in sql
+    assert "retroactive_exit_forbidden" in sql
+    assert "quarantined_gap" in sql
