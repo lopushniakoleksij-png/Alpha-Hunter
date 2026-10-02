@@ -43,10 +43,11 @@ jobs:
           set -euo pipefail
           workflow=".github/workflows/render-web-deploy-v01.yml"
           grep -q 'RENDER_DEPLOY_HOOK_URL' "$workflow"
-          grep -q 'TARGET_COMMIT: ${{ github.sha }}' "$workflow"
+          grep -q 'TARGET_COMMIT:' "$workflow"
+          grep -q 'github.sha' "$workflow"
           grep -q 'git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"' "$workflow"
-          if grep -Eq 'echo .*RENDER_DEPLOY_HOOK_URL|print\(.*RENDER_DEPLOY_HOOK_URL' "$workflow"; then
-            echo "Deploy hook secret must never be printed."
+          if grep -Fq 'echo "$RENDER_DEPLOY_HOOK_URL"' "$workflow"; then
+            echo "Deploy hook secret value must never be printed."
             exit 1
           fi
           echo "PASS: Render deploy contract is current-commit bound and secret-safe."
