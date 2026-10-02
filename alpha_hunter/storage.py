@@ -30,6 +30,11 @@ from .paper_reconciliation import (
     reconcile_open_orders,
     snapshot_has_reconciliation_quotes,
 )
+from .paper_exit import (
+    ATTEMPT_TABLE as PAPER_EXIT_ATTEMPT_TABLE,
+    OPEN_VIEW as PAPER_PROTECTION_OPEN_VIEW,
+    reconcile_active_protections,
+)
 
 
 class SupabaseStorageError(RuntimeError):
@@ -442,12 +447,42 @@ class SupabaseStorage:
                 f"HTTP {response.status_code}: {body}"
             )
 
+    def _commit_paper_exit_reconciliation(
+        self,
+        attempts: list[dict[str, Any]],
+        exit_fills: list[dict[str, Any]],
+        events: list[dict[str, Any]],
+    ) -> None:
+        """Commit one scan's protective-exit evidence atomically."""
+        if not attempts:
+            return
+        response = self.request_with_retry(
+            "post",
+            f"{self.settings.url}/rest/v1/rpc/alpha_hunter_commit_paper_exit_reconciliation_v04",
+            headers=self.headers,
+            data=json.dumps(
+                {
+                    "attempt_rows": attempts,
+                    "exit_fill_rows": exit_fills,
+                    "event_rows": events,
+                },
+                separators=(",", ":"),
+            ),
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201, 204}:
+            body = response.text[:500]
+            raise SupabaseStorageError(
+                "Supabase atomic paper exit reconciliation failed: "
+                f"HTTP {response.status_code}: {body}"
+            )
+
     def _capture_missing_reconciliation_quotes(
         self,
         snapshot: dict[str, Any],
-        open_orders: list[dict[str, Any]],
+        evidence_rows: list[dict[str, Any]],
     ) -> dict[str, dict[str, Any]]:
-        """Capture current public Bitget quotes for open orders absent from deep scan."""
+        """Capture current public Bitget quotes for tracked symbols absent from deep scan."""
         snapshot_quotes = {
             str(row.get("symbol") or "").upper()
             for row in snapshot.get("symbols", [])
@@ -458,9 +493,9 @@ class SupabaseStorage:
             and row.get("ask_price") is not None
         }
         missing = {
-            str(order.get("symbol") or "").upper()
-            for order in open_orders
-            if order.get("symbol")
+            str(row.get("symbol") or "").upper()
+            for row in evidence_rows
+            if row.get("symbol")
         } - snapshot_quotes
         if not missing:
             return {}
@@ -685,5 +720,38 @@ class SupabaseStorage:
                 fills,
                 events,
                 protections,
+            )
+
+            open_protections = self._select_json(
+                PAPER_PROTECTION_OPEN_VIEW,
+                {"select": "*", "limit": "1000"},
+            )
+            existing_exit_attempts = self._select_json(
+                PAPER_EXIT_ATTEMPT_TABLE,
+                {
+                    "select": "entry_order_id",
+                    "source_run_id": f"eq.{run_id}",
+                    "limit": "1000",
+                },
+            )
+            attempted_exit_order_ids = {
+                str(row["entry_order_id"])
+                for row in existing_exit_attempts
+                if row.get("entry_order_id")
+            }
+            exit_quote_overrides = self._capture_missing_reconciliation_quotes(
+                snapshot,
+                open_protections,
+            )
+            exit_attempts, exit_fills, exit_events = reconcile_active_protections(
+                snapshot,
+                open_protections,
+                attempted_entry_order_ids=attempted_exit_order_ids,
+                quote_overrides=exit_quote_overrides,
+            )
+            self._commit_paper_exit_reconciliation(
+                exit_attempts,
+                exit_fills,
+                exit_events,
             )
         return run_id
