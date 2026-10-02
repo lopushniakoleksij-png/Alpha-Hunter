@@ -416,7 +416,7 @@ returns jsonb
 language plpgsql
 security definer
 set search_path=''
-as $
+as $body$
 declare
   v_live_commit text;
   v_status text;
@@ -495,7 +495,7 @@ begin
     'order_path','NONE'
   );
 end;
-$;
+$body$;
 
 revoke all on function private.alpha_hunter_activate_paper_exit_v04(text)
   from public,anon,authenticated,service_role;
