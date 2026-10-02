@@ -1,0 +1,127 @@
+name: Render Web Deploy v0.1
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/render-web-deploy-v01.yml"
+      - ".github/workflows/production-phone-smoke-v01.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "app.py"
+      - "alpha_hunter/**"
+      - "run.py"
+      - "hourly.py"
+      - "hourly_production.py"
+      - "performance_job.py"
+      - "feature_job.py"
+      - "outcome_job.py"
+      - "config.json"
+      - "requirements.txt"
+      - ".python-version"
+      - ".github/workflows/render-web-deploy-v01.yml"
+      - ".github/workflows/production-phone-smoke-v01.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-web-deploy-v01
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deploy-hook safety contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=".github/workflows/render-web-deploy-v01.yml"
+          grep -q 'RENDER_DEPLOY_HOOK_URL' "$workflow"
+          grep -q 'TARGET_COMMIT: ${{ github.sha }}' "$workflow"
+          grep -q 'git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"' "$workflow"
+          if grep -Eq 'echo .*RENDER_DEPLOY_HOOK_URL|print\(.*RENDER_DEPLOY_HOOK_URL' "$workflow"; then
+            echo "Deploy hook secret must never be printed."
+            exit 1
+          fi
+          echo "PASS: Render deploy contract is current-commit bound and secret-safe."
+
+  deploy-and-verify:
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL: https://alpha-hunter-j5i3.onrender.com
+      TARGET_COMMIT: ${{ github.sha }}
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require protected Render deploy hook
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${RENDER_DEPLOY_HOOK_URL:-}" ]]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL is not configured in GitHub repository secrets."
+            echo "Configure the Render web-service deploy hook as the protected secret RENDER_DEPLOY_HOOK_URL."
+            exit 1
+          fi
+          echo "Render deploy hook: CONFIGURED"
+
+      - name: Trigger Render web deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(mktemp)"
+          code="$(curl --connect-timeout 15 --max-time 30 -sS -o "$response" -w '%{http_code}' "$RENDER_DEPLOY_HOOK_URL")"
+          if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
+            echo "::error::Render deploy hook returned HTTP $code"
+            exit 1
+          fi
+          echo "Render deploy hook accepted."
+
+      - name: Verify live web commit converges
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          LIVE_COMMIT=""
+          git cat-file -e "$TARGET_COMMIT^{commit}"
+
+          for attempt in $(seq 1 40); do
+            code="$(curl --connect-timeout 15 --max-time 30 -sS -o "$body" -w '%{http_code}' "$BASE_URL/api/build" || true)"
+            if [[ "$code" == "200" ]]; then
+              LIVE_COMMIT="$(python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); print(str(p.get("git_commit") or "").strip())' "$body")"
+              echo "Render verification $attempt/40: target=$TARGET_COMMIT live=$LIVE_COMMIT"
+              git fetch origin main --quiet || true
+              if [[ -n "$LIVE_COMMIT" ]] && git cat-file -e "$LIVE_COMMIT^{commit}" 2>/dev/null; then
+                if git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"; then
+                  echo "PASS: Render web service contains the triggering release."
+                  exit 0
+                fi
+              fi
+            else
+              echo "Render verification $attempt/40: /api/build HTTP $code"
+            fi
+            sleep 15
+          done
+
+          echo "::error::Render web deployment did not converge to the triggering release."
+          echo "Target commit: $TARGET_COMMIT"
+          echo "Last live commit: $LIVE_COMMIT"
+          exit 1
+
+      - name: Deployment safety summary
+        run: |
+          echo "PASS: explicit Render deploy hook accepted."
+          echo "PASS: /api/build contains the triggering main commit."
+          echo "No exchange order authority was used."
