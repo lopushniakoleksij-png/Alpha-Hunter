@@ -7,8 +7,10 @@ on:
     paths:
       - 'roundtrip_outcome_evidence_v01.sql'
       - 'ops/sql/profit_retention_lifecycle_v01.sql'
+      - 'ops/sql/profit_management_shadow_challenger_v01.sql'
       - 'tests/test_roundtrip_outcome_evidence_v01.py'
       - 'tests/test_profit_retention_lifecycle_v01.py'
+      - 'tests/test_profit_management_shadow_challenger_v01.py'
       - '.github/workflows/roundtrip-outcome-evidence-v01-ci.yml'
   push:
     branches:
@@ -37,6 +39,7 @@ jobs:
           python -m pytest -q
           tests/test_roundtrip_outcome_evidence_v01.py
           tests/test_profit_retention_lifecycle_v01.py
+          tests/test_profit_management_shadow_challenger_v01.py
           tests/test_canonical_readonly_fill_ledger_v01.py
           tests/test_fill_traceability_membership_v01.py
           tests/test_realized_fee_evidence_v01.py
