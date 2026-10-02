@@ -115,7 +115,9 @@ create table if not exists public.alpha_hunter_paper_exit_quarantine_v04 (
   symbol text not null,
   protection_created_at_utc timestamptz not null,
   quarantined_at_utc timestamptz not null default clock_timestamp(),
-  reason text not null check (reason='PRE_EXIT_RECONCILIATION_GAP'),
+  reason text not null check (
+    reason in ('PRE_EXIT_RECONCILIATION_GAP','INVALID_ENTRY_GEOMETRY_PRE_FIX')
+  ),
   evidence jsonb not null default '{}'::jsonb check (jsonb_typeof(evidence)='object'),
   paper_only boolean not null default true check (paper_only=true),
   exchange_authority boolean not null default false check (exchange_authority=false),
