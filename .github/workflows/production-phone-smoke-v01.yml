@@ -1,9 +1,35 @@
-name: Production Phone Workflow Smoke v0.1
+name: Production Deployment Truth Smoke v0.2
 
 on:
-  push:
+  pull_request:
     paths:
       - "app.py"
+      - "alpha_hunter/**"
+      - "run.py"
+      - "hourly.py"
+      - "hourly_production.py"
+      - "performance_job.py"
+      - "feature_job.py"
+      - "outcome_job.py"
+      - "config.json"
+      - "requirements.txt"
+      - ".python-version"
+      - ".github/workflows/production-phone-smoke-v01.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "app.py"
+      - "alpha_hunter/**"
+      - "run.py"
+      - "hourly.py"
+      - "hourly_production.py"
+      - "performance_job.py"
+      - "feature_job.py"
+      - "outcome_job.py"
+      - "config.json"
+      - "requirements.txt"
+      - ".python-version"
       - ".github/workflows/production-phone-smoke-v01.yml"
   workflow_dispatch:
 
@@ -11,44 +37,80 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-phone-smoke-v01
+  group: production-deployment-truth-smoke-v02
   cancel-in-progress: true
 
 jobs:
-  live-render-smoke:
+  truth-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce current-release deployment truth
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=".github/workflows/production-phone-smoke-v01.yml"
+          grep -q 'TARGET_COMMIT:' "$workflow"
+          grep -q 'github.sha' "$workflow"
+          grep -q 'git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"' "$workflow"
+          legacy_token="MIN_REQUIRED""_COMMIT"
+          if grep -q "$legacy_token" "$workflow"; then
+            echo "Legacy minimum-commit smoke can falsely pass a stale deployment."
+            exit 1
+          fi
+          echo "PASS: deployment smoke is bound to the current release commit."
+
+  live-render-smoke:
+    if: github.event_name != 'pull_request'
+    needs: truth-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       BASE_URL: https://alpha-hunter-j5i3.onrender.com
-      MIN_REQUIRED_COMMIT: 8408a35742851dbdf86bd653c4f5f8d05806e138
+      TARGET_COMMIT: ${{ github.sha }}
     steps:
       - name: Checkout repository history
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Verify live build contains phone freeze and bind
+      - name: Wait for Render to contain current release
         shell: bash
         run: |
           set -euo pipefail
           body="$(mktemp)"
-          code="$(curl --retry 4 --retry-all-errors --retry-delay 3 --connect-timeout 15 --max-time 60 -sS -o "$body" -w '%{http_code}' "$BASE_URL/api/build")"
-          if [[ "$code" != "200" ]]; then
-            echo "Expected /api/build HTTP 200, got $code"
-            cat "$body"
-            exit 1
-          fi
+          LIVE_COMMIT=""
 
-          python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); print("Live Render branch:", p.get("git_branch")); print("Live Render service:", p.get("render_service")); print("Live Render repo:", p.get("git_repo")); print("Live deployed-at source:", p.get("deployed_at_source"))' "$body"
-          LIVE_COMMIT="$(python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); v=str(p.get("git_commit") or "").strip(); print(v) if v and v != "unknown" else (_ for _ in ()).throw(SystemExit("Live /api/build did not expose a usable git_commit"))' "$body")"
-          echo "Live Render commit: $LIVE_COMMIT"
+          git cat-file -e "$TARGET_COMMIT^{commit}"
 
-          git cat-file -e "$MIN_REQUIRED_COMMIT^{commit}"
-          git cat-file -e "$LIVE_COMMIT^{commit}"
-          if ! git merge-base --is-ancestor "$MIN_REQUIRED_COMMIT" "$LIVE_COMMIT"; then
-            echo "Live Render commit does not contain required phone workflow commit $MIN_REQUIRED_COMMIT"
-            exit 1
-          fi
+          for attempt in $(seq 1 24); do
+            code="$(curl --connect-timeout 15 --max-time 30 -sS -o "$body" -w '%{http_code}' "$BASE_URL/api/build" || true)"
+            if [[ "$code" == "200" ]]; then
+              LIVE_COMMIT="$(python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); print(str(p.get("git_commit") or "").strip())' "$body")"
+              echo "Deployment check $attempt/24: target=$TARGET_COMMIT live=$LIVE_COMMIT"
+
+              git fetch origin main --quiet || true
+              if [[ -n "$LIVE_COMMIT" ]] && git cat-file -e "$LIVE_COMMIT^{commit}" 2>/dev/null; then
+                if git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"; then
+                  python -c 'import json,sys; p=json.load(open(sys.argv[1], encoding="utf-8")); print("Live Render branch:", p.get("git_branch")); print("Live Render service:", p.get("render_service")); print("Live Render repo:", p.get("git_repo")); print("Live deployed-at source:", p.get("deployed_at_source"))' "$body"
+                  echo "PASS: live Render contains current release target."
+                  break
+                fi
+              fi
+            else
+              echo "Deployment check $attempt/24: /api/build HTTP $code"
+            fi
+
+            if [[ "$attempt" == "24" ]]; then
+              echo "FAIL: Render did not deploy the current release within the verification window."
+              echo "Target commit: $TARGET_COMMIT"
+              echo "Last live commit: $LIVE_COMMIT"
+              cat "$body" || true
+              exit 1
+            fi
+            sleep 15
+          done
 
       - name: Verify freeze page is operator-protected
         shell: bash
@@ -94,6 +156,6 @@ jobs:
 
       - name: Safety summary
         run: |
-          echo "PASS: live Render contains phone freeze/bind workflow."
+          echo "PASS: live Render contains the current release target."
           echo "PASS: unauthenticated freeze/bind endpoints expose no candidate/fill evidence."
           echo "Safety remains trade_permission=false and order_path=NONE."
