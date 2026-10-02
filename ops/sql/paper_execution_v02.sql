@@ -60,7 +60,12 @@ create table if not exists public.alpha_hunter_paper_fills_v02 (
   projected_next_funding_usdt numeric,
   accrued_funding_usdt numeric not null default 0 check (accrued_funding_usdt=0),
   funding_status text not null check (funding_status='NOT_ACCRUED'),
-  liquidity_source text not null check (liquidity_source='BITGET_TOP_OF_BOOK_SNAPSHOT'),
+  liquidity_source text not null check (
+    liquidity_source in (
+      'BITGET_TOP_OF_BOOK_SNAPSHOT',
+      'BITGET_PUBLIC_ALL_TICKERS_RECONCILIATION_CAPTURE'
+    )
+  ),
   model_quality text not null check (
     model_quality='DETERMINISTIC_PAPER_MODEL_NOT_EXCHANGE_EXECUTION'
   ),
