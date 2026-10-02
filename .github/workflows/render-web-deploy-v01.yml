@@ -46,8 +46,8 @@ jobs:
           grep -q 'TARGET_COMMIT:' "$workflow"
           grep -q 'github.sha' "$workflow"
           grep -q 'git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"' "$workflow"
-          if grep -Fq 'echo "$RENDER_DEPLOY_HOOK_URL"' "$workflow"; then
-            echo "Deploy hook secret value must never be printed."
+          if grep -q 'set -x' "$workflow"; then
+            echo "Shell tracing is forbidden in the deploy workflow."
             exit 1
           fi
           echo "PASS: Render deploy contract is current-commit bound and secret-safe."
