@@ -21,6 +21,10 @@ def _optional_float(value: Any) -> float | None:
         return None
 
 
+def _present_for_evidence(value: Any) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
 def _account_snapshot_id(run_id: str) -> str:
     raw = f"{MODEL_VERSION}|{run_id}".encode("utf-8")
     return hashlib.sha256(raw).hexdigest()[:32]
@@ -120,6 +124,23 @@ def _normalize_positions(
                     "break_even_price": raw.get("break_even_price"),
                     "exchange_take_profit_observed": raw.get("take_profit"),
                     "exchange_stop_loss_observed": raw.get("stop_loss"),
+                    "exchange_take_profit_source": raw.get("take_profit_source"),
+                    "exchange_stop_loss_source": raw.get("stop_loss_source"),
+                    "exchange_protection_observation_status": raw.get(
+                        "protection_observation_status"
+                    ),
+                    "exchange_protection_observation_error": raw.get(
+                        "protection_observation_error"
+                    ),
+                    "exchange_protection_orders_observed": raw.get("protection_orders")
+                    if isinstance(raw.get("protection_orders"), list)
+                    else [],
+                    "exchange_protection_absence_confirmed": (
+                        raw.get("protection_observation_status") == "CONNECTED"
+                        and not _present_for_evidence(raw.get("take_profit"))
+                        and not _present_for_evidence(raw.get("stop_loss"))
+                        and not (raw.get("protection_orders") or [])
+                    ),
                     "structural_stop_inferred_from_exchange_stop": False,
                     "planned_risk_invented": False,
                     "notional_invented": False,
@@ -231,6 +252,18 @@ def build_account_ledger_rows(
             "locked_observed": usdt_account.get("locked") if usdt_account else None,
             "margin_used_inferred_from_locked": False,
             "daily_realized_pnl_invented": False,
+            "protection_observation_status": private_account.get(
+                "protection_observation_status"
+            ),
+            "protection_observation_error": private_account.get(
+                "protection_observation_error"
+            ),
+            "protection_observation_source": private_account.get(
+                "protection_observation_source"
+            ),
+            "pending_tpsl_order_count": private_account.get(
+                "pending_tpsl_order_count"
+            ),
             "schema_errors": errors,
             "no_extra_bitget_request": True,
             "cached_payload_only": True,
