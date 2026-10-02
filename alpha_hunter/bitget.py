@@ -638,3 +638,47 @@ class BitgetClient:
             },
             private=True,
         ) or []
+
+
+    def pending_tpsl_orders(
+        self,
+        product_type: str,
+        *,
+        symbol: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read current futures TP/SL plan orders without order authority.
+
+        Bitget's open-position payload may leave takeProfit/stopLoss empty even
+        while active TP/SL plan orders exist. The canonical protection observer
+        therefore reads the documented pending-plan endpoint with
+        planType=profit_loss and treats the result as read-only risk evidence.
+        """
+        params: dict[str, Any] = {
+            "planType": "profit_loss",
+            "productType": product_type,
+        }
+        if symbol:
+            params["symbol"] = symbol
+
+        data = self._get(
+            "/api/v2/mix/order/orders-plan-pending",
+            params,
+            private=True,
+            retry_deterministic_4xx=False,
+        )
+        if not isinstance(data, dict):
+            raise BitgetAPIError(
+                "Bitget pending TP/SL orders returned invalid schema"
+            )
+
+        orders = data.get("entrustedList")
+        if not isinstance(orders, list):
+            raise BitgetAPIError(
+                "Bitget pending TP/SL orders missing entrustedList"
+            )
+
+        return [
+            row
+            for row in orders
+            if isinstance(row, dict)
+        ]
