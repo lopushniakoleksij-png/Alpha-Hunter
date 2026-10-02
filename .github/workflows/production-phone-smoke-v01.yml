@@ -15,6 +15,7 @@ on:
       - "requirements.txt"
       - ".python-version"
       - ".github/workflows/production-phone-smoke-v01.yml"
+      - ".github/workflows/render-web-deploy-v01.yml"
   push:
     branches:
       - main
