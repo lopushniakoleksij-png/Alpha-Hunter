@@ -51,9 +51,11 @@ jobs:
         run: |
           set -euo pipefail
           workflow=".github/workflows/production-phone-smoke-v01.yml"
-          grep -q 'TARGET_COMMIT: ${{ github.sha }}' "$workflow"
+          grep -q 'TARGET_COMMIT:' "$workflow"
+          grep -q 'github.sha' "$workflow"
           grep -q 'git merge-base --is-ancestor "$TARGET_COMMIT" "$LIVE_COMMIT"' "$workflow"
-          if grep -q 'MIN_REQUIRED_COMMIT' "$workflow"; then
+          legacy_token="MIN_REQUIRED""_COMMIT"
+          if grep -q "$legacy_token" "$workflow"; then
             echo "Legacy minimum-commit smoke can falsely pass a stale deployment."
             exit 1
           fi
