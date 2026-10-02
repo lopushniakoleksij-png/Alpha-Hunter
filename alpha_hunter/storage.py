@@ -527,6 +527,106 @@ class SupabaseStorage:
             }
         return quotes
 
+    def _reconcile_paper_stages(
+        self,
+        snapshot: dict[str, Any],
+        run_id: str,
+    ) -> None:
+        """Run entry and exit paper reconciliation as independent evidence stages.
+
+        A failure in entry-order reconciliation must not prevent already-protected
+        paper positions from being checked for SL/TP on the same canonical scan.
+        Both stages remain fail-visible: after attempting each stage, any failures
+        are raised together so production health cannot silently turn green.
+        """
+        if not snapshot_has_reconciliation_quotes(snapshot):
+            return
+
+        failures: list[tuple[str, Exception]] = []
+
+        try:
+            open_orders = self._select_json(
+                PAPER_RECONCILIATION_OPEN_VIEW,
+                {"select": "*", "limit": "1000"},
+            )
+            existing_attempts = self._select_json(
+                PAPER_RECONCILIATION_ATTEMPT_TABLE,
+                {
+                    "select": "order_id",
+                    "source_run_id": f"eq.{run_id}",
+                    "limit": "1000",
+                },
+            )
+            attempted_order_ids = {
+                str(row["order_id"])
+                for row in existing_attempts
+                if row.get("order_id")
+            }
+            quote_overrides = self._capture_missing_reconciliation_quotes(
+                snapshot,
+                open_orders,
+            )
+            attempts, fills, events, protections = reconcile_open_orders(
+                snapshot,
+                open_orders,
+                attempted_order_ids=attempted_order_ids,
+                quote_overrides=quote_overrides,
+            )
+            self._commit_paper_reconciliation(
+                attempts,
+                fills,
+                events,
+                protections,
+            )
+        except Exception as exc:
+            failures.append(("ENTRY_RECONCILIATION", exc))
+
+        try:
+            open_protections = self._select_json(
+                PAPER_PROTECTION_OPEN_VIEW,
+                {"select": "*", "limit": "1000"},
+            )
+            existing_exit_attempts = self._select_json(
+                PAPER_EXIT_ATTEMPT_TABLE,
+                {
+                    "select": "entry_order_id",
+                    "source_run_id": f"eq.{run_id}",
+                    "limit": "1000",
+                },
+            )
+            attempted_exit_order_ids = {
+                str(row["entry_order_id"])
+                for row in existing_exit_attempts
+                if row.get("entry_order_id")
+            }
+            exit_quote_overrides = self._capture_missing_reconciliation_quotes(
+                snapshot,
+                open_protections,
+            )
+            exit_attempts, exit_fills, exit_events = reconcile_active_protections(
+                snapshot,
+                open_protections,
+                attempted_entry_order_ids=attempted_exit_order_ids,
+                quote_overrides=exit_quote_overrides,
+            )
+            self._commit_paper_exit_reconciliation(
+                exit_attempts,
+                exit_fills,
+                exit_events,
+            )
+        except Exception as exc:
+            failures.append(("EXIT_RECONCILIATION", exc))
+
+        if failures:
+            summary = "; ".join(
+                f"{stage}: {error}"
+                for stage, error in failures
+            )
+            raise SupabaseStorageError(
+                "Paper lifecycle reconciliation failed after independent "
+                f"stage attempts: {summary}"
+            )
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
@@ -687,71 +787,5 @@ class SupabaseStorage:
             [*paper_events, *execution_events],
             "event_id",
         )
-        if snapshot_has_reconciliation_quotes(snapshot):
-            open_orders = self._select_json(
-                PAPER_RECONCILIATION_OPEN_VIEW,
-                {"select": "*", "limit": "1000"},
-            )
-            existing_attempts = self._select_json(
-                PAPER_RECONCILIATION_ATTEMPT_TABLE,
-                {
-                    "select": "order_id",
-                    "source_run_id": f"eq.{run_id}",
-                    "limit": "1000",
-                },
-            )
-            attempted_order_ids = {
-                str(row["order_id"])
-                for row in existing_attempts
-                if row.get("order_id")
-            }
-            quote_overrides = self._capture_missing_reconciliation_quotes(
-                snapshot,
-                open_orders,
-            )
-            attempts, fills, events, protections = reconcile_open_orders(
-                snapshot,
-                open_orders,
-                attempted_order_ids=attempted_order_ids,
-                quote_overrides=quote_overrides,
-            )
-            self._commit_paper_reconciliation(
-                attempts,
-                fills,
-                events,
-                protections,
-            )
-
-            open_protections = self._select_json(
-                PAPER_PROTECTION_OPEN_VIEW,
-                {"select": "*", "limit": "1000"},
-            )
-            existing_exit_attempts = self._select_json(
-                PAPER_EXIT_ATTEMPT_TABLE,
-                {
-                    "select": "entry_order_id",
-                    "source_run_id": f"eq.{run_id}",
-                    "limit": "1000",
-                },
-            )
-            attempted_exit_order_ids = {
-                str(row["entry_order_id"])
-                for row in existing_exit_attempts
-                if row.get("entry_order_id")
-            }
-            exit_quote_overrides = self._capture_missing_reconciliation_quotes(
-                snapshot,
-                open_protections,
-            )
-            exit_attempts, exit_fills, exit_events = reconcile_active_protections(
-                snapshot,
-                open_protections,
-                attempted_entry_order_ids=attempted_exit_order_ids,
-                quote_overrides=exit_quote_overrides,
-            )
-            self._commit_paper_exit_reconciliation(
-                exit_attempts,
-                exit_fills,
-                exit_events,
-            )
+        self._reconcile_paper_stages(snapshot, run_id)
         return run_id
