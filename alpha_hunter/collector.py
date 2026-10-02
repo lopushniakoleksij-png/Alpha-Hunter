@@ -1849,6 +1849,66 @@ def select_market_universe(
     )
 
 
+def pin_open_position_symbols(
+    selected_symbols: list[str],
+    universe: dict[str, Any],
+    private_account: dict[str, Any],
+    available_symbols: set[str],
+) -> tuple[list[str], dict[str, Any]]:
+    """Pin verified open-position symbols into every canonical deep scan.
+
+    Discovery limits are not allowed to evict a symbol that currently carries
+    account risk. Open-position monitoring may therefore extend the scan set
+    beyond the configured discovery deep-scan limit.
+    """
+    selected = list(selected_symbols)
+    updated = dict(universe)
+    scanner_status = str(private_account.get("status") or "MISSING").upper()
+    raw_positions = private_account.get("open_positions")
+    if not isinstance(raw_positions, list):
+        raw_positions = []
+
+    monitored: list[str] = []
+    missing_contracts: list[str] = []
+
+    if scanner_status == "CONNECTED":
+        for position in raw_positions:
+            if not isinstance(position, dict):
+                continue
+            symbol = str(position.get("symbol") or "").strip().upper()
+            if not symbol or symbol in monitored:
+                continue
+            monitored.append(symbol)
+            if symbol not in available_symbols:
+                missing_contracts.append(symbol)
+                continue
+            if symbol not in selected:
+                selected.append(symbol)
+
+    if scanner_status != "CONNECTED":
+        monitoring_status = "ACCOUNT_NOT_CONNECTED"
+    elif not monitored:
+        monitoring_status = "NO_OPEN_POSITIONS"
+    elif missing_contracts:
+        monitoring_status = "INCOMPLETE"
+    else:
+        monitoring_status = "COMPLETE"
+
+    updated.update(
+        {
+            "discovery_selected_count_before_position_pin": len(selected_symbols),
+            "selected_count": len(selected),
+            "selected_symbols": selected,
+            "monitored_open_position_count": len(monitored),
+            "monitored_open_position_symbols": monitored,
+            "monitored_open_position_missing_contracts": missing_contracts,
+            "open_position_monitoring_status": monitoring_status,
+            "open_position_pin_version": "0.1",
+        }
+    )
+    return selected, updated
+
+
 # =========================================================
 # SNAPSHOT COMPARISON
 # =========================================================
@@ -3691,6 +3751,19 @@ def main() -> int:
         * 100
     )
 
+    private_account = (
+        collect_private_account_snapshot(
+            client,
+            config[
+                "product_type"
+            ],
+            config.get(
+                "margin_coin",
+                "USDT",
+            ),
+        )
+    )
+
     (
         selected_symbols,
         universe,
@@ -3714,6 +3787,13 @@ def main() -> int:
             "symbol"
         )
     }
+
+    selected_symbols, universe = pin_open_position_symbols(
+        selected_symbols,
+        universe,
+        private_account,
+        set(available),
+    )
 
     previous_by_symbol: dict[
         str,
@@ -3779,6 +3859,19 @@ def main() -> int:
                 "error":
                     str(exc),
             })
+
+    monitored_open_symbols = set(
+        universe.get(
+            "monitored_open_position_symbols",
+            [],
+        )
+    )
+    for item in results:
+        item["monitoring_role"] = (
+            "MONITORED_EXISTING"
+            if str(item.get("symbol") or "").upper() in monitored_open_symbols
+            else "NEW_DISCOVERY"
+        )
 
     apply_snapshot_comparisons(
         results,
@@ -3853,19 +3946,6 @@ def main() -> int:
                 ),
             ),
         reverse=True,
-    )
-
-    private_account = (
-        collect_private_account_snapshot(
-            client,
-            config[
-                "product_type"
-            ],
-            config.get(
-                "margin_coin",
-                "USDT",
-            ),
-        )
     )
 
     discovery_candidates = [
