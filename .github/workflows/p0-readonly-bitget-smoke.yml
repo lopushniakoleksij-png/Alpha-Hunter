@@ -12,6 +12,7 @@ on:
       - "tests/test_fill_client.py"
       - "tests/test_bitget_account_identity_guard_v01.py"
       - "tests/test_private_account_mode_probe_v01.py"
+      - "tests/test_bitget_protection_sync_v01.py"
   workflow_dispatch:
 
 permissions:
@@ -45,6 +46,7 @@ jobs:
           python -m pytest -q
           tests/test_fill_client.py
           tests/test_private_account_mode_probe_v01.py
+          tests/test_bitget_protection_sync_v01.py
           tests/test_bitget_account_identity_guard_v01.py
       - name: Reject order and transfer methods in credentialed probe
         shell: bash

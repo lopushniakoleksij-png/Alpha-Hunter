@@ -202,6 +202,10 @@ begin
       'locked_observed',case when v_usdt_account is null then null else v_locked end,
       'margin_used_inferred_from_locked',false,
       'daily_realized_pnl_invented',false,
+      'protection_observation_status',v_private->>'protection_observation_status',
+      'protection_observation_error',v_private->>'protection_observation_error',
+      'protection_observation_source',v_private->>'protection_observation_source',
+      'pending_tpsl_order_count',v_private->'pending_tpsl_order_count',
       'schema_errors',v_schema_errors,
       'no_extra_bitget_request',true,
       'cached_payload_only',true,
@@ -255,6 +259,27 @@ begin
         'break_even_price',p.value->>'break_even_price',
         'exchange_take_profit_observed',p.value->>'take_profit',
         'exchange_stop_loss_observed',p.value->>'stop_loss',
+        'exchange_take_profit_source',p.value->>'take_profit_source',
+        'exchange_stop_loss_source',p.value->>'stop_loss_source',
+        'exchange_protection_observation_status',p.value->>'protection_observation_status',
+        'exchange_protection_observation_error',p.value->>'protection_observation_error',
+        'exchange_protection_orders_observed',
+          case
+            when jsonb_typeof(p.value->'protection_orders')='array'
+              then p.value->'protection_orders'
+            else '[]'::jsonb
+          end,
+        'exchange_protection_absence_confirmed',
+          (
+            p.value->>'protection_observation_status'='CONNECTED'
+            and nullif(btrim(coalesce(p.value->>'take_profit','')),'') is null
+            and nullif(btrim(coalesce(p.value->>'stop_loss','')),'') is null
+            and case
+                  when jsonb_typeof(p.value->'protection_orders')='array'
+                    then jsonb_array_length(p.value->'protection_orders')=0
+                  else true
+                end
+          ),
         'structural_stop_inferred_from_exchange_stop',false,
         'planned_risk_invented',false,
         'notional_invented',false,
@@ -295,6 +320,8 @@ begin
       'position_count',case when v_complete then v_position_count else 0 end,
       'api_permission_probe_status',v_private->>'api_permission_probe_status',
       'api_permission_type',v_private->>'api_permission_type',
+      'protection_observation_status',v_private->>'protection_observation_status',
+      'pending_tpsl_order_count',v_private->'pending_tpsl_order_count',
       'permission_metadata_is_trade_authority',false,
       'snapshot_persistence_preserved',true,
       'no_exchange_call',true
