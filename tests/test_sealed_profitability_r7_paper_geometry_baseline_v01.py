@@ -58,6 +58,6 @@ def test_r7_has_no_live_trade_authority():
     assert "cancel_order(" not in lower
     assert "modify_order(" not in lower
     assert "set_leverage(" not in lower
-    assert "trade_permission,
-  production_promotion_permitted,
-  order_path" in lower
+    assert "trade_permission" in lower
+    assert "production_promotion_permitted" in lower
+    assert "order_path" in lower
