@@ -324,27 +324,29 @@ def execution_binding_by_event(
 def compatible_execution_fills(
     frozen: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    direction = str(frozen.get("direction") or "").upper()
-    expected_side = "BUY" if direction == "LONG" else "SELL" if direction == "SHORT" else ""
-    symbol = str(frozen.get("symbol") or "")
-    frozen_at = str(frozen.get("frozen_at_utc") or "")
-    if not expected_side or not symbol or not frozen_at:
+    """Return only DB-verified current confirmation candidates for one freeze."""
+    execution_event_id = str(frozen.get("execution_event_id") or "").strip()
+    if not execution_event_id:
         return []
 
     rows = supabase_get_rows(
-        "alpha_hunter_fill_evidence",
+        "alpha_hunter_execution_fill_confirmation_candidates_v01",
         {
             "select": (
-                "fill_evidence_id,traceability_run_id,fill_time_utc,trade_id,"
-                "order_id,symbol,side,trade_side,trade_scope,price,base_volume,"
-                "quote_volume,fee_amount,fee_coin,cost_fields_complete"
+                "execution_event_id,fill_evidence_id,traceability_run_id,"
+                "fill_time_utc,trade_id,order_id,symbol,side,trade_side,"
+                "trade_scope,price,base_volume,quote_volume,fee_amount,fee_coin,"
+                "cost_fields_complete,order_evidence_id,order_identity_sha256,"
+                "order_type,order_state,order_created_at_utc,origin_consistent,"
+                "freeze_to_order_seconds,order_to_fill_seconds,"
+                "candidate_adverse_arrival_to_fill_bps,realized_fee_bps,"
+                "fill_candidate_count,event_candidate_count,"
+                "candidate_status,explicit_user_confirmation_required,"
+                "automatic_binding_permitted"
             ),
-            "symbol": f"eq.{symbol}",
-            "side": f"eq.{expected_side}",
-            "trade_side": "eq.OPEN",
-            "fill_time_utc": f"gte.{frozen_at}",
-            "order": "fill_time_utc.asc",
-            "limit": "20",
+            "execution_event_id": f"eq.{execution_event_id}",
+            "order": "freeze_to_order_seconds.asc,fill_time_utc.asc",
+            "limit": "50",
         },
     )
 
@@ -352,60 +354,59 @@ def compatible_execution_fills(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        fill_id = str(row.get("fill_evidence_id") or "")
-        if not fill_id:
-            continue
-
-        already = supabase_get_rows(
-            "alpha_hunter_execution_fill_bindings_v01",
-            {
-                "select": "binding_id,execution_event_id,fill_evidence_id",
-                "fill_evidence_id": f"eq.{fill_id}",
-                "limit": "1",
-            },
-        )
-        if already:
-            continue
-
-        trace = supabase_get_rows(
-            "alpha_hunter_fill_traceability_runs",
-            {
-                "select": "traceability_run_id,complete,schema_validated",
-                "traceability_run_id": f"eq.{row.get('traceability_run_id')}",
-                "limit": "1",
-            },
-        )
-        order = supabase_get_rows(
-            "alpha_hunter_execution_order_evidence_v01",
-            {
-                "select": (
-                    "order_evidence_id,order_identity_sha256,order_type,"
-                    "order_state,order_created_at_utc,origin_consistent"
-                ),
-                "fill_evidence_id": f"eq.{fill_id}",
-                "order": "observed_at_utc.desc",
-                "limit": "1",
-            },
-        )
-
         item = dict(row)
-        trace_row = trace[0] if trace and isinstance(trace[0], dict) else {}
-        order_row = order[0] if order and isinstance(order[0], dict) else {}
-        item["_trace_complete"] = (
-            trace_row.get("complete") is True
-            and trace_row.get("schema_validated") is True
-        )
-        item["_order"] = order_row
+        item["_trace_complete"] = True
         item["_binding_ready"] = (
-            item["_trace_complete"]
-            and bool(order_row.get("order_evidence_id"))
-            and bool(order_row.get("order_identity_sha256"))
-            and bool(order_row.get("order_created_at_utc"))
-            and order_row.get("origin_consistent") is True
+            item.get("explicit_user_confirmation_required") is True
+            and item.get("automatic_binding_permitted") is False
+            and bool(item.get("order_evidence_id"))
+            and bool(item.get("order_identity_sha256"))
+            and item.get("origin_consistent") is True
         )
+        item["_order"] = {
+            "order_evidence_id": item.get("order_evidence_id"),
+            "order_identity_sha256": item.get("order_identity_sha256"),
+            "order_type": item.get("order_type"),
+            "order_state": item.get("order_state"),
+            "order_created_at_utc": item.get("order_created_at_utc"),
+            "origin_consistent": item.get("origin_consistent"),
+        }
         result.append(item)
 
     return result
+
+
+def pending_execution_fill_confirmations() -> list[dict[str, Any]]:
+    """Read-only queue. Never binds or resolves an ambiguous pair."""
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_fill_confirmation_candidates_v01",
+        {
+            "select": (
+                "execution_event_id,spec_id,symbol,strategy_id,direction,action,"
+                "frozen_at_utc,planned_entry_price,reward_risk,best_bid,best_ask,"
+                "entry_cross_price,fill_evidence_id,fill_time_utc,trade_id,order_id,"
+                "side,price,base_volume,quote_volume,fee_amount,fee_coin,"
+                "order_type,order_created_at_utc,freeze_to_order_seconds,"
+                "order_to_fill_seconds,candidate_adverse_arrival_to_fill_bps,"
+                "realized_fee_bps,fill_candidate_count,event_candidate_count,"
+                "candidate_status,explicit_user_confirmation_required,"
+                "automatic_binding_permitted,attribution_claim_permitted"
+            ),
+            "order": "fill_time_utc.desc,freeze_to_order_seconds.asc",
+            "limit": "100",
+        },
+    )
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def execution_fill_confirmation_status() -> dict[str, Any]:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_fill_confirmation_status_v01",
+        {"select": "*", "limit": "1"},
+    )
+    if rows and isinstance(rows[0], dict):
+        return rows[0]
+    return {}
 
 
 def existing_execution_binding(
@@ -1695,6 +1696,7 @@ EXECUTION_FREEZE_PAGE = """
   {% endif %}
 
   <div class="small">
+    <a class="link" href="/execution-confirmations">Pending exact fill confirmations</a><br>
     Safety: shadow_only=true · trade_permission=false ·
     production_promotion_permitted=false · order_path=NONE
   </div>
@@ -1738,6 +1740,91 @@ async function freezeDecision(id,symbol){
   }
 }
 </script>
+</body>
+</html>
+"""
+
+
+EXECUTION_CONFIRMATION_QUEUE_PAGE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="12">
+  <title>Alpha Hunter — Exact Fill Confirmation Queue</title>
+  <style>
+    :root{--bg:#071018;--panel:#0d1822;--line:#1d2e3a;--text:#e8f0f6;--muted:#91a3b1;--ok:#2bd39a;--warn:#ffbf47;--bad:#ff6474;--blue:#4db6ff}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
+    .wrap{max-width:820px;margin:auto;padding:14px}.panel{background:rgba(13,24,34,.97);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:12px}
+    h1{font-size:25px;margin:0 0 5px}.small{font-size:12px;color:var(--muted);line-height:1.5}.link{color:var(--blue);text-decoration:none}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.metric{background:#09131c;border:1px solid #162734;border-radius:10px;padding:9px}
+    .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}.value{font-weight:800;margin-top:3px;overflow-wrap:anywhere}
+    .ok{color:var(--ok)}.warn{color:var(--warn)}.unique{border-color:#21634e}.ambiguous{border-color:#6f5b2a}
+    .button{display:block;text-align:center;text-decoration:none;width:100%;border-radius:12px;padding:14px;font-size:15px;font-weight:900;background:#24d18f;color:#03120d;margin-top:12px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Exact Fill Confirmation Queue</h1>
+  <div class="small" style="margin-bottom:12px">
+    Evidence-complete candidate pairs only. A candidate is not attribution.
+    Nothing is bound until you compare the exact Bitget trade/order identity and confirm it.
+  </div>
+
+  <div class="panel">
+    <div class="grid">
+      <div class="metric"><div class="label">Candidate pairs</div><div class="value">{{ status.candidate_pair_count or 0 }}</div></div>
+      <div class="metric"><div class="label">Unique pairs</div><div class="value">{{ status.unique_candidate_pairs or 0 }}</div></div>
+      <div class="metric"><div class="label">Ambiguous pairs</div><div class="value">{{ status.ambiguous_candidate_pairs or 0 }}</div></div>
+      <div class="metric"><div class="label">Verified executions</div><div class="value">{{ status.verified_alpha_hunter_executions or 0 }}</div></div>
+    </div>
+  </div>
+
+  {% if candidates %}
+    {% for c in candidates %}
+    <div class="panel {{ 'unique' if c.candidate_status=='UNIQUE_EVIDENCE_COMPLETE_MATCH' else 'ambiguous' }}">
+      <div class="value">{{ c.symbol|symbol_label }} · {{ c.direction }} · {{ c.action }} · {{ c.strategy_id }}</div>
+      <div class="{{ 'ok' if c.candidate_status=='UNIQUE_EVIDENCE_COMPLETE_MATCH' else 'warn' }}" style="margin-top:5px">
+        {{ c.candidate_status }}
+      </div>
+      <div class="grid">
+        <div class="metric"><div class="label">Frozen UTC</div><div class="value">{{ c.frozen_at_utc }}</div></div>
+        <div class="metric"><div class="label">Order UTC</div><div class="value">{{ c.order_created_at_utc }}</div></div>
+        <div class="metric"><div class="label">Fill UTC</div><div class="value">{{ c.fill_time_utc }}</div></div>
+        <div class="metric"><div class="label">Freeze → order</div><div class="value">{{ '%.1f'|format(c.freeze_to_order_seconds or 0) }}s</div></div>
+        <div class="metric"><div class="label">Trade ID</div><div class="value">{{ c.trade_id }}</div></div>
+        <div class="metric"><div class="label">Order ID</div><div class="value">{{ c.order_id }}</div></div>
+        <div class="metric"><div class="label">Decision cross</div><div class="value">{{ c.entry_cross_price }}</div></div>
+        <div class="metric"><div class="label">Fill price</div><div class="value">{{ c.price }}</div></div>
+        <div class="metric"><div class="label">Candidate slippage</div><div class="value">{{ '%.3f'|format(c.candidate_adverse_arrival_to_fill_bps or 0) }} bps</div></div>
+        <div class="metric"><div class="label">Realized fee</div><div class="value">{{ '%.3f'|format(c.realized_fee_bps or 0) }} bps</div></div>
+      </div>
+      {% if (c.fill_candidate_count or 0)>1 or (c.event_candidate_count or 0)>1 %}
+      <div class="small warn" style="margin-top:8px">
+        Ambiguity: fill matches {{ c.fill_candidate_count }} frozen decisions; event has {{ c.event_candidate_count }} candidate fills.
+        Exact operator review is mandatory.
+      </div>
+      {% endif %}
+      <a class="button" href="/execution-bind/{{ c.execution_event_id }}">REVIEW EXACT FILL</a>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="panel">
+      <b>No evidence-complete real fill is waiting for confirmation.</b>
+      <div class="small" style="margin-top:7px">
+        This is expected until a real Bitget OPEN order is created inside a fresh frozen Alpha Hunter decision window.
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="small">
+    automatic_binding_permitted=false · attribution_claim_permitted=false ·
+    trade_permission=false · order_path=NONE.
+    <br><a class="link" href="/execution-freeze">Freeze Decision</a> ·
+    <a class="link" href="/">Money Action</a>
+  </div>
+</div>
 </body>
 </html>
 """
@@ -1828,7 +1915,8 @@ EXECUTION_BIND_PAGE = """
   <div class="small">
     Compatibility filtering is not attribution. Binding occurs only after your exact
     confirmation and a second database validation. trade_permission=false · order_path=NONE.
-    <br><a class="link" href="/execution-freeze">Back to Freeze Decision</a>
+    <br><a class="link" href="/execution-confirmations">Confirmation Queue</a> ·
+    <a class="link" href="/execution-freeze">Back to Freeze Decision</a>
   </div>
 </div>
 <script>
@@ -2137,6 +2225,27 @@ def api_execution_freeze(decision_observation_id: str):
             "trade_permission": False,
             "order_path": "NONE",
         }), 503
+
+
+@app.get("/execution-confirmations")
+def execution_confirmation_queue_page():
+    auth_failure = None if operator_authorized() else operator_auth_response()
+    if auth_failure is not None:
+        return auth_failure
+
+    try:
+        response = app.make_response(
+            render_template_string(
+                EXECUTION_CONFIRMATION_QUEUE_PAGE,
+                candidates=pending_execution_fill_confirmations(),
+                status=execution_fill_confirmation_status(),
+            )
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception:
+        app.logger.exception("Execution confirmation queue failed")
+        return jsonify({"error": "execution_confirmation_queue_unavailable"}), 503
 
 
 @app.get("/execution-bind/<execution_event_id>")
