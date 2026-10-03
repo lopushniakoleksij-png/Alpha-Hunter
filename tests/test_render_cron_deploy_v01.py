@@ -11,7 +11,7 @@ def test_cron_deploy_uses_render_autodeploy_truth_not_redundant_hooks():
     assert "RENDER_CRON_DEPLOY_HOOK_URL" not in WORKFLOW
     assert "secrets.RENDER_DEPLOY_HOOK_URL" not in WORKFLOW
     assert "workflow_dispatch:" in WORKFLOW
-    assert "Render auto-deployed the exact target commit" in WORKFLOW
+    assert "Render auto-deployed a release containing the target" in WORKFLOW
 
 
 def test_cron_deploy_verifies_actual_canonical_cron_scan():
@@ -25,16 +25,17 @@ def test_cron_deploy_verifies_actual_canonical_cron_scan():
         "collected >= not_before",
         'source == "RENDER_CRON"',
         'role == "RENDER_CRON"',
-        "commit == target_commit",
+        "target_is_ancestor_of_live(commit)",
         "fingerprint == target",
+        '"merge-base", "--is-ancestor"',
     ]
     for marker in required:
         assert marker in WORKFLOW
 
 
 def test_autodeploy_verification_fails_closed_on_missing_runtime_evidence():
-    assert "canonical cron did not converge to target science and commit" in WORKFLOW
-    assert "commit == target_commit" in WORKFLOW
+    assert "canonical cron did not converge to target science and target ancestry" in WORKFLOW
+    assert "target_is_ancestor_of_live(commit)" in WORKFLOW
     assert 'source == "RENDER_CRON"' in WORKFLOW
     assert 'role == "RENDER_CRON"' in WORKFLOW
     assert "fingerprint == target" in WORKFLOW
@@ -70,3 +71,9 @@ def test_cron_verification_waits_long_enough_for_hourly_schedule():
     assert "timeout-minutes: 75" in WORKFLOW
     assert "range(1, 211)" in WORKFLOW
     assert "time.sleep(20)" in WORKFLOW
+
+
+def test_descendant_ops_only_release_is_allowed_only_with_exact_science():
+    assert '["git", "merge-base", "--is-ancestor", target_commit, live_commit]' in WORKFLOW
+    assert "fingerprint == target" in WORKFLOW
+    assert "fetch-depth: 0" in WORKFLOW
