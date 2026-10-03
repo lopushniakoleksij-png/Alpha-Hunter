@@ -1,3 +1,15 @@
+begin;
+
+-- Alpha Hunter sealed profitability activation fingerprint precedence v0.3.
+--
+-- Fingerprint-enabled specs use their frozen scientific fingerprint as the
+-- authoritative build identity. Ops-only descendant Git commits are allowed
+-- when the scientific fingerprint is unchanged. Legacy specs without a frozen
+-- fingerprint retain exact Git identity.
+--
+-- Prospective boundaries, cadence contract, source isolation, strategy count,
+-- evidence completeness, paper-only safety and promotion restrictions are unchanged.
+
 -- Alpha Hunter sealed profitability activation guard v0.3.
 --
 -- Scientific identity precedence:
@@ -224,6 +236,8 @@ $function$;
 revoke all on function private.alpha_hunter_try_activate_profitability_test_v02()
 from public,anon,authenticated,service_role;
 
+
+
 select cron.alter_job(
   job_id := (
     select jobid
@@ -234,3 +248,5 @@ select cron.alter_job(
   command := 'select private.alpha_hunter_try_activate_profitability_test_v02();',
   active := true
 );
+
+commit;
