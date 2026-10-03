@@ -1,10 +1,10 @@
--- Alpha Hunter sealed profitability activation guard v0.2
+-- Alpha Hunter sealed profitability activation guard v0.3.
 --
--- Fixes two scientific-integrity gaps in the legacy activator:
--- 1) baseline snapshots must be at/after preregistration and the frozen cadence
---    contract baseline_not_before_utc;
--- 2) when a scientific fingerprint is frozen, the baseline snapshot must match
---    it exactly.
+-- Scientific identity precedence:
+-- 1) fingerprint-enabled specs use the frozen scientific fingerprint as the
+--    authoritative identity, allowing ops-only descendant Git commits;
+-- 2) legacy specs without a frozen fingerprint retain exact Git identity;
+-- 3) prospective preregistration and cadence boundaries remain mandatory.
 --
 -- This changes activation correctness only. It does not alter trading
 -- thresholds, strategies, costs, risk, execution authority or promotion rules.
@@ -55,12 +55,18 @@ begin
     where p.collected_at_utc>=v_not_before
       and p.payload->'validation_identity'->>'run_source'
           =v_spec.required_run_source
-      and p.payload->'validation_identity'->>'git_commit'
-          =v_spec.frozen_git_commit
       and (
-        v_spec.frozen_scientific_fingerprint_sha256 is null
-        or p.payload->'validation_identity'->>'scientific_fingerprint_sha256'
-           =v_spec.frozen_scientific_fingerprint_sha256
+        (
+          v_spec.frozen_scientific_fingerprint_sha256 is not null
+          and p.payload->'validation_identity'->>'scientific_fingerprint_sha256'
+             =v_spec.frozen_scientific_fingerprint_sha256
+        )
+        or
+        (
+          v_spec.frozen_scientific_fingerprint_sha256 is null
+          and p.payload->'validation_identity'->>'git_commit'
+             =v_spec.frozen_git_commit
+        )
       )
       and coalesce(
         (p.payload->'multi_strategy_summary'->>'configured_strategy_count')::integer,
@@ -155,7 +161,10 @@ begin
       v_parent.run_id,
       v_parent.collected_at_utc,
       v_config_sha,
-      v_spec.frozen_git_commit,
+      coalesce(
+        nullif(v_parent.payload->'validation_identity'->>'git_commit',''),
+        v_spec.frozen_git_commit
+      ),
       v_previous_source,
       v_catalyst_version,
       v_valid_symbols,
@@ -167,12 +176,21 @@ begin
           v_parent.collected_at_utc>=v_spec.preregistered_at_utc,
         'cadence_not_before_boundary_ok',
           v_parent.collected_at_utc>=v_not_before,
+        'identity_mode',
+          case
+            when v_spec.frozen_scientific_fingerprint_sha256 is not null
+              then 'SCIENTIFIC_FINGERPRINT'
+            else 'LEGACY_EXACT_GIT'
+          end,
         'scientific_fingerprint_ok',
           (
             v_spec.frozen_scientific_fingerprint_sha256 is null
             or v_scientific_fingerprint
                =v_spec.frozen_scientific_fingerprint_sha256
           ),
+        'git_anchor_commit',v_spec.frozen_git_commit,
+        'baseline_observed_git_commit',
+          v_parent.payload->'validation_identity'->>'git_commit',
         'strategy_count_ok',true,
         'previous_context_ok',true,
         'catalyst_v02_ok',true,
@@ -190,7 +208,7 @@ begin
   end loop;
 
   return jsonb_build_object(
-    'protocol_version','sealed-profitability-activation-v0.2',
+    'protocol_version','sealed-profitability-activation-v0.3-fingerprint-precedence',
     'activated_specs',v_activated,
     'preregistration_boundary_enforced',true,
     'cadence_not_before_boundary_enforced',true,
