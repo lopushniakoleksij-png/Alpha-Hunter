@@ -150,6 +150,10 @@ declare
   ordered numeric;
   filled numeric;
   expected_decision text;
+  expected_direction text;
+  expected_stop numeric;
+  expected_target numeric;
+  average_fill_price numeric;
   fill_matches boolean;
 begin
   perform pg_catalog.pg_advisory_xact_lock(
@@ -158,13 +162,15 @@ begin
       0
     )
   );
-  select o.quantity,o.decision_id
-    into ordered,expected_decision
+  select o.quantity,o.decision_id,o.direction,d.stop_price,d.target_price
+    into ordered,expected_decision,expected_direction,expected_stop,expected_target
   from public.alpha_hunter_paper_orders_v02 o
+  join public.alpha_hunter_paper_decisions_v01 d on d.decision_id=o.decision_id
   where o.order_id=new.entry_order_id;
   select coalesce(sum(f.quantity),0),
+         sum(f.quantity*f.fill_price)/nullif(sum(f.quantity),0),
          bool_or(f.fill_id=new.activated_by_fill_id)
-    into filled,fill_matches
+    into filled,average_fill_price,fill_matches
   from public.alpha_hunter_paper_fills_v02 f
   where f.order_id=new.entry_order_id;
   if ordered is null or expected_decision<>new.decision_id then
@@ -178,6 +184,18 @@ begin
   end if;
   if new.quantity > filled+0.000000000001 then
     raise exception 'protective quantity exceeds cumulative entry fill';
+  end if;
+  if average_fill_price is null then
+    raise exception 'protective order missing cumulative entry average';
+  end if;
+  if (
+    expected_direction='LONG'
+    and not (expected_stop < average_fill_price and average_fill_price < expected_target)
+  ) or (
+    expected_direction='SHORT'
+    and not (expected_target < average_fill_price and average_fill_price < expected_stop)
+  ) then
+    raise exception 'protective order geometry invalid relative to cumulative entry fill';
   end if;
   return new;
 end;
@@ -208,6 +226,7 @@ select
   case when coalesce(x.filled_quantity,0)>0 then 'PARTIALLY_FILLED' else 'SUBMITTED' end
     as execution_state,
   coalesce(x.fill_count,0)::integer as fill_count,
+  x.average_fill_price,
   coalesce(e.event_sequence,3)::integer as event_sequence,
   d.stop_price,
   d.target_price,
@@ -220,7 +239,10 @@ select
 from public.alpha_hunter_paper_orders_v02 o
 join public.alpha_hunter_paper_decisions_v01 d using (decision_id)
 left join lateral (
-  select sum(f.quantity) as filled_quantity,count(*) as fill_count
+  select
+    sum(f.quantity) as filled_quantity,
+    sum(f.quantity*f.fill_price)/nullif(sum(f.quantity),0) as average_fill_price,
+    count(*) as fill_count
   from public.alpha_hunter_paper_fills_v02 f
   where f.order_id=o.order_id
 ) x on true

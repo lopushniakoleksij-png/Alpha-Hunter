@@ -36,6 +36,41 @@ def _safe_fields() -> dict[str, Any]:
     }
 
 
+def _entry_geometry_valid(
+    direction: str,
+    entry_price: float,
+    stop_price: Any,
+    target_price: Any,
+) -> bool:
+    stop = _optional_float(stop_price)
+    target = _optional_float(target_price)
+    if stop is None or target is None:
+        return False
+    if direction == "LONG":
+        return stop < entry_price < target
+    if direction == "SHORT":
+        return target < entry_price < stop
+    return False
+
+
+def _prospective_average_entry(
+    order: dict[str, Any],
+    fill: dict[str, Any],
+) -> float | None:
+    prior_quantity = _optional_float(order.get("filled_quantity")) or 0.0
+    prior_average = _optional_float(order.get("average_fill_price"))
+    new_quantity = _optional_float(fill.get("quantity"))
+    new_price = _optional_float(fill.get("fill_price"))
+    if new_quantity is None or new_quantity <= 0 or new_price is None or new_price <= 0:
+        return None
+    if prior_quantity <= 0:
+        return new_price
+    if prior_average is None or prior_average <= 0:
+        return None
+    total = prior_quantity + new_quantity
+    return ((prior_average * prior_quantity) + (new_price * new_quantity)) / total
+
+
 def _event(
     order: dict[str, Any],
     *,
@@ -227,7 +262,11 @@ def _modeled_fill(
         crossed = ask <= limit_price if direction == "LONG" else bid >= limit_price
         if not crossed:
             return None, [], False
-        fill_price = min(ask, limit_price) if direction == "LONG" else max(bid, limit_price)
+        # A later scanner observation only proves that a resting limit crossed.
+        # It does not prove the current quote was the historical execution price.
+        # Use the submitted limit as the conservative executable price so delayed
+        # reconciliation cannot manufacture favorable price improvement.
+        fill_price = limit_price
         fee_bps = _optional_float(order.get("public_maker_fee_bps"))
         slippage_bps = 0.0
     else:
@@ -249,9 +288,19 @@ def _modeled_fill(
         return None, ["FEE_EVIDENCE_MISSING"], False
 
     quantity = min(float(order["remaining_quantity"]), top_size)
-    midpoint = (bid + ask) / 2.0
+    is_limit = str(order["order_type"]) == "LIMIT"
+    midpoint = fill_price if is_limit else (bid + ask) / 2.0
+    cross_reference = fill_price if is_limit else cross_price
     notional = quantity * fill_price
-    spread_per_unit = cross_price - midpoint if direction == "LONG" else midpoint - cross_price
+    spread_per_unit = (
+        0.0
+        if is_limit
+        else (
+            cross_price - midpoint
+            if direction == "LONG"
+            else midpoint - cross_price
+        )
+    )
     funding_rate = _optional_float(quote.get("funding_rate"))
     fill_sequence = int(order["fill_count"]) + 1
     fill_id = _id("fill", order["order_id"], order["source_run_id"], fill_sequence)
@@ -266,10 +315,10 @@ def _modeled_fill(
         "fill_price": fill_price,
         "notional_usdt": notional,
         "midpoint_reference": midpoint,
-        "cross_price_reference": cross_price,
+        "cross_price_reference": cross_reference,
         "spread_cost_usdt": max(0.0, spread_per_unit * quantity),
         "slippage_bps": slippage_bps,
-        "slippage_cost_usdt": abs(fill_price - cross_price) * quantity,
+        "slippage_cost_usdt": 0.0 if is_limit else abs(fill_price - cross_price) * quantity,
         "fee_bps": fee_bps,
         "fee_usdt": notional * fee_bps / 10000.0,
         "funding_rate_snapshot": funding_rate,
@@ -365,6 +414,29 @@ def reconcile_open_orders(
                 )
             )
             continue
+
+        if completed:
+            completed_average = _prospective_average_entry(order, fill)
+            direction = str(order.get("direction") or "").upper()
+            if (
+                completed_average is None
+                or not _entry_geometry_valid(
+                    direction,
+                    completed_average,
+                    order.get("stop_price"),
+                    order.get("target_price"),
+                )
+            ):
+                attempts.append(
+                    _attempt(
+                        order,
+                        quote,
+                        outcome="INPUT_MISSING",
+                        blockers=["COMPLETED_ENTRY_GEOMETRY_INVALID"],
+                        observed_at_utc=quote_observed_at,
+                    )
+                )
+                continue
 
         attempts.append(
             _attempt(

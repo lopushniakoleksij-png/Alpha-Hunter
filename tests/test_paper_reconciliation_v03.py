@@ -38,6 +38,7 @@ def open_order(**overrides):
         "remaining_quantity": 5.0,
         "execution_state": "SUBMITTED",
         "fill_count": 0,
+        "average_fill_price": None,
         "event_sequence": 3,
         "stop_price": 9.5,
         "target_price": 11.0,
@@ -92,6 +93,7 @@ def test_later_partial_completion_uses_full_entry_quantity_for_protection():
         remaining_quantity=3.0,
         execution_state="PARTIALLY_FILLED",
         fill_count=1,
+        average_fill_price=10.0,
         event_sequence=4,
     )
     _, fills, events, protections = reconcile_open_orders(
