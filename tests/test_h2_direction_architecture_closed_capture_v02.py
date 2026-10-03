@@ -105,3 +105,10 @@ def test_legacy_alignment_is_overlap_tag_not_anchor_admission_path():
     assert "legacy-only rows do not consume anchor collection capacity" in LOWER
     assert "future standalone legacy-control sampler/evaluator must be separately preregistered" in LOWER
     assert "and (c.h2_triggered or c.legacy_scanner_aligned)" not in LOWER
+
+
+def test_status_surfaces_independent_anchor_capacity_and_backlog():
+    assert "independent_h2_candidates" in LOWER
+    assert "pending_independent_anchor_rows" in LOWER
+    assert "independent_anchor_resolution_pct" in LOWER
+    assert "from anchored" in LOWER
