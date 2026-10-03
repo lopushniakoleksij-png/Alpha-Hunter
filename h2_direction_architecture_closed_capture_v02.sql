@@ -597,32 +597,32 @@ begin
   ),
   source as (
     select
-      r.*,
-      r.trigger_candle_started_at_utc+interval '15 minutes'
+      sr.*,
+      sr.trigger_candle_started_at_utc+interval '15 minutes'
         as trigger_candle_closed_at_utc,
       (
-        r.trigger_candle_started_at_utc is not null
-        and r.forming_candle_started_at_utc is not null
-        and r.forming_candle_started_at_utc
-              =r.trigger_candle_started_at_utc+interval '15 minutes'
-        and r.snapshot_collected_at_utc
-              >=r.trigger_candle_started_at_utc+interval '15 minutes'
-        and r.snapshot_collected_at_utc
-              <r.forming_candle_started_at_utc+interval '15 minutes'
+        sr.trigger_candle_started_at_utc is not null
+        and sr.forming_candle_started_at_utc is not null
+        and sr.forming_candle_started_at_utc
+              =sr.trigger_candle_started_at_utc+interval '15 minutes'
+        and sr.snapshot_collected_at_utc
+              >=sr.trigger_candle_started_at_utc+interval '15 minutes'
+        and sr.snapshot_collected_at_utc
+              <sr.forming_candle_started_at_utc+interval '15 minutes'
       ) as trigger_candle_confirmed_closed,
       case
-        when r.forming_ema9_15m is not null
-          and r.forming_candle_close is not null
-          and r.trigger_candle_started_at_utc is not null
-          and r.forming_candle_started_at_utc
-                =r.trigger_candle_started_at_utc+interval '15 minutes'
-          and r.snapshot_collected_at_utc
-                >=r.trigger_candle_started_at_utc+interval '15 minutes'
-          and r.snapshot_collected_at_utc
-                <r.forming_candle_started_at_utc+interval '15 minutes'
-        then (r.forming_ema9_15m-0.2*r.forming_candle_close)/0.8
+        when sr.forming_ema9_15m is not null
+          and sr.forming_candle_close is not null
+          and sr.trigger_candle_started_at_utc is not null
+          and sr.forming_candle_started_at_utc
+                =sr.trigger_candle_started_at_utc+interval '15 minutes'
+          and sr.snapshot_collected_at_utc
+                >=sr.trigger_candle_started_at_utc+interval '15 minutes'
+          and sr.snapshot_collected_at_utc
+                <sr.forming_candle_started_at_utc+interval '15 minutes'
+        then (sr.forming_ema9_15m-0.2*sr.forming_candle_close)/0.8
       end as ema9_15m
-    from source_raw r
+    from source_raw sr
   ),
   calc as (
     select
