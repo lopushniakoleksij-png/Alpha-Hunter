@@ -1744,6 +1744,91 @@ async function freezeDecision(id,symbol){
 """
 
 
+EXECUTION_CONFIRMATION_QUEUE_PAGE = """
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="12">
+  <title>Alpha Hunter — Exact Fill Confirmation Queue</title>
+  <style>
+    :root{--bg:#071018;--panel:#0d1822;--line:#1d2e3a;--text:#e8f0f6;--muted:#91a3b1;--ok:#2bd39a;--warn:#ffbf47;--bad:#ff6474;--blue:#4db6ff}
+    *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
+    .wrap{max-width:820px;margin:auto;padding:14px}.panel{background:rgba(13,24,34,.97);border:1px solid var(--line);border-radius:16px;padding:15px;margin-bottom:12px}
+    h1{font-size:25px;margin:0 0 5px}.small{font-size:12px;color:var(--muted);line-height:1.5}.link{color:var(--blue);text-decoration:none}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.metric{background:#09131c;border:1px solid #162734;border-radius:10px;padding:9px}
+    .label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}.value{font-weight:800;margin-top:3px;overflow-wrap:anywhere}
+    .ok{color:var(--ok)}.warn{color:var(--warn)}.unique{border-color:#21634e}.ambiguous{border-color:#6f5b2a}
+    .button{display:block;text-align:center;text-decoration:none;width:100%;border-radius:12px;padding:14px;font-size:15px;font-weight:900;background:#24d18f;color:#03120d;margin-top:12px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Exact Fill Confirmation Queue</h1>
+  <div class="small" style="margin-bottom:12px">
+    Evidence-complete candidate pairs only. A candidate is not attribution.
+    Nothing is bound until you compare the exact Bitget trade/order identity and confirm it.
+  </div>
+
+  <div class="panel">
+    <div class="grid">
+      <div class="metric"><div class="label">Candidate pairs</div><div class="value">{{ status.candidate_pair_count or 0 }}</div></div>
+      <div class="metric"><div class="label">Unique pairs</div><div class="value">{{ status.unique_candidate_pairs or 0 }}</div></div>
+      <div class="metric"><div class="label">Ambiguous pairs</div><div class="value">{{ status.ambiguous_candidate_pairs or 0 }}</div></div>
+      <div class="metric"><div class="label">Verified executions</div><div class="value">{{ status.verified_alpha_hunter_executions or 0 }}</div></div>
+    </div>
+  </div>
+
+  {% if candidates %}
+    {% for c in candidates %}
+    <div class="panel {{ 'unique' if c.candidate_status=='UNIQUE_EVIDENCE_COMPLETE_MATCH' else 'ambiguous' }}">
+      <div class="value">{{ c.symbol|symbol_label }} · {{ c.direction }} · {{ c.action }} · {{ c.strategy_id }}</div>
+      <div class="{{ 'ok' if c.candidate_status=='UNIQUE_EVIDENCE_COMPLETE_MATCH' else 'warn' }}" style="margin-top:5px">
+        {{ c.candidate_status }}
+      </div>
+      <div class="grid">
+        <div class="metric"><div class="label">Frozen UTC</div><div class="value">{{ c.frozen_at_utc }}</div></div>
+        <div class="metric"><div class="label">Order UTC</div><div class="value">{{ c.order_created_at_utc }}</div></div>
+        <div class="metric"><div class="label">Fill UTC</div><div class="value">{{ c.fill_time_utc }}</div></div>
+        <div class="metric"><div class="label">Freeze → order</div><div class="value">{{ '%.1f'|format(c.freeze_to_order_seconds or 0) }}s</div></div>
+        <div class="metric"><div class="label">Trade ID</div><div class="value">{{ c.trade_id }}</div></div>
+        <div class="metric"><div class="label">Order ID</div><div class="value">{{ c.order_id }}</div></div>
+        <div class="metric"><div class="label">Decision cross</div><div class="value">{{ c.entry_cross_price }}</div></div>
+        <div class="metric"><div class="label">Fill price</div><div class="value">{{ c.price }}</div></div>
+        <div class="metric"><div class="label">Candidate slippage</div><div class="value">{{ '%.3f'|format(c.candidate_adverse_arrival_to_fill_bps or 0) }} bps</div></div>
+        <div class="metric"><div class="label">Realized fee</div><div class="value">{{ '%.3f'|format(c.realized_fee_bps or 0) }} bps</div></div>
+      </div>
+      {% if (c.fill_candidate_count or 0)>1 or (c.event_candidate_count or 0)>1 %}
+      <div class="small warn" style="margin-top:8px">
+        Ambiguity: fill matches {{ c.fill_candidate_count }} frozen decisions; event has {{ c.event_candidate_count }} candidate fills.
+        Exact operator review is mandatory.
+      </div>
+      {% endif %}
+      <a class="button" href="/execution-bind/{{ c.execution_event_id }}">REVIEW EXACT FILL</a>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="panel">
+      <b>No evidence-complete real fill is waiting for confirmation.</b>
+      <div class="small" style="margin-top:7px">
+        This is expected until a real Bitget OPEN order is created inside a fresh frozen Alpha Hunter decision window.
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="small">
+    automatic_binding_permitted=false · attribution_claim_permitted=false ·
+    trade_permission=false · order_path=NONE.
+    <br><a class="link" href="/execution-freeze">Freeze Decision</a> ·
+    <a class="link" href="/">Money Action</a>
+  </div>
+</div>
+</body>
+</html>
+"""
+
+
 EXECUTION_BIND_PAGE = """
 <!doctype html>
 <html>
