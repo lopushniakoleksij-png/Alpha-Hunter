@@ -553,6 +553,20 @@ def latest_test_engine_status() -> dict[str, Any]:
         return {}
     return {}
 
+def latest_paper_lifecycle_status() -> dict[str, Any]:
+    """Return clean execution-lifecycle evidence separately from sealed science."""
+    try:
+        rows = supabase_get_rows(
+            "alpha_hunter_paper_lifecycle_status_v05",
+            {"select": "*", "limit": "1"},
+        )
+        if rows and isinstance(rows[0], dict):
+            return rows[0]
+    except (requests.RequestException, RuntimeError, ValueError):
+        return {}
+    return {}
+
+
 def latest_control_tower_status() -> dict[str, Any]:
     rows = supabase_get_rows(
         "alpha_hunter_v14_watchdog_status_v01",
@@ -1209,6 +1223,7 @@ from alpha_hunter.action_queue import (  # noqa: E402
 def dashboard_payload(
     snapshot: dict[str, Any],
     test_engine: dict[str, Any] | None = None,
+    paper_lifecycle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     symbols = [
         dict(row)
@@ -1383,6 +1398,7 @@ def dashboard_payload(
         "discovery_summary": snapshot.get("discovery_summary", {}),
         "build": build_identity(),
         "test_engine": test_engine or {},
+        "paper_lifecycle": paper_lifecycle or {},
     }
 
 
@@ -1481,7 +1497,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <div class="metric"><span class="label">Operational</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
         <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
         <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration',0) }}</b></div>
-        <div class="metric"><span class="label">Paper trades</span><b>{{ data.test_engine.get('completed_paper_trades',0) }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
+        <div class="metric"><span class="label">Sealed 24H sample</span><b>{{ data.test_engine.get('completed_paper_trades',0) }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
+        <div class="metric"><span class="label">Clean lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades',0) }}</b></div>
         <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
         <div class="metric"><span class="label">24H outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration',0) }}</b></div>
       </div>
@@ -1490,7 +1507,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
         <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
         <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
-        <span class="small">Forward-only real market evidence. Historical replay/backtest is not counted. Paper-only; no order authority.</span>
+        <b>Execution lifecycle:</b> {{ data.paper_lifecycle.get('valid_completed_trades',0) }} valid closed · {{ data.paper_lifecycle.get('active_valid_positions',0) }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined',0) }} geometry-quarantined<br>
+        <span class="small">Sealed 24H sample and execution lifecycle are separate evidence streams and are never added together. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
       </div>
     {% else %}
       <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
@@ -1988,6 +2006,7 @@ def dashboard():
             data=dashboard_payload(
                 latest_snapshot(),
                 latest_test_engine_status(),
+                latest_paper_lifecycle_status(),
             ),
         )
     except Exception:
@@ -2005,6 +2024,7 @@ def api_latest():
             dashboard_payload(
                 latest_snapshot(),
                 latest_test_engine_status(),
+                latest_paper_lifecycle_status(),
             )
         )
     except Exception:
