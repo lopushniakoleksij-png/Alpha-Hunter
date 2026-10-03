@@ -173,3 +173,22 @@ def test_geometry_hardening_sql_is_append_only_and_exposes_valid_trade_view():
     assert "update public.alpha_hunter_paper" not in lower
     assert "trade_permission,true" not in lower
     assert "exchange_authority,true" not in lower
+
+
+def test_geometry_migration_appends_view_column_without_reordering_existing_contract():
+    root = Path(__file__).resolve().parents[1]
+    for relative in (
+        "ops/sql/paper_reconciliation_v03.sql",
+        "ops/sql/paper_entry_geometry_hardening_v05.sql",
+    ):
+        sql = (root / relative).read_text(encoding="utf-8").lower()
+        view_start = sql.index(
+            "create or replace view public.alpha_hunter_paper_reconciliation_open_v03"
+        )
+        view_end = sql.index(
+            "from public.alpha_hunter_paper_orders_v02 o",
+            view_start,
+        )
+        projection = sql[view_start:view_end]
+        assert projection.index("o.order_path") < projection.index("x.average_fill_price")
+        assert projection.rstrip().endswith("x.average_fill_price")
