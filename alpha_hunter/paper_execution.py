@@ -51,6 +51,23 @@ def _id(prefix: str, *parts: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
+def _entry_geometry_valid(
+    direction: str,
+    entry_price: float,
+    stop_price: Any,
+    target_price: Any,
+) -> bool:
+    stop = _optional_float(stop_price)
+    target = _optional_float(target_price)
+    if stop is None or target is None:
+        return False
+    if direction == "LONG":
+        return stop < entry_price < target
+    if direction == "SHORT":
+        return target < entry_price < stop
+    return False
+
+
 def _normalized_quantity(value: float, multiplier: Any) -> float | None:
     try:
         step = Decimal(str(multiplier))
@@ -104,12 +121,21 @@ def _order_from_decision(
     direction = str(decision.get("direction") or "").upper()
     entry = _optional_float(decision.get("entry_price"))
     stop = _optional_float(decision.get("stop_price"))
+    target = _optional_float(decision.get("target_price"))
     evidence = decision.get("evidence") or {}
     instrument = evidence.get("instrument_constraints") or {}
     blockers: list[str] = []
     if direction not in {"LONG", "SHORT"}:
         blockers.append("DIRECTION_INVALID")
-    if entry is None or stop is None or entry <= 0 or stop <= 0 or entry == stop:
+    if (
+        entry is None
+        or stop is None
+        or target is None
+        or entry <= 0
+        or stop <= 0
+        or target <= 0
+        or not _entry_geometry_valid(direction, entry, stop, target)
+    ):
         blockers.append("RISK_GEOMETRY_INVALID")
 
     virtual_equity = config["virtual_equity_usdt"]
@@ -214,6 +240,14 @@ def _fill_from_order(
         fill_price = cross_price * (1.0 + direction_sign * slippage_bps / 10000.0)
     if fee_bps is None:
         return None, ["MAKER_FEE_EVIDENCE_MISSING"]
+
+    if not _entry_geometry_valid(
+        str(direction).upper(),
+        fill_price,
+        decision.get("stop_price"),
+        decision.get("target_price"),
+    ):
+        return None, ["ENTRY_FILL_GEOMETRY_INVALID"]
 
     fill_quantity = min(float(order["quantity"]), top_size)
     midpoint = (bid + ask) / 2.0
