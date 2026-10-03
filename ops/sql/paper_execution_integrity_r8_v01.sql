@@ -56,6 +56,24 @@ before update or delete on public.alpha_hunter_paper_execution_integrity_activat
 for each row execute function private.alpha_hunter_block_append_only_mutation();
 
 
+alter table public.alpha_hunter_paper_reconciliation_attempts_v03
+  drop constraint if exists
+    alpha_hunter_paper_reconciliation_attempts_v03_outcome_check;
+
+alter table public.alpha_hunter_paper_reconciliation_attempts_v03
+  add constraint alpha_hunter_paper_reconciliation_attempts_v03_outcome_check
+  check (
+    outcome in (
+      'INPUT_MISSING',
+      'NO_CROSS',
+      'NO_FULL_CAPACITY',
+      'FILL_MODELED',
+      'EXPIRED',
+      'QUARANTINED_LEGACY_PARTIAL'
+    )
+  );
+
+
 create or replace view public.alpha_hunter_paper_reconciliation_open_v08
 with (security_invoker=true,security_barrier=true)
 as
