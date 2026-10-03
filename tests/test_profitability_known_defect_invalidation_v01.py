@@ -70,3 +70,8 @@ def test_test_engine_keeps_all_money_permissions_disabled():
 def test_cron_moves_to_v05_refresh():
     assert "alpha-hunter-test-engine-db-refresh-v02" in LOWER
     assert "alpha_hunter_refresh_test_engine_v05()" in LOWER
+
+
+def test_invalidation_row_sorts_after_base_refresh():
+    assert "v_base.evaluated_at_utc + interval '1 microsecond'" in LOWER
+    assert "v_now:=greatest(" in LOWER
