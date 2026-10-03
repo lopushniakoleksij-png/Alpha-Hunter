@@ -76,3 +76,8 @@ def test_stacked_hourly_cron_runs_after_universe_endpoint_capture():
     assert "'17 * * * *'" in SQL
     assert "alpha-hunter-participation-emerging-universe-v02" in SQL
     assert "it does not modify source jobs" in SQL
+
+
+def test_scorecard_stratifies_long_and_short_instead_of_pooling_direction():
+    assert "candidate_direction" in SQL
+    assert "group by challenger_class,candidate_direction,horizon_hours" in SQL
