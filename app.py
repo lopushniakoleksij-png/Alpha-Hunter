@@ -1696,6 +1696,7 @@ EXECUTION_FREEZE_PAGE = """
   {% endif %}
 
   <div class="small">
+    <a class="link" href="/execution-confirmations">Pending exact fill confirmations</a><br>
     Safety: shadow_only=true · trade_permission=false ·
     production_promotion_permitted=false · order_path=NONE
   </div>
@@ -1914,7 +1915,8 @@ EXECUTION_BIND_PAGE = """
   <div class="small">
     Compatibility filtering is not attribution. Binding occurs only after your exact
     confirmation and a second database validation. trade_permission=false · order_path=NONE.
-    <br><a class="link" href="/execution-freeze">Back to Freeze Decision</a>
+    <br><a class="link" href="/execution-confirmations">Confirmation Queue</a> ·
+    <a class="link" href="/execution-freeze">Back to Freeze Decision</a>
   </div>
 </div>
 <script>
@@ -2223,6 +2225,27 @@ def api_execution_freeze(decision_observation_id: str):
             "trade_permission": False,
             "order_path": "NONE",
         }), 503
+
+
+@app.get("/execution-confirmations")
+def execution_confirmation_queue_page():
+    auth_failure = None if operator_authorized() else operator_auth_response()
+    if auth_failure is not None:
+        return auth_failure
+
+    try:
+        response = app.make_response(
+            render_template_string(
+                EXECUTION_CONFIRMATION_QUEUE_PAGE,
+                candidates=pending_execution_fill_confirmations(),
+                status=execution_fill_confirmation_status(),
+            )
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    except Exception:
+        app.logger.exception("Execution confirmation queue failed")
+        return jsonify({"error": "execution_confirmation_queue_unavailable"}), 503
 
 
 @app.get("/execution-bind/<execution_event_id>")
