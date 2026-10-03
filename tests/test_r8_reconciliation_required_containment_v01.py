@@ -153,3 +153,10 @@ def test_status_view_is_service_role_read_only():
         "grant select on public.alpha_hunter_r8_reconciliation_required_status_v01"
         in LOWER
     )
+
+
+def test_reconciliation_required_key_stays_occupied_until_explicit_expiry():
+    assert "alpha_hunter_paper_active_exposure_members_v08" in LOWER
+    assert "r.execution_state='reconciliation_required'" in LOWER
+    assert "'resting_entry'::text as exposure_state" in LOWER
+    assert "maximum_entry_age_minutes" in LOWER
