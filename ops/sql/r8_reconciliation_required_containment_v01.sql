@@ -122,6 +122,65 @@ grant select on public.alpha_hunter_paper_reconciliation_open_v08
   to service_role;
 
 
+create or replace view public.alpha_hunter_paper_active_exposure_members_v08
+with (security_invoker=true,security_barrier=true)
+as
+with activation as (
+  select a.*
+  from public.alpha_hunter_paper_execution_integrity_activation_v08 a
+  where a.activation_id='PAPER_EXECUTION_R8'
+  order by a.activated_at_utc desc
+  limit 1
+),
+resting as (
+  select
+    r.order_id,
+    r.decision_id,
+    r.symbol,
+    d.strategy_id,
+    r.direction,
+    r.submitted_at_utc as exposure_started_at_utc,
+    'RESTING_ENTRY'::text as exposure_state
+  from public.alpha_hunter_paper_reconciliation_open_v08 r
+  join public.alpha_hunter_paper_decisions_v01 d using(decision_id)
+  cross join activation a
+  where r.filled_quantity=0
+    and (
+      r.execution_state='RECONCILIATION_REQUIRED'
+      or r.submitted_at_utc
+          >=clock_timestamp()-make_interval(
+            mins=>a.maximum_entry_age_minutes
+          )
+    )
+),
+filled as (
+  select
+    p.entry_order_id as order_id,
+    p.decision_id,
+    p.symbol,
+    d.strategy_id,
+    p.direction,
+    o.submitted_at_utc as exposure_started_at_utc,
+    'FILLED_PROTECTED_POSITION'::text as exposure_state
+  from public.alpha_hunter_paper_protection_open_v04 p
+  join public.alpha_hunter_paper_orders_v02 o
+    on o.order_id=p.entry_order_id
+  join public.alpha_hunter_paper_decisions_v01 d
+    on d.decision_id=p.decision_id
+  cross join activation a
+  where o.submitted_at_utc>=a.activated_at_utc
+)
+select * from resting
+union all
+select * from filled;
+
+revoke all on public.alpha_hunter_paper_active_exposure_members_v08
+  from public,anon,authenticated,service_role;
+grant select on public.alpha_hunter_paper_active_exposure_members_v08
+  to service_role;
+
+
+
 create or replace view public.alpha_hunter_r8_reconciliation_required_status_v01
 with (security_invoker=true,security_barrier=true)
 as
