@@ -19,6 +19,7 @@ declare
   b public.alpha_hunter_execution_fill_bindings_v01%rowtype;
   v_binding_id text;
   v_expected_side text;
+  v_max_interval_minutes integer:=35;
 begin
   if p_explicit_user_confirmation is not true then
     raise exception 'Exact fill binding requires explicit user confirmation';
@@ -32,6 +33,14 @@ begin
   if d.execution_event_id is null then
     raise exception 'Frozen execution event not found';
   end if;
+
+  select coalesce(c.maximum_interval_minutes,35)::integer
+    into v_max_interval_minutes
+  from public.alpha_hunter_profitability_cadence_contract_v01 c
+  where c.spec_id=d.spec_id
+  limit 1;
+
+  v_max_interval_minutes:=coalesce(v_max_interval_minutes,35);
 
   select x.* into b
   from public.alpha_hunter_execution_fill_bindings_v01 x
@@ -116,12 +125,32 @@ begin
     raise exception 'Retrospective attribution rejected: order predates frozen decision';
   end if;
 
+  if o.order_created_at_utc
+     > d.frozen_at_utc + make_interval(mins=>v_max_interval_minutes) then
+    raise exception
+      'Stale attribution rejected: order was created after the sealed decision freshness window';
+  end if;
+
   if f.fill_time_utc < o.order_created_at_utc then
     raise exception 'Order/fill time integrity error';
   end if;
 
   if o.origin_consistent is not true then
     raise exception 'Order/fill origin is not consistent';
+  end if;
+
+  if f.cost_fields_complete is not true then
+    raise exception 'Fill cost fields are incomplete';
+  end if;
+
+  if not exists (
+    select 1
+    from public.alpha_hunter_execution_fill_confirmation_candidates_v01 c
+    where c.execution_event_id=d.execution_event_id
+      and c.fill_evidence_id=f.fill_evidence_id
+  ) then
+    raise exception
+      'Exact pair is not a current evidence-complete confirmation candidate';
   end if;
 
   v_binding_id := 'bind-' || md5(
@@ -158,6 +187,9 @@ begin
       'traceability_run_id', f.traceability_run_id,
       'trace_complete', true,
       'trace_schema_validated', true,
+      'maximum_decision_to_order_minutes',v_max_interval_minutes,
+      'decision_freshness_enforced',true,
+      'candidate_queue_gate_passed',true,
       'symbol_time_proximity_attribution_permitted', false,
       'automatic_binding_permitted', false
     ),
