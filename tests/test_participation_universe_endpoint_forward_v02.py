@@ -91,3 +91,22 @@ def test_service_role_is_read_only_and_execute_is_postgres_only():
         "grant execute on function private.alpha_hunter_run_participation_universe_endpoint_forward_v02()\n"
         "to postgres"
     ) in SQL
+
+
+def test_t0_admission_missingness_is_observable_and_snapshotted():
+    assert "alpha_hunter_participation_universe_t0_admission_health_v02" in SQL
+    assert "eligible_diagnostics" in SQL
+    assert "anchor_admitted" in SQL
+    assert "anchor_missing" in SQL
+    assert "anchor_missing_at_check_total" in SQL
+    assert "no_exact_canonical_universe_t0" in SQL
+    assert "'t0_admission_health_snapshotted',true" in SQL
+
+
+def test_t0_admission_health_stays_read_only_and_non_authoritative():
+    assert (
+        "grant select on private.alpha_hunter_participation_universe_t0_admission_health_v02"
+        in SQL
+    )
+    assert "t0_admission_observability_only" in SQL
+    assert "missing t0 universe evidence fails closed by non-admission" in SQL
