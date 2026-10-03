@@ -311,6 +311,7 @@ def build_initial_paper_execution(
     decisions: list[dict[str, Any]],
     *,
     active_exposure_keys: set[tuple[str, str, str]] | None = None,
+    execution_gate_open: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Create deterministic paper submissions and at most one top-of-book fill.
 
@@ -325,6 +326,11 @@ def build_initial_paper_execution(
     occupied = set(active_exposure_keys or set())
     for decision in decisions:
         if decision.get("paper_authority") is not True:
+            continue
+        if not execution_gate_open:
+            events.append(
+                _cancelled_event(decision, ["PAPER_R8_INTEGRITY_NOT_ACTIVATED"])
+            )
             continue
 
         exposure_key = paper_exposure_key(decision)
