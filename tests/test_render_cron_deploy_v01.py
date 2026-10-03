@@ -7,10 +7,11 @@ WORKFLOW = (
 ).read_text(encoding="utf-8")
 
 
-def test_cron_deploy_uses_dedicated_hook_not_web_hook():
-    assert "RENDER_CRON_DEPLOY_HOOK_URL" in WORKFLOW
+def test_cron_deploy_uses_render_autodeploy_truth_not_redundant_hooks():
+    assert "RENDER_CRON_DEPLOY_HOOK_URL" not in WORKFLOW
     assert "secrets.RENDER_DEPLOY_HOOK_URL" not in WORKFLOW
     assert "workflow_dispatch:" in WORKFLOW
+    assert "Render auto-deployed the exact target commit" in WORKFLOW
 
 
 def test_cron_deploy_verifies_actual_canonical_cron_scan():
@@ -21,18 +22,22 @@ def test_cron_deploy_verifies_actual_canonical_cron_scan():
         "collected_at_utc.desc",
         "scientific_fingerprint_sha256",
         "canonical cron did not converge to target science",
-        "collected >= not_before and fingerprint == target",
+        "collected >= not_before",
+        'source == "RENDER_CRON"',
+        'role == "RENDER_CRON"',
+        "commit == target_commit",
+        "fingerprint == target",
     ]
     for marker in required:
         assert marker in WORKFLOW
 
 
-def test_missing_hook_fails_closed_without_using_wrong_service():
-    assert "CRON_DEPLOY_HOOK_NOT_CONFIGURED" in WORKFLOW
-    assert "Dedicated Render cron deploy hook is missing." in WORKFLOW
-    assert "RENDER_CRON_DEPLOY_HOOK_URL" in WORKFLOW
-    assert "exit 1" in WORKFLOW
-    assert "configured=false" not in WORKFLOW
+def test_autodeploy_verification_fails_closed_on_missing_runtime_evidence():
+    assert "canonical cron did not converge to target science and commit" in WORKFLOW
+    assert "commit == target_commit" in WORKFLOW
+    assert 'source == "RENDER_CRON"' in WORKFLOW
+    assert 'role == "RENDER_CRON"' in WORKFLOW
+    assert "fingerprint == target" in WORKFLOW
 
 
 def test_workflow_has_no_trading_authority():
@@ -59,3 +64,9 @@ def test_runtime_changes_trigger_cron_deploy():
         '".python-version"',
     ):
         assert path in WORKFLOW
+
+
+def test_cron_verification_waits_long_enough_for_hourly_schedule():
+    assert "timeout-minutes: 75" in WORKFLOW
+    assert "range(1, 211)" in WORKFLOW
+    assert "time.sleep(20)" in WORKFLOW
