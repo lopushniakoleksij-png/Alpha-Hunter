@@ -754,31 +754,40 @@ class SupabaseStorage:
             "run_id,symbol",
         )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
-        r8_activation_rows = self._select_json(
-            "alpha_hunter_paper_execution_integrity_activation_v08",
-            {
-                "select": "activation_id,activated_at_utc",
-                "activation_id": "eq.PAPER_EXECUTION_R8",
-                "limit": "1",
-            },
+        has_paper_authority = any(
+            decision.get("paper_authority") is True
+            for decision in paper_decisions
         )
-        r8_execution_gate_open = bool(r8_activation_rows)
-        active_exposure_rows = self._select_json(
-            "alpha_hunter_paper_active_exposure_keys_v08",
-            {
-                "select": "symbol,strategy_id,direction",
-                "limit": "5000",
-            },
-        )
-        active_exposure_keys = {
-            (
-                str(row.get("symbol") or "").upper(),
-                str(row.get("strategy_id") or ""),
-                str(row.get("direction") or "").upper(),
+        r8_execution_gate_open = False
+        active_exposure_keys: set[tuple[str, str, str]] = set()
+        if has_paper_authority:
+            r8_activation_rows = self._select_json(
+                "alpha_hunter_paper_execution_integrity_activation_v08",
+                {
+                    "select": "activation_id,activated_at_utc",
+                    "activation_id": "eq.PAPER_EXECUTION_R8",
+                    "limit": "1",
+                },
             )
-            for row in active_exposure_rows
-            if row.get("symbol") and row.get("strategy_id") and row.get("direction")
-        }
+            r8_execution_gate_open = bool(r8_activation_rows)
+            active_exposure_rows = self._select_json(
+                "alpha_hunter_paper_active_exposure_keys_v08",
+                {
+                    "select": "symbol,strategy_id,direction",
+                    "limit": "5000",
+                },
+            )
+            active_exposure_keys = {
+                (
+                    str(row.get("symbol") or "").upper(),
+                    str(row.get("strategy_id") or ""),
+                    str(row.get("direction") or "").upper(),
+                )
+                for row in active_exposure_rows
+                if row.get("symbol")
+                and row.get("strategy_id")
+                and row.get("direction")
+            }
         paper_orders, paper_fills, execution_events = build_initial_paper_execution(
             paper_decisions,
             active_exposure_keys=active_exposure_keys,
