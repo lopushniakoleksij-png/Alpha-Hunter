@@ -92,6 +92,18 @@ declare
   v_expired_uncensored_backlog integer:=0;
   v_run_id text;
 begin
+  -- Prevent overlapping v0.2 runs from producing cross-table outcome/censor races.
+  if not pg_try_advisory_xact_lock(
+    hashtextextended('alpha-hunter-participation-endpoint-forward-v02',0)
+  ) then
+    return jsonb_build_object(
+      'status','RUN_ALREADY_ACTIVE',
+      'shadow_only',true,
+      'trade_permission',false,
+      'production_promotion_permitted',false
+    );
+  end if;
+
   select * into v_spec
   from private.alpha_hunter_participation_endpoint_specs_v01
   where spec_id='PARTICIPATION-ENDPOINT-FORWARD-V01'
