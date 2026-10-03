@@ -353,6 +353,7 @@ select cron.alter_job(
     from cron.job
     where jobname='alpha-hunter-test-engine-db-refresh-v02'
   ),
-  schedule := '12 * * * *',
-  command := 'select private.alpha_hunter_refresh_test_engine_v04();'
+  schedule := '59 * * * *',
+  command := 'select private.alpha_hunter_refresh_test_engine_v04();',
+  active := true
 );
