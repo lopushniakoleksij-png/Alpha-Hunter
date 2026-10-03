@@ -355,6 +355,7 @@ with source_spec as (
     c.candidate_id,
     c.endpoint_candidate_id,
     c.challenger_class,
+    c.candidate_direction,
     c.symbol,
     c.captured_at_utc,
     h.horizon_hours
@@ -381,6 +382,7 @@ with source_spec as (
 )
 select
   challenger_class,
+  candidate_direction,
   horizon_hours,
   count(*) as matured_rows,
   count(*) filter(where has_outcome) as evaluated_rows,
@@ -414,7 +416,7 @@ select
   'FORWARD_SOURCE_CONSISTENT_CHALLENGER_MEASUREMENT_ONLY'::text as claim_ceiling,
   'NONE'::text as order_path
 from joined
-group by challenger_class,horizon_hours;
+group by challenger_class,candidate_direction,horizon_hours;
 
 revoke all on private.alpha_hunter_participation_emerging_universe_specs_v02
 from public,anon,authenticated,service_role;
