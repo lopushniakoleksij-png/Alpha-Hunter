@@ -56,7 +56,7 @@ def _snapshot(strategies):
         "run_id": "run-release-2-1",
         "collected_at_utc": now,
         "canonical_market_freshness": {"verified": True},
-        "validation_identity": {"run_source": "TEST"},
+        "validation_identity": {"run_source": "RENDER_CRON", "runtime_role": "RENDER_CRON"},
         "symbols": [_market(strategies)],
     }
 
@@ -145,3 +145,20 @@ def test_opposite_to_canonical_direction_cannot_create_a_paper_order():
     assert orders == []
     assert fills == []
     assert execution_events == []
+
+
+def test_non_render_cron_candidate_has_no_paper_order_authority():
+    value = _snapshot([_strategy()])
+    value["validation_identity"] = {
+        "run_source": "RENDER_WEB",
+        "runtime_role": "RENDER_WEB",
+    }
+
+    decisions, events = build_initial_paper_lifecycle(value)
+
+    assert decisions[0]["paper_authority"] is False
+    gate = decisions[0]["evidence"]["paper_authority_source_gate"]
+    assert gate["passed"] is False
+    assert gate["required_run_source"] == "RENDER_CRON"
+    assert gate["required_runtime_role"] == "RENDER_CRON"
+    assert [event["state"] for event in events] == ["CREATED", "BLOCKED"]
