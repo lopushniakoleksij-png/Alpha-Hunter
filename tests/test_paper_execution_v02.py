@@ -23,6 +23,7 @@ def _decision(
         "action_status": action_status,
         "entry_price": 10.0,
         "stop_price": 9.0 if direction == "LONG" else 11.0,
+        "target_price": 12.0 if direction == "LONG" else 8.0,
         "best_bid": best_bid,
         "best_ask": best_ask,
         "best_bid_size": quantity_at_top,
