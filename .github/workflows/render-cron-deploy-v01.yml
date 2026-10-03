@@ -89,23 +89,22 @@ jobs:
           print(f"fingerprint={result['sha256']}")
           PY
 
-      - name: Check cron deploy hook
+      - name: Require cron deploy hook
         id: hook
         shell: bash
         run: |
           set -euo pipefail
           if [[ -z "${RENDER_CRON_DEPLOY_HOOK_URL:-}" ]]; then
-            echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "CRON_DEPLOY_HOOK_NOT_CONFIGURED" >> "$GITHUB_STEP_SUMMARY"
-            echo "Add the dedicated Render cron deploy hook as repository secret RENDER_CRON_DEPLOY_HOOK_URL, then run this workflow manually."
-            exit 0
+            echo "::error::Dedicated Render cron deploy hook is missing."
+            echo "::error::Add repository secret RENDER_CRON_DEPLOY_HOOK_URL before any runtime release can report deployment success."
+            exit 1
           fi
           test -n "${SUPABASE_URL:-}"
           test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
           echo "configured=true" >> "$GITHUB_OUTPUT"
 
       - name: Trigger Render cron deployment
-        if: steps.hook.outputs.configured == 'true'
         id: trigger
         shell: bash
         run: |
@@ -121,7 +120,6 @@ jobs:
           echo "Render cron deploy hook accepted."
 
       - name: Verify next canonical cron scan converges
-        if: steps.hook.outputs.configured == 'true'
         env:
           TARGET_SCIENTIFIC_FINGERPRINT: ${{ steps.science.outputs.fingerprint }}
           NOT_BEFORE_UTC: ${{ steps.trigger.outputs.not_before }}
@@ -202,7 +200,6 @@ jobs:
           raise SystemExit("canonical cron did not converge to target science")
 
       - name: Deployment summary
-        if: steps.hook.outputs.configured == 'true'
         run: |
           echo "PASS: dedicated Render cron deploy hook accepted."
           echo "PASS: a post-deploy RENDER_CRON canonical scan matched the target scientific fingerprint."
