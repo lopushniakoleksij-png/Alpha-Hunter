@@ -63,8 +63,8 @@ jobs:
               "modify-order",
               "batch-orders",
               "set-leverage",
-              "trade_permission": true",
-              "production_promotion_permitted": true",
+              'trade_permission": true',
+              'production_promotion_permitted": true',
           ]
           hits = [item for item in forbidden if item in text]
           if hits:
