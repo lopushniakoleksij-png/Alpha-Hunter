@@ -1033,10 +1033,8 @@ spec as (
   limit 1
 ),
 eligible as (
-  select c.*,a.reference_open,a.reference_candle_at_utc
+  select c.*
   from public.alpha_hunter_h2_direction_captures_v02 c
-  join public.alpha_hunter_h2_direction_anchor_prices_v02 a
-    on a.capture_id=c.capture_id
   where c.spec_id='AH-DIRECTION-ARCHITECTURE-H2-CLOSED-CAPTURE-V02'
     and c.h2_triggered=true
 ),
@@ -1065,6 +1063,12 @@ cooldown as (
     limit 1
   ) n on true
 ),
+anchored as (
+  select c.*,a.reference_open,a.reference_candle_at_utc
+  from cooldown c
+  join public.alpha_hunter_h2_direction_anchor_prices_v02 a
+    on a.capture_id=c.capture_id
+),
 agg as (
   select
     (select count(*) from public.alpha_hunter_h2_direction_captures_v02 c
@@ -1087,13 +1091,20 @@ agg as (
     (select count(*) from public.alpha_hunter_h2_direction_capture_failures_v02 f
       where f.spec_id='AH-DIRECTION-ARCHITECTURE-H2-CLOSED-CAPTURE-V02')
       ::bigint as capture_or_anchor_failure_events,
-    (select count(*) from cooldown)::bigint as independent_h2_anchors,
-    (select count(distinct symbol) from cooldown)::bigint as independent_symbols,
-    (select count(distinct decision_available_at_utc::date) from cooldown)
+    (select count(*) from cooldown)::bigint as independent_h2_candidates,
+    (select count(*) from cooldown c
+      where not exists (
+        select 1 from public.alpha_hunter_h2_direction_anchor_prices_v02 a
+        where a.capture_id=c.capture_id
+      )
+    )::bigint as pending_independent_anchor_rows,
+    (select count(*) from anchored)::bigint as independent_h2_anchors,
+    (select count(distinct symbol) from anchored)::bigint as independent_symbols,
+    (select count(distinct decision_available_at_utc::date) from anchored)
       ::bigint as utc_days,
-    (select count(*) from cooldown where direction='LONG')::bigint as long_anchors,
-    (select count(*) from cooldown where direction='SHORT')::bigint as short_anchors,
-    (select count(*) from cooldown where rr_15m_stop_4h_target>=5.0)
+    (select count(*) from anchored where direction='LONG')::bigint as long_anchors,
+    (select count(*) from anchored where direction='SHORT')::bigint as short_anchors,
+    (select count(*) from anchored where rr_15m_stop_4h_target>=5.0)
       ::bigint as source_geometry_rr5_anchors
 )
 select
@@ -1108,7 +1119,11 @@ select
   a.legacy_aligned_rows,
   a.anchor_prices_resolved,
   a.capture_or_anchor_failure_events,
+  a.independent_h2_candidates,
+  a.pending_independent_anchor_rows,
   a.independent_h2_anchors,
+  100.0*a.independent_h2_anchors/nullif(a.independent_h2_candidates,0)
+    as independent_anchor_resolution_pct,
   a.independent_symbols,
   a.utc_days,
   a.long_anchors,
