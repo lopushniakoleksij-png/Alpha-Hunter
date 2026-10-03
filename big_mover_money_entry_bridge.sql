@@ -124,6 +124,7 @@ begin
       sf.liquidity_state,
       sf.source_payload->>'opportunity_timing' as opportunity_timing,
       sf.source_payload->>'candidate_quality_status' as candidate_quality_status,
+      sf.source_payload#>>'{execution_setup,geometry_contract_id}' as geometry_contract_id,
       case when (sf.source_payload#>>'{execution_setup,entry}') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
         then (sf.source_payload#>>'{execution_setup,entry}')::double precision end as candidate_entry,
       case when (sf.source_payload#>>'{execution_setup,stop}') ~ '^-?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$'
@@ -173,6 +174,7 @@ begin
       d.blockers_dedup,
       jsonb_build_object(
         'source','BIG_MOVER_SHADOW_PLUS_LIVE_SCANNER',
+        'geometry_contract_id',d.geometry_contract_id,
         'thresholds_invented',false,
         't0_authorized',false,
         'trade_permission',false,

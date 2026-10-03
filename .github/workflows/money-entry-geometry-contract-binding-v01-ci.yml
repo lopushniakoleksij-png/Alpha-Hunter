@@ -1,0 +1,46 @@
+name: Money Entry Geometry Contract Binding v0.1 CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/analysis.py'
+      - 'big_mover_money_entry_bridge.sql'
+      - 'money_entry_stage_single_writer.sql'
+      - 'money_entry_geometry_contract_binding_v01.sql'
+      - 'tests/test_analysis.py'
+      - 'tests/test_big_mover_money_entry_bridge.py'
+      - 'tests/test_money_entry_geometry_contract_binding_v01.py'
+      - '.github/workflows/money-entry-geometry-contract-binding-v01-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'alpha_hunter/analysis.py'
+      - 'big_mover_money_entry_bridge.sql'
+      - 'money_entry_stage_single_writer.sql'
+      - 'money_entry_geometry_contract_binding_v01.sql'
+      - 'tests/test_analysis.py'
+      - 'tests/test_big_mover_money_entry_bridge.py'
+      - 'tests/test_money_entry_geometry_contract_binding_v01.py'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+      - name: Run geometry contract and scanner regressions
+        run: >-
+          python -m pytest -q
+          tests/test_money_entry_geometry_contract_binding_v01.py
+          tests/test_analysis.py
+          tests/test_big_mover_money_entry_bridge.py
