@@ -22,7 +22,11 @@ def test_cron_deploy_verifies_actual_canonical_cron_scan():
         "collected_at_utc.desc",
         "scientific_fingerprint_sha256",
         "canonical cron did not converge to target science",
-        "collected >= not_before and fingerprint == target",
+        "collected >= not_before",
+        'source == "RENDER_CRON"',
+        'role == "RENDER_CRON"',
+        "commit == target_commit",
+        "fingerprint == target",
     ]
     for marker in required:
         assert marker in WORKFLOW
