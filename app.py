@@ -324,27 +324,29 @@ def execution_binding_by_event(
 def compatible_execution_fills(
     frozen: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    direction = str(frozen.get("direction") or "").upper()
-    expected_side = "BUY" if direction == "LONG" else "SELL" if direction == "SHORT" else ""
-    symbol = str(frozen.get("symbol") or "")
-    frozen_at = str(frozen.get("frozen_at_utc") or "")
-    if not expected_side or not symbol or not frozen_at:
+    """Return only DB-verified current confirmation candidates for one freeze."""
+    execution_event_id = str(frozen.get("execution_event_id") or "").strip()
+    if not execution_event_id:
         return []
 
     rows = supabase_get_rows(
-        "alpha_hunter_fill_evidence",
+        "alpha_hunter_execution_fill_confirmation_candidates_v01",
         {
             "select": (
-                "fill_evidence_id,traceability_run_id,fill_time_utc,trade_id,"
-                "order_id,symbol,side,trade_side,trade_scope,price,base_volume,"
-                "quote_volume,fee_amount,fee_coin,cost_fields_complete"
+                "execution_event_id,fill_evidence_id,traceability_run_id,"
+                "fill_time_utc,trade_id,order_id,symbol,side,trade_side,"
+                "trade_scope,price,base_volume,quote_volume,fee_amount,fee_coin,"
+                "cost_fields_complete,order_evidence_id,order_identity_sha256,"
+                "order_type,order_state,order_created_at_utc,origin_consistent,"
+                "freeze_to_order_seconds,order_to_fill_seconds,"
+                "candidate_adverse_arrival_to_fill_bps,realized_fee_bps,"
+                "fill_candidate_count,event_candidate_count,"
+                "candidate_status,explicit_user_confirmation_required,"
+                "automatic_binding_permitted"
             ),
-            "symbol": f"eq.{symbol}",
-            "side": f"eq.{expected_side}",
-            "trade_side": "eq.OPEN",
-            "fill_time_utc": f"gte.{frozen_at}",
-            "order": "fill_time_utc.asc",
-            "limit": "20",
+            "execution_event_id": f"eq.{execution_event_id}",
+            "order": "freeze_to_order_seconds.asc,fill_time_utc.asc",
+            "limit": "50",
         },
     )
 
@@ -352,60 +354,59 @@ def compatible_execution_fills(
     for row in rows:
         if not isinstance(row, dict):
             continue
-        fill_id = str(row.get("fill_evidence_id") or "")
-        if not fill_id:
-            continue
-
-        already = supabase_get_rows(
-            "alpha_hunter_execution_fill_bindings_v01",
-            {
-                "select": "binding_id,execution_event_id,fill_evidence_id",
-                "fill_evidence_id": f"eq.{fill_id}",
-                "limit": "1",
-            },
-        )
-        if already:
-            continue
-
-        trace = supabase_get_rows(
-            "alpha_hunter_fill_traceability_runs",
-            {
-                "select": "traceability_run_id,complete,schema_validated",
-                "traceability_run_id": f"eq.{row.get('traceability_run_id')}",
-                "limit": "1",
-            },
-        )
-        order = supabase_get_rows(
-            "alpha_hunter_execution_order_evidence_v01",
-            {
-                "select": (
-                    "order_evidence_id,order_identity_sha256,order_type,"
-                    "order_state,order_created_at_utc,origin_consistent"
-                ),
-                "fill_evidence_id": f"eq.{fill_id}",
-                "order": "observed_at_utc.desc",
-                "limit": "1",
-            },
-        )
-
         item = dict(row)
-        trace_row = trace[0] if trace and isinstance(trace[0], dict) else {}
-        order_row = order[0] if order and isinstance(order[0], dict) else {}
-        item["_trace_complete"] = (
-            trace_row.get("complete") is True
-            and trace_row.get("schema_validated") is True
-        )
-        item["_order"] = order_row
+        item["_trace_complete"] = True
         item["_binding_ready"] = (
-            item["_trace_complete"]
-            and bool(order_row.get("order_evidence_id"))
-            and bool(order_row.get("order_identity_sha256"))
-            and bool(order_row.get("order_created_at_utc"))
-            and order_row.get("origin_consistent") is True
+            item.get("explicit_user_confirmation_required") is True
+            and item.get("automatic_binding_permitted") is False
+            and bool(item.get("order_evidence_id"))
+            and bool(item.get("order_identity_sha256"))
+            and item.get("origin_consistent") is True
         )
+        item["_order"] = {
+            "order_evidence_id": item.get("order_evidence_id"),
+            "order_identity_sha256": item.get("order_identity_sha256"),
+            "order_type": item.get("order_type"),
+            "order_state": item.get("order_state"),
+            "order_created_at_utc": item.get("order_created_at_utc"),
+            "origin_consistent": item.get("origin_consistent"),
+        }
         result.append(item)
 
     return result
+
+
+def pending_execution_fill_confirmations() -> list[dict[str, Any]]:
+    """Read-only queue. Never binds or resolves an ambiguous pair."""
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_fill_confirmation_candidates_v01",
+        {
+            "select": (
+                "execution_event_id,spec_id,symbol,strategy_id,direction,action,"
+                "frozen_at_utc,planned_entry_price,reward_risk,best_bid,best_ask,"
+                "entry_cross_price,fill_evidence_id,fill_time_utc,trade_id,order_id,"
+                "side,price,base_volume,quote_volume,fee_amount,fee_coin,"
+                "order_type,order_created_at_utc,freeze_to_order_seconds,"
+                "order_to_fill_seconds,candidate_adverse_arrival_to_fill_bps,"
+                "realized_fee_bps,fill_candidate_count,event_candidate_count,"
+                "candidate_status,explicit_user_confirmation_required,"
+                "automatic_binding_permitted,attribution_claim_permitted"
+            ),
+            "order": "fill_time_utc.desc,freeze_to_order_seconds.asc",
+            "limit": "100",
+        },
+    )
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def execution_fill_confirmation_status() -> dict[str, Any]:
+    rows = supabase_get_rows(
+        "alpha_hunter_execution_fill_confirmation_status_v01",
+        {"select": "*", "limit": "1"},
+    )
+    if rows and isinstance(rows[0], dict):
+        return rows[0]
+    return {}
 
 
 def existing_execution_binding(
