@@ -192,3 +192,23 @@ def test_geometry_migration_appends_view_column_without_reordering_existing_cont
         projection = sql[view_start:view_end]
         assert projection.index("o.order_path") < projection.index("x.average_fill_price")
         assert projection.rstrip().endswith("x.average_fill_price")
+
+
+def test_geometry_migration_preserves_gap_cutoff_live_view_contract():
+    root = Path(__file__).resolve().parents[1]
+    sql = (
+        root / "ops/sql/paper_entry_geometry_hardening_v05.sql"
+    ).read_text(encoding="utf-8").lower()
+    view_start = sql.index(
+        "create or replace view public.alpha_hunter_paper_reconciliation_open_v03"
+    )
+    view_end = sql.index(
+        "revoke all on public.alpha_hunter_paper_reconciliation_open_v03",
+        view_start,
+    )
+    view_sql = sql[view_start:view_end]
+
+    assert "o.submitted_at_utc" in view_sql
+    assert view_sql.index("o.submitted_at_utc") < view_sql.index("x.average_fill_price")
+    assert "2026-10-01 15:00:00+00" in view_sql
+    assert "and o.submitted_at_utc >= timestamptz" in view_sql
