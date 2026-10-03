@@ -90,3 +90,18 @@ def test_new_collector_has_distinct_six_hour_schedule_and_does_not_unschedule_v0
 
 def test_canonical_source_binding_requires_exact_same_timestamp():
     assert "s.collected_at_utc=g.captured_at_utc" in LOWER
+
+
+def test_anchor_collection_serves_only_preregistered_independent_h2_cohort():
+    assert "with recursive" in LOWER
+    assert "and c.h2_triggered=true" in LOWER
+    assert "select distinct on(symbol,direction)" in LOWER
+    assert "make_interval(hours=>v_spec.candidate_cooldown_hours)" in LOWER
+    assert "h2_triggered_24h_symbol_direction_independent_only" in LOWER
+    assert "'legacy_only_anchor_admission',false" in LOWER
+
+
+def test_legacy_alignment_is_overlap_tag_not_anchor_admission_path():
+    assert "legacy-only rows do not consume anchor collection capacity" in LOWER
+    assert "future standalone legacy-control sampler/evaluator must be separately preregistered" in LOWER
+    assert "and (c.h2_triggered or c.legacy_scanner_aligned)" not in LOWER
