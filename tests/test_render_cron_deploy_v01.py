@@ -9,7 +9,7 @@ WORKFLOW = (
 
 def test_cron_deploy_uses_dedicated_hook_not_web_hook():
     assert "RENDER_CRON_DEPLOY_HOOK_URL" in WORKFLOW
-    assert "RENDER_DEPLOY_HOOK_URL" not in WORKFLOW
+    assert "secrets.RENDER_DEPLOY_HOOK_URL" not in WORKFLOW
     assert "workflow_dispatch:" in WORKFLOW
 
 
