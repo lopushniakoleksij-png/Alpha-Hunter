@@ -43,7 +43,7 @@ def test_reverse_one_forming_bar_ema9_is_mathematically_exact():
     assert current is not None and closed is not None
     derived = (current - 0.2 * closes[-1]) / 0.8
     assert abs(derived - closed) < 1e-12
-    assert "(r.forming_ema9_15m-0.2*r.forming_candle_close)/0.8" in LOWER
+    assert "(sr.forming_ema9_15m-0.2*sr.forming_candle_close)/0.8" in LOWER
     assert "reversed_one_forming_bar_standard_ema9" in LOWER
 
 
