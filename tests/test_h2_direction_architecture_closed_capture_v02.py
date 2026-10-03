@@ -31,7 +31,7 @@ def test_trigger_does_not_use_compact_signal_feature_candle_or_ema():
 def test_closed_candle_is_proven_closed_and_exactly_precedes_forming_bar():
     assert "trigger_candle_confirmed_closed" in LOWER
     assert "forming_candle_started_at_utc" in LOWER
-    assert "=r.trigger_candle_started_at_utc+interval '15 minutes'" in LOWER
+    assert "=sr.trigger_candle_started_at_utc+interval '15 minutes'" in LOWER
     assert "snapshot_collected_at_utc" in LOWER
     assert "excluded_closed_15m_trigger_source_invalid" in LOWER
 
