@@ -95,7 +95,7 @@ declare
   v_base public.alpha_hunter_test_engine_runs_v01%rowtype;
   v_inv public.alpha_hunter_profitability_test_invalidations_v01%rowtype;
   v_id text;
-  v_now timestamptz:=clock_timestamp();
+  v_now timestamptz;
 begin
   v_base_result:=private.alpha_hunter_refresh_test_engine_v04();
 
@@ -107,6 +107,11 @@ begin
   if v_base.test_engine_run_id is null then
     raise exception 'Base test-engine refresh did not produce a readable run';
   end if;
+
+  v_now:=greatest(
+    clock_timestamp(),
+    v_base.evaluated_at_utc + interval '1 microsecond'
+  );
 
   select i.* into v_inv
   from public.alpha_hunter_profitability_test_invalidations_v01 i
