@@ -226,7 +226,6 @@ select
   case when coalesce(x.filled_quantity,0)>0 then 'PARTIALLY_FILLED' else 'SUBMITTED' end
     as execution_state,
   coalesce(x.fill_count,0)::integer as fill_count,
-  x.average_fill_price,
   coalesce(e.event_sequence,3)::integer as event_sequence,
   d.stop_price,
   d.target_price,
@@ -235,7 +234,8 @@ select
   o.paper_only,
   o.exchange_authority,
   o.trade_permission,
-  o.order_path
+  o.order_path,
+  x.average_fill_price
 from public.alpha_hunter_paper_orders_v02 o
 join public.alpha_hunter_paper_decisions_v01 d using (decision_id)
 left join lateral (
