@@ -12,7 +12,7 @@ from .paper_lifecycle import PaperState, transition_allowed
 MODEL_VERSION = "paper-reconciliation-v0.3"
 ATTEMPT_TABLE = "alpha_hunter_paper_reconciliation_attempts_v03"
 PROTECTIVE_TABLE = "alpha_hunter_paper_protective_orders_v03"
-OPEN_VIEW = "alpha_hunter_paper_reconciliation_open_v03"
+OPEN_VIEW = "alpha_hunter_paper_reconciliation_open_v08"
 ENTRY_ORDER_MAX_AGE_MINUTES = 35
 
 
