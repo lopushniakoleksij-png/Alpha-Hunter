@@ -36,7 +36,9 @@ alter table public.alpha_hunter_paper_reconciliation_attempts_v03
   );
 
 
-create or replace view public.alpha_hunter_paper_reconciliation_open_v08
+-- Inventory describes unresolved order evidence independently of permission
+-- to process it. Closing a deployment gate must never erase containment.
+create or replace view public.alpha_hunter_paper_reconciliation_inventory_v08
 with (security_invoker=true,security_barrier=true)
 as
 with activation as (
@@ -103,7 +105,6 @@ join latest_event le using(decision_id)
 left join fill_state x on x.order_id=o.order_id
 left join public.alpha_hunter_paper_entry_quarantine_v06 q
   on q.order_id=o.order_id
-cross join public.alpha_hunter_paper_reconciliation_gate_v06 g
 where coalesce(x.filled_quantity,0)<o.quantity
   and (
     le.state in ('SUBMITTED','PARTIALLY_FILLED')
@@ -113,8 +114,23 @@ where coalesce(x.filled_quantity,0)<o.quantity
       and coalesce(x.filled_quantity,0)=0
     )
   )
-  and q.order_id is null
-  and g.entry_reconciliation_permitted=true;
+  and q.order_id is null;
+
+revoke all on public.alpha_hunter_paper_reconciliation_inventory_v08
+  from public,anon,authenticated,service_role;
+grant select on public.alpha_hunter_paper_reconciliation_inventory_v08
+  to service_role;
+
+-- Runtime worklist remains gated. Visibility does not authorize processing.
+create or replace view public.alpha_hunter_paper_reconciliation_open_v08
+with (security_invoker=true,security_barrier=true)
+as
+select r.*
+from public.alpha_hunter_paper_reconciliation_inventory_v08 r
+where exists (
+  select 1 from public.alpha_hunter_paper_reconciliation_gate_v06 g
+  where g.entry_reconciliation_permitted=true
+);
 
 revoke all on public.alpha_hunter_paper_reconciliation_open_v08
   from public,anon,authenticated,service_role;
@@ -141,7 +157,7 @@ resting as (
     r.direction,
     r.submitted_at_utc as exposure_started_at_utc,
     'RESTING_ENTRY'::text as exposure_state
-  from public.alpha_hunter_paper_reconciliation_open_v08 r
+  from public.alpha_hunter_paper_reconciliation_inventory_v08 r
   join public.alpha_hunter_paper_decisions_v01 d using(decision_id)
   cross join activation a
   where r.filled_quantity=0
@@ -198,6 +214,13 @@ select
   case
     when count(*) filter(
       where r.execution_state='RECONCILIATION_REQUIRED'
+    )>0 and not exists (
+      select 1 from public.alpha_hunter_paper_reconciliation_gate_v06 g
+      where g.entry_reconciliation_permitted=true
+    )
+      then 'RECONCILIATION_BLOCKED_UNRESOLVED_ENTRIES_VISIBLE'
+    when count(*) filter(
+      where r.execution_state='RECONCILIATION_REQUIRED'
         and clock_timestamp()-r.submitted_at_utc>interval '35 minutes'
     )>0
       then 'EXPIRE_ON_NEXT_CANONICAL_RECONCILIATION'
@@ -215,8 +238,12 @@ select
   false as trade_permission,
   false as production_promotion_permitted,
   'NONE'::text as order_path,
-  'r8-reconciliation-required-containment-v0.1'::text as model_version
-from public.alpha_hunter_paper_reconciliation_open_v08 r;
+  'r8-reconciliation-required-containment-v0.1'::text as model_version,
+  exists (
+    select 1 from public.alpha_hunter_paper_reconciliation_gate_v06 g
+    where g.entry_reconciliation_permitted=true
+  ) as entry_reconciliation_permitted
+from public.alpha_hunter_paper_reconciliation_inventory_v08 r;
 
 revoke all on public.alpha_hunter_r8_reconciliation_required_status_v01
   from public,anon,authenticated,service_role;
