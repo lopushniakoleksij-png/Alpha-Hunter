@@ -754,6 +754,15 @@ class SupabaseStorage:
             "run_id,symbol",
         )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
+        r8_activation_rows = self._select_json(
+            "alpha_hunter_paper_execution_integrity_activation_v08",
+            {
+                "select": "activation_id,activated_at_utc",
+                "activation_id": "eq.PAPER_EXECUTION_R8",
+                "limit": "1",
+            },
+        )
+        r8_execution_gate_open = bool(r8_activation_rows)
         active_exposure_rows = self._select_json(
             "alpha_hunter_paper_active_exposure_keys_v08",
             {
@@ -773,6 +782,7 @@ class SupabaseStorage:
         paper_orders, paper_fills, execution_events = build_initial_paper_execution(
             paper_decisions,
             active_exposure_keys=active_exposure_keys,
+            execution_gate_open=r8_execution_gate_open,
         )
         initial_protections = build_initial_protective_orders(
             paper_decisions,
