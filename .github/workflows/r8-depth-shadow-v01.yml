@@ -1,0 +1,112 @@
+name: R8 Depth Shadow v0.1
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "ops/r8_depth_shadow.py"
+      - "ops/sql/r8_depth_shadow_v01.sql"
+      - "tests/test_r8_depth_shadow_v01.py"
+      - ".github/workflows/r8-depth-shadow-v01.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "ops/r8_depth_shadow.py"
+      - "ops/sql/r8_depth_shadow_v01.sql"
+      - "tests/test_r8_depth_shadow_v01.py"
+      - ".github/workflows/r8-depth-shadow-v01.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r8-depth-shadow-v01
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+          cache: pip
+
+      - name: Install focused test dependencies
+        run: python -m pip install --disable-pip-version-check pytest requests
+
+      - name: Compile shadow collector
+        run: python -m py_compile ops/r8_depth_shadow.py
+
+      - name: Run R8 depth-shadow regression tests
+        run: python -m pytest -q tests/test_r8_depth_shadow_v01.py
+
+      - name: Reject exchange write authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          text = Path("ops/r8_depth_shadow.py").read_text().lower()
+          forbidden = [
+              "place_order",
+              "place-order",
+              "cancel_order",
+              "cancel-order",
+              "modify-order",
+              "batch-orders",
+              "set-leverage",
+              'trade_permission": true',
+              'production_promotion_permitted": true',
+          ]
+          hits = [item for item in forbidden if item in text]
+          if hits:
+              raise SystemExit(f"forbidden authority path(s): {hits}")
+          print("PASS: shadow collector has no exchange-order authority.")
+          PY
+
+  collect:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      R8_EXPECTED_FINGERPRINT: 176b271ab6fe8b1905bfeb5118be77b6183cad6311925795cd912a7b055b99d1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install collector dependency
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Validate evidence credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${R8_EXPECTED_FINGERPRINT:-}"
+
+      - name: Capture R8 crossed-limit depth shadow
+        run: python ops/r8_depth_shadow.py
+
+      - name: Safety summary
+        run: |
+          echo "R8 fill model: UNCHANGED"
+          echo "R8 scientific fingerprint: UNCHANGED"
+          echo "Exchange order authority: NONE"
+          echo "Trade permission: FALSE"
+          echo "Production promotion: FALSE"
