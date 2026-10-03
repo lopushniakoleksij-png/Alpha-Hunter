@@ -323,7 +323,7 @@ def _modeled_fill(
         if not crossed:
             return None, [], False
         if top_size + 1e-12 < remaining_quantity:
-            return None, [], False
+            return None, ["TOP_OF_BOOK_CAPACITY_INSUFFICIENT_FOR_ALL_OR_NONE_ENTRY"], False
         # A later scanner observation only proves that a resting limit crossed.
         # It does not prove the current quote was the historical execution price.
         # Use the submitted limit as the conservative executable price so delayed
@@ -509,11 +509,14 @@ def reconcile_open_orders(
             continue
         fill, blockers, completed = _modeled_fill(order, quote, quote_observed_at)
         if blockers:
+            capacity_only = blockers == [
+                "TOP_OF_BOOK_CAPACITY_INSUFFICIENT_FOR_ALL_OR_NONE_ENTRY"
+            ]
             attempts.append(
                 _attempt(
                     order,
                     quote,
-                    outcome="INPUT_MISSING",
+                    outcome="NO_FULL_CAPACITY" if capacity_only else "INPUT_MISSING",
                     blockers=blockers,
                     observed_at_utc=quote_observed_at,
                 )
