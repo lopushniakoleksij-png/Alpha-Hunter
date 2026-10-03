@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 from .paper_execution import _load_model_config
@@ -12,6 +13,7 @@ MODEL_VERSION = "paper-reconciliation-v0.3"
 ATTEMPT_TABLE = "alpha_hunter_paper_reconciliation_attempts_v03"
 PROTECTIVE_TABLE = "alpha_hunter_paper_protective_orders_v03"
 OPEN_VIEW = "alpha_hunter_paper_reconciliation_open_v03"
+ENTRY_ORDER_MAX_AGE_MINUTES = 35
 
 
 def _optional_float(value: Any) -> float | None:
@@ -33,6 +35,60 @@ def _safe_fields() -> dict[str, Any]:
         "exchange_authority": False,
         "trade_permission": False,
         "order_path": "NONE",
+    }
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _entry_order_age_minutes(order: dict[str, Any], observed_at_utc: str) -> float | None:
+    submitted = _parse_utc(order.get("submitted_at_utc"))
+    observed = _parse_utc(observed_at_utc)
+    if submitted is None or observed is None:
+        return None
+    return (observed - submitted).total_seconds() / 60.0
+
+
+def _terminal_event(
+    order: dict[str, Any],
+    *,
+    occurred_at_utc: str,
+    state: PaperState,
+    event_type: str,
+    blockers: list[str],
+) -> dict[str, Any]:
+    current = PaperState(str(order["execution_state"]))
+    if not transition_allowed(current, state):
+        raise ValueError(f"Invalid paper transition {current.value} -> {state.value}")
+    return {
+        "event_id": _id(
+            "event",
+            order["decision_id"],
+            order["source_run_id"],
+            int(order["event_sequence"]) + 1,
+            state.value,
+        ),
+        "decision_id": order["decision_id"],
+        "sequence": int(order["event_sequence"]) + 1,
+        "occurred_at_utc": occurred_at_utc,
+        "event_type": event_type,
+        "state": state.value,
+        "payload": {
+            "order_id": order["order_id"],
+            "source_run_id": order["source_run_id"],
+            "blockers": blockers,
+            "exchange_execution": False,
+        },
+        **_safe_fields(),
     }
 
 
@@ -254,6 +310,10 @@ def _modeled_fill(
     if top_size is None or top_size <= 0:
         return None, ["TOP_OF_BOOK_SIZE_MISSING"], False
 
+    remaining_quantity = _optional_float(order.get("remaining_quantity"))
+    if remaining_quantity is None or remaining_quantity <= 0:
+        return None, ["ENTRY_REMAINING_QUANTITY_INVALID"], False
+
     cross_price = ask if direction == "LONG" else bid
     limit_price = _optional_float(order.get("limit_price"))
     if str(order["order_type"]) == "LIMIT":
@@ -261,6 +321,8 @@ def _modeled_fill(
             return None, ["LIMIT_PRICE_MISSING"], False
         crossed = ask <= limit_price if direction == "LONG" else bid >= limit_price
         if not crossed:
+            return None, [], False
+        if top_size + 1e-12 < remaining_quantity:
             return None, [], False
         # A later scanner observation only proves that a resting limit crossed.
         # It does not prove the current quote was the historical execution price.
@@ -271,8 +333,10 @@ def _modeled_fill(
         slippage_bps = 0.0
     else:
         fee_bps = _optional_float(order.get("public_taker_fee_bps"))
+        if top_size + 1e-12 < remaining_quantity:
+            return None, ["TOP_OF_BOOK_CAPACITY_INSUFFICIENT_FOR_ALL_OR_NONE_ENTRY"], False
         config = _load_model_config()
-        participation = min(1.0, float(order["remaining_quantity"]) / top_size)
+        participation = min(1.0, remaining_quantity / top_size)
         slippage_bps = min(
             config["maximum_market_slippage_bps"],
             config["base_market_slippage_bps"]
@@ -287,7 +351,7 @@ def _modeled_fill(
     if fee_bps is None:
         return None, ["FEE_EVIDENCE_MISSING"], False
 
-    quantity = min(float(order["remaining_quantity"]), top_size)
+    quantity = remaining_quantity
     is_limit = str(order["order_type"]) == "LIMIT"
     midpoint = fill_price if is_limit else (bid + ask) / 2.0
     cross_reference = fill_price if is_limit else cross_price
@@ -375,6 +439,58 @@ def reconcile_open_orders(
         if str(order.get("order_id")) in attempted:
             continue
         order["source_run_id"] = run_id
+
+        prior_filled_quantity = _optional_float(order.get("filled_quantity")) or 0.0
+        remaining_quantity = _optional_float(order.get("remaining_quantity")) or 0.0
+        if prior_filled_quantity > 0 and remaining_quantity > 0:
+            blockers = ["LEGACY_PARTIAL_ENTRY_NOT_R8_ELIGIBLE"]
+            attempts.append(
+                _attempt(
+                    order,
+                    None,
+                    outcome="QUARANTINED_LEGACY_PARTIAL",
+                    blockers=blockers,
+                    observed_at_utc=observed_at,
+                )
+            )
+            events.append(
+                _terminal_event(
+                    order,
+                    occurred_at_utc=observed_at,
+                    state=PaperState.RECONCILIATION_REQUIRED,
+                    event_type="PAPER_LEGACY_PARTIAL_QUARANTINED",
+                    blockers=blockers,
+                )
+            )
+            continue
+
+        age_minutes = _entry_order_age_minutes(order, observed_at)
+        if (
+            prior_filled_quantity <= 0
+            and age_minutes is not None
+            and age_minutes > ENTRY_ORDER_MAX_AGE_MINUTES
+        ):
+            blockers = ["ENTRY_ORDER_EXPIRED_35M"]
+            attempts.append(
+                _attempt(
+                    order,
+                    None,
+                    outcome="EXPIRED",
+                    blockers=blockers,
+                    observed_at_utc=observed_at,
+                )
+            )
+            events.append(
+                _terminal_event(
+                    order,
+                    occurred_at_utc=observed_at,
+                    state=PaperState.EXPIRED,
+                    event_type="PAPER_ENTRY_ORDER_EXPIRED",
+                    blockers=blockers,
+                )
+            )
+            continue
+
         quote = quotes.get(str(order.get("symbol") or "").upper())
         quote_observed_at = str(
             (quote or {}).get("_captured_at_utc")
