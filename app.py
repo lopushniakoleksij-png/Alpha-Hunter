@@ -569,13 +569,142 @@ def latest_paper_lifecycle_status() -> dict[str, Any]:
 
 
 def latest_control_tower_status() -> dict[str, Any]:
-    rows = supabase_get_rows(
-        "alpha_hunter_v14_watchdog_status_v01",
-        {"select": "*", "limit": "1"},
-    )
-    if not rows or not isinstance(rows[0], dict):
+    try:
+        rows = supabase_get_rows(
+            "alpha_hunter_v14_watchdog_status_v01",
+            {"select": "*", "limit": "1"},
+        )
+        if rows and isinstance(rows[0], dict):
+            return rows[0]
+    except (requests.RequestException, RuntimeError, ValueError):
+        app.logger.warning(
+            "V14 watchdog aggregate unavailable; using lightweight R8 fallback",
+            exc_info=True,
+        )
+
+    engine = latest_test_engine_status()
+    if not engine:
         raise RuntimeError("V14 control-tower status is unavailable")
-    return rows[0]
+
+    source_status = engine.get("source_status")
+    if not isinstance(source_status, dict):
+        source_status = {}
+
+    deployment = {}
+    try:
+        deployment_rows = supabase_get_rows(
+            "alpha_hunter_production_deployment_runtime_status_v03",
+            {"select": "*", "limit": "1"},
+        )
+        if deployment_rows and isinstance(deployment_rows[0], dict):
+            deployment = deployment_rows[0]
+    except (requests.RequestException, RuntimeError, ValueError):
+        deployment = {}
+
+    minimum_days = int(engine.get("minimum_test_days") or 30)
+    minimum_trades = int(engine.get("minimum_completed_paper_trades") or 100)
+    test_days_elapsed = safe_float(engine.get("test_days_elapsed"))
+    completed_trades = int(engine.get("completed_paper_trades") or 0)
+
+    latest_scan_at = parse_utc(engine.get("latest_live_scan_at_utc"))
+    latest_scan_age_seconds = None
+    if latest_scan_at is not None:
+        latest_scan_age_seconds = max(
+            0.0,
+            (datetime.now(timezone.utc) - latest_scan_at).total_seconds(),
+        )
+
+    baseline_started_at = parse_utc(
+        engine.get("real_counted_baseline_started_at_utc")
+    )
+    earliest_duration_gate = None
+    if baseline_started_at is not None:
+        earliest_duration_gate = (
+            baseline_started_at + timedelta(days=minimum_days)
+        ).isoformat()
+
+    critical_alerts: list[str] = []
+    warning_alerts: list[str] = []
+    expected_gates: list[str] = []
+
+    if str(engine.get("operational_status") or "") != "PASS":
+        critical_alerts.append("TEST_ENGINE_OPERATIONAL_BLOCKED")
+    if source_status.get("cadence_integrity_ok") is not True:
+        critical_alerts.append("CADENCE_INTEGRITY_FAILED")
+    if int(source_status.get("identity_drift_scans") or 0) > 0:
+        critical_alerts.append("SCIENTIFIC_IDENTITY_DRIFT")
+    if bool(deployment.get("deployment_drift")):
+        warning_alerts.append("RENDER_CRON_DEPLOYMENT_DRIFT")
+    if engine.get("cost_model_validated") is not True:
+        warning_alerts.append("EXECUTION_COST_MODEL_NOT_VALIDATED")
+
+    economics = engine.get("economics")
+    if not isinstance(economics, dict):
+        economics = {}
+    if economics.get("duration_gate_met") is not True:
+        expected_gates.append("MINIMUM_30_DAY_DURATION_NOT_MET")
+    if economics.get("sample_gate_met") is not True:
+        expected_gates.append("MINIMUM_100_PAPER_TRADES_NOT_MET")
+    if engine.get("realistic_net_r_claim_permitted") is not True:
+        expected_gates.append("REALISTIC_NET_R_CLAIM_NOT_YET_PERMITTED")
+
+    watchdog_status = (
+        "CRITICAL"
+        if critical_alerts
+        else "WARNING"
+        if warning_alerts
+        else "HEALTHY"
+    )
+
+    return {
+        "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+        "spec_id": engine.get("spec_id"),
+        "engine_version": engine.get("engine_version"),
+        "operational_status": engine.get("operational_status"),
+        "profitability_status": engine.get("profitability_status"),
+        "verdict": engine.get("verdict"),
+        "watchdog_status": watchdog_status,
+        "critical_alerts": critical_alerts,
+        "warning_alerts": warning_alerts,
+        "expected_gates": expected_gates,
+        "latest_live_scan_at_utc": engine.get("latest_live_scan_at_utc"),
+        "latest_live_scan_age_seconds": latest_scan_age_seconds,
+        "completed_paper_trades": completed_trades,
+        "minimum_completed_paper_trades": minimum_trades,
+        "paper_trades_remaining": max(minimum_trades - completed_trades, 0),
+        "test_days_elapsed": test_days_elapsed,
+        "minimum_test_days": minimum_days,
+        "test_days_remaining": max(minimum_days - test_days_elapsed, 0.0),
+        "earliest_duration_gate_at_utc": earliest_duration_gate,
+        "post_start_scans": int(source_status.get("post_start_scans") or 0),
+        "identity_drift_scans": int(
+            source_status.get("identity_drift_scans") or 0
+        ),
+        "cadence_integrity_status": source_status.get(
+            "cadence_integrity_status"
+        ),
+        "too_frequent_scan_intervals": 0,
+        "excessive_gap_intervals": 0,
+        "identity_mismatch_scan_count": int(
+            source_status.get("identity_drift_scans") or 0
+        ),
+        "expected_schedule": "RENDER_CRON_ALIGNED_00_20_40",
+        "cost_scientific_status": (
+            "VALIDATED"
+            if engine.get("cost_model_validated") is True
+            else "R8_EXECUTED_PAPER_COST_VALIDATION_PENDING"
+        ),
+        "cost_next_gate": source_status.get("cost_validation_next_gate"),
+        "account_identity_probe_status": None,
+        "historical_fill_continuity_conflict": False,
+        "historical_fill_rows_same_window": None,
+        "database_size_pretty": None,
+        "live_toast_review_tables": None,
+        "legacy_control_plane_status": None,
+        "trade_permission": False,
+        "production_promotion_permitted": False,
+        "order_path": "NONE",
+    }
 
 
 def latest_control_tower_events(limit: int = 12) -> list[dict[str, Any]]:
