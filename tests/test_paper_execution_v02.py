@@ -19,6 +19,7 @@ def _decision(
         "run_id": "run-release-2-2",
         "observed_at_utc": "2026-10-01T06:00:00+00:00",
         "symbol": "TESTUSDT",
+        "strategy_id": "S2",
         "direction": direction,
         "action_status": action_status,
         "entry_price": 10.0,
@@ -66,14 +67,21 @@ def test_market_order_models_spread_slippage_fee_and_unaccrued_funding():
     assert all(event["exchange_authority"] is False for event in events)
 
 
-def test_top_of_book_capacity_produces_a_partial_fill():
+def test_top_of_book_capacity_never_creates_an_unprotected_partial_fill():
     orders, fills, events = build_initial_paper_execution(
         [_decision(quantity_at_top=1.0)]
     )
 
     assert orders[0]["quantity"] == pytest.approx(2.5)
-    assert fills[0]["quantity"] == pytest.approx(1.0)
-    assert events[-1]["state"] == "PARTIALLY_FILLED"
+    assert fills == []
+    assert [event["state"] for event in events] == [
+        "SUBMITTED",
+        "RECONCILIATION_REQUIRED",
+    ]
+    assert (
+        "TOP_OF_BOOK_CAPACITY_INSUFFICIENT_FOR_ALL_OR_NONE_ENTRY"
+        in events[-1]["payload"]["blockers"]
+    )
 
 
 def test_resting_limit_is_submitted_without_inventing_a_fill():
@@ -119,3 +127,47 @@ def test_execution_sql_is_append_only_rls_scoped_and_has_no_live_path():
     assert "order_path='none'" in sql
     assert "grant update" not in sql
     assert "grant delete" not in sql
+
+
+def test_active_exposure_key_blocks_duplicate_paper_submission():
+    decision = _decision()
+    key = ("TESTUSDT", "S2", "LONG")
+
+    orders, fills, events = build_initial_paper_execution(
+        [decision],
+        active_exposure_keys={key},
+    )
+
+    assert orders == []
+    assert fills == []
+    assert [event["state"] for event in events] == ["CANCELLED"]
+    assert "ACTIVE_PAPER_EXPOSURE_EXISTS" in events[0]["payload"]["blockers"]
+
+
+def test_same_scan_duplicate_exposure_only_admits_first_order():
+    first = _decision()
+    second = _decision()
+    second["decision_id"] = "decision-release-2-2-second"
+
+    orders, fills, events = build_initial_paper_execution([first, second])
+
+    assert len(orders) == 1
+    assert len(fills) == 1
+    assert [event["state"] for event in events] == [
+        "SUBMITTED",
+        "FILLED",
+        "CANCELLED",
+    ]
+    assert "ACTIVE_PAPER_EXPOSURE_EXISTS" in events[-1]["payload"]["blockers"]
+
+
+def test_r8_execution_gate_blocks_all_submissions_before_activation():
+    orders, fills, events = build_initial_paper_execution(
+        [_decision()],
+        execution_gate_open=False,
+    )
+
+    assert orders == []
+    assert fills == []
+    assert [event["state"] for event in events] == ["CANCELLED"]
+    assert "PAPER_R8_INTEGRITY_NOT_ACTIVATED" in events[0]["payload"]["blockers"]

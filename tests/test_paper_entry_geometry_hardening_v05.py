@@ -79,7 +79,7 @@ def test_delayed_short_limit_uses_limit_price_not_late_favorable_quote():
     assert len(protections) == 2
 
 
-def test_completed_partial_fill_checks_weighted_average_geometry():
+def test_completed_partial_fill_is_quarantined_under_r8_all_or_none_contract():
     order = open_order(
         ordered_quantity=5.0,
         filled_quantity=2.0,
@@ -94,13 +94,14 @@ def test_completed_partial_fill_checks_weighted_average_geometry():
         [order],
     )
 
-    assert attempts[0]["outcome"] == "FILL_MODELED"
-    assert fills[0]["quantity"] == 3.0
-    assert events[0]["state"] == "FILLED"
-    assert len(protections) == 2
+    assert attempts[0]["outcome"] == "QUARANTINED_LEGACY_PARTIAL"
+    assert attempts[0]["blockers"] == ["LEGACY_PARTIAL_ENTRY_NOT_R8_ELIGIBLE"]
+    assert fills == []
+    assert events[0]["state"] == "RECONCILIATION_REQUIRED"
+    assert protections == []
 
 
-def test_corrupted_prior_average_fails_closed_before_completion():
+def test_corrupted_legacy_partial_is_quarantined_before_any_completion_attempt():
     order = open_order(
         ordered_quantity=5.0,
         filled_quantity=4.0,
@@ -115,10 +116,10 @@ def test_corrupted_prior_average_fails_closed_before_completion():
         [order],
     )
 
-    assert attempts[0]["outcome"] == "INPUT_MISSING"
-    assert attempts[0]["blockers"] == ["COMPLETED_ENTRY_GEOMETRY_INVALID"]
+    assert attempts[0]["outcome"] == "QUARANTINED_LEGACY_PARTIAL"
+    assert attempts[0]["blockers"] == ["LEGACY_PARTIAL_ENTRY_NOT_R8_ELIGIBLE"]
     assert fills == []
-    assert events == []
+    assert events[0]["state"] == "RECONCILIATION_REQUIRED"
     assert protections == []
 
 

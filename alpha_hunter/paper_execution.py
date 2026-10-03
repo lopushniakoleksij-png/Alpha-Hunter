@@ -214,11 +214,17 @@ def _fill_from_order(
     if top_size is None or top_size <= 0:
         return None, ["TOP_OF_BOOK_SIZE_MISSING"]
 
+    required_quantity = _optional_float(order.get("quantity"))
+    if required_quantity is None or required_quantity <= 0:
+        return None, ["ENTRY_QUANTITY_INVALID"]
+
     cross_price = ask if direction == "LONG" else bid
     if order["order_type"] == "LIMIT":
         limit_price = float(order["limit_price"])
         crossed = ask <= limit_price if direction == "LONG" else bid >= limit_price
         if not crossed:
+            return None, []
+        if top_size + 1e-12 < required_quantity:
             return None, []
         fill_price = min(ask, limit_price) if direction == "LONG" else max(bid, limit_price)
         fee_bps = _optional_float(order.get("public_maker_fee_bps"))
@@ -227,7 +233,9 @@ def _fill_from_order(
         fee_bps = _optional_float(order.get("public_taker_fee_bps"))
         if fee_bps is None:
             return None, ["TAKER_FEE_EVIDENCE_MISSING"]
-        participation = min(1.0, float(order["quantity"]) / top_size)
+        if top_size + 1e-12 < required_quantity:
+            return None, ["TOP_OF_BOOK_CAPACITY_INSUFFICIENT_FOR_ALL_OR_NONE_ENTRY"]
+        participation = min(1.0, required_quantity / top_size)
         slippage_bps = min(
             config["maximum_market_slippage_bps"],
             config["base_market_slippage_bps"]
@@ -249,7 +257,7 @@ def _fill_from_order(
     ):
         return None, ["ENTRY_FILL_GEOMETRY_INVALID"]
 
-    fill_quantity = min(float(order["quantity"]), top_size)
+    fill_quantity = required_quantity
     midpoint = (bid + ask) / 2.0
     notional = fill_quantity * fill_price
     spread_per_unit = (cross_price - midpoint) if direction == "LONG" else (midpoint - cross_price)
@@ -291,8 +299,19 @@ def _fill_from_order(
     }, []
 
 
+def paper_exposure_key(decision: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(decision.get("symbol") or "").upper(),
+        str(decision.get("strategy_id") or ""),
+        str(decision.get("direction") or "").upper(),
+    )
+
+
 def build_initial_paper_execution(
     decisions: list[dict[str, Any]],
+    *,
+    active_exposure_keys: set[tuple[str, str, str]] | None = None,
+    execution_gate_open: bool = True,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Create deterministic paper submissions and at most one top-of-book fill.
 
@@ -304,14 +323,34 @@ def build_initial_paper_execution(
     orders: list[dict[str, Any]] = []
     fills: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
+    occupied = set(active_exposure_keys or set())
     for decision in decisions:
         if decision.get("paper_authority") is not True:
             continue
+        if not execution_gate_open:
+            events.append(
+                _cancelled_event(decision, ["PAPER_R8_INTEGRITY_NOT_ACTIVATED"])
+            )
+            continue
+
+        exposure_key = paper_exposure_key(decision)
+        if not all(exposure_key):
+            events.append(
+                _cancelled_event(decision, ["PAPER_EXPOSURE_KEY_INVALID"])
+            )
+            continue
+        if exposure_key in occupied:
+            events.append(
+                _cancelled_event(decision, ["ACTIVE_PAPER_EXPOSURE_EXISTS"])
+            )
+            continue
+
         order, blockers = _order_from_decision(decision, config)
         if order is None:
             events.append(_cancelled_event(decision, blockers))
             continue
         orders.append(order)
+        occupied.add(exposure_key)
         events.append(_submission_event(decision, order))
         fill, fill_blockers = _fill_from_order(decision, order, config)
         if fill_blockers:

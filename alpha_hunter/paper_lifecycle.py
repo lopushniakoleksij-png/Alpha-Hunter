@@ -124,6 +124,15 @@ def _decision_row(
     }
     decision_id = _hash_id("decision", _canonical_json(identity))
     market = row.get("_market_row") if isinstance(row.get("_market_row"), dict) else row
+    validation_identity = snapshot.get("validation_identity")
+    if not isinstance(validation_identity, dict):
+        validation_identity = {}
+    run_source = str(validation_identity.get("run_source") or "").upper()
+    runtime_role = str(validation_identity.get("runtime_role") or "").upper()
+    paper_authority_source_ok = (
+        run_source == "RENDER_CRON" and runtime_role == "RENDER_CRON"
+    )
+
     instrument = market.get("instrument_constraints", {})
     if not isinstance(instrument, dict):
         instrument = {}
@@ -165,12 +174,20 @@ def _decision_row(
             "funding_interval_hours": market.get("funding_interval_hours"),
             "next_funding_time_ms": market.get("next_funding_time_ms"),
             "canonical_market_freshness": snapshot.get("canonical_market_freshness"),
-            "validation_identity": snapshot.get("validation_identity"),
+            "validation_identity": validation_identity,
+            "paper_authority_source_gate": {
+                "required_run_source": "RENDER_CRON",
+                "required_runtime_role": "RENDER_CRON",
+                "observed_run_source": run_source,
+                "observed_runtime_role": runtime_role,
+                "passed": paper_authority_source_ok,
+            },
         },
         "paper_only": True,
         "paper_authority": action.get("status")
         in {"EXECUTE_NOW_PAPER", "PLACE_LIMIT_PAPER"}
-        and disposition == "CANONICAL",
+        and disposition == "CANONICAL"
+        and paper_authority_source_ok,
         "exchange_authority": False,
         "trade_permission": False,
         "order_path": "NONE",
