@@ -40,6 +40,7 @@ def open_order(**overrides):
         "fill_count": 0,
         "average_fill_price": None,
         "event_sequence": 3,
+        "submitted_at_utc": "2026-10-01T06:40:00+00:00",
         "stop_price": 9.5,
         "target_price": 11.0,
         "public_maker_fee_bps": 2.0,
@@ -77,17 +78,20 @@ def test_complete_later_fill_activates_two_reduce_only_protective_orders():
     assert all(row["quantity"] == 5.0 for row in protections)
 
 
-def test_partial_fill_remains_open_and_has_no_protection():
+def test_insufficient_full_capacity_does_not_create_partial_fill():
     attempts, fills, events, protections = reconcile_open_orders(
         snapshot(ask_size=2.0), [open_order()]
     )
-    assert attempts[0]["outcome"] == "FILL_MODELED"
-    assert fills[0]["quantity"] == 2.0
-    assert events[0]["state"] == "PARTIALLY_FILLED"
+    assert attempts[0]["outcome"] == "NO_FULL_CAPACITY"
+    assert attempts[0]["blockers"] == [
+        "TOP_OF_BOOK_CAPACITY_INSUFFICIENT_FOR_ALL_OR_NONE_ENTRY"
+    ]
+    assert fills == []
+    assert events == []
     assert protections == []
 
 
-def test_later_partial_completion_uses_full_entry_quantity_for_protection():
+def test_legacy_partial_entry_is_quarantined_instead_of_completed():
     order = open_order(
         filled_quantity=2.0,
         remaining_quantity=3.0,
@@ -96,13 +100,15 @@ def test_later_partial_completion_uses_full_entry_quantity_for_protection():
         average_fill_price=10.0,
         event_sequence=4,
     )
-    _, fills, events, protections = reconcile_open_orders(
+    attempts, fills, events, protections = reconcile_open_orders(
         snapshot(ask_size=3.0), [order]
     )
-    assert fills[0]["fill_sequence"] == 2
-    assert events[0]["state"] == "FILLED"
+    assert attempts[0]["outcome"] == "QUARANTINED_LEGACY_PARTIAL"
+    assert attempts[0]["blockers"] == ["LEGACY_PARTIAL_ENTRY_NOT_R8_ELIGIBLE"]
+    assert fills == []
+    assert protections == []
+    assert events[0]["state"] == "RECONCILIATION_REQUIRED"
     assert events[0]["sequence"] == 5
-    assert all(row["quantity"] == 5.0 for row in protections)
 
 
 def test_missing_top_size_fails_closed_as_input_missing():
@@ -230,3 +236,17 @@ def test_current_public_quote_override_reconciles_symbol_absent_from_deep_scan()
     )
     assert events[0]["occurred_at_utc"] == captured_at
     assert len(protections) == 2
+
+
+def test_stale_unfilled_limit_expires_after_35_minutes():
+    order = open_order(submitted_at_utc="2026-10-01T06:00:00+00:00")
+    attempts, fills, events, protections = reconcile_open_orders(
+        snapshot(), [order]
+    )
+
+    assert attempts[0]["outcome"] == "EXPIRED"
+    assert attempts[0]["blockers"] == ["ENTRY_ORDER_EXPIRED_35M"]
+    assert fills == []
+    assert protections == []
+    assert events[0]["state"] == "EXPIRED"
+    assert events[0]["event_type"] == "PAPER_ENTRY_ORDER_EXPIRED"
