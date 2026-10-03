@@ -68,6 +68,7 @@ def test_audit_has_no_exchange_or_promotion_authority():
 
 
 def test_summary_reports_observed_and_trigger_anchored_r_separately():
+    assert "grant select on public.alpha_hunter_paper_exit_observation_delay_summary_v01" in LOWER
     assert "alpha_hunter_paper_exit_observation_delay_summary_v01" in LOWER
     assert "average_observed_net_r" in LOWER
     assert "average_trigger_anchored_net_r" in LOWER
