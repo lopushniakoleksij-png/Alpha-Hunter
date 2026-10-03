@@ -68,7 +68,9 @@ ALLOWED_TRANSITIONS: dict[PaperState, frozenset[PaperState]] = {
     PaperState.EXPIRED: frozenset(),
     PaperState.STOPPED: frozenset(),
     PaperState.TARGETED: frozenset(),
-    PaperState.RECONCILIATION_REQUIRED: frozenset(),
+    # Fail-closed R8 recovery only. A reconciliation-required entry must never
+    # be filled later; it may only age out under the frozen entry-age contract.
+    PaperState.RECONCILIATION_REQUIRED: frozenset({PaperState.EXPIRED}),
 }
 
 
