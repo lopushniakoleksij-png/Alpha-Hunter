@@ -86,3 +86,7 @@ def test_new_collector_has_distinct_six_hour_schedule_and_does_not_unschedule_v0
     assert "alpha-hunter-h2-direction-closed-capture-v02" in LOWER
     assert "'22 */6 * * *'" in SQL
     assert "does not unschedule v0.1" in LOWER
+
+
+def test_canonical_source_binding_requires_exact_same_timestamp():
+    assert "s.collected_at_utc=g.captured_at_utc" in LOWER
