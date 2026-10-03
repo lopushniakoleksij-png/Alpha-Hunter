@@ -373,11 +373,8 @@ select
         <=b.maximum_monitoring_gap_minutes
   ) as monitoring_cadence_valid,
 
-  true as paper_only,
   false as live_money_claim_permitted,
-  false as trade_permission,
-  false as production_promotion_permitted,
-  'NONE'::text as order_path
+  false as production_promotion_permitted
 from base b
 left join fill_summary fs on fs.order_id=b.entry_order_id
 left join partial_history ph on ph.decision_id=b.decision_id
