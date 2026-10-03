@@ -125,6 +125,7 @@ select
   o.exchange_authority,
   o.trade_permission,
   o.order_path,
+  o.submitted_at_utc,
   x.average_fill_price
 from public.alpha_hunter_paper_orders_v02 o
 join public.alpha_hunter_paper_decisions_v01 d using (decision_id)
@@ -142,7 +143,8 @@ left join lateral (
   from public.alpha_hunter_paper_events_v01 pe
   where pe.decision_id=o.decision_id
 ) e on true
-where coalesce(x.filled_quantity,0) < o.quantity;
+where coalesce(x.filled_quantity,0) < o.quantity
+  and o.submitted_at_utc >= timestamptz '2026-10-01 15:00:00+00';
 
 revoke all on public.alpha_hunter_paper_reconciliation_open_v03
   from public,anon,authenticated,service_role;
