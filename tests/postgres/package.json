@@ -1,0 +1,7 @@
+{
+  "name": "alpha-hunter-postgres-contract-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {"test": "node --test participation-v02.test.mjs"},
+  "devDependencies": {"@electric-sql/pglite": "0.5.8"}
+}
