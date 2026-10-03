@@ -754,8 +754,25 @@ class SupabaseStorage:
             "run_id,symbol",
         )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
+        active_exposure_rows = self._select_json(
+            "alpha_hunter_paper_active_exposure_keys_v08",
+            {
+                "select": "symbol,strategy_id,direction",
+                "limit": "5000",
+            },
+        )
+        active_exposure_keys = {
+            (
+                str(row.get("symbol") or "").upper(),
+                str(row.get("strategy_id") or ""),
+                str(row.get("direction") or "").upper(),
+            )
+            for row in active_exposure_rows
+            if row.get("symbol") and row.get("strategy_id") and row.get("direction")
+        }
         paper_orders, paper_fills, execution_events = build_initial_paper_execution(
-            paper_decisions
+            paper_decisions,
+            active_exposure_keys=active_exposure_keys,
         )
         initial_protections = build_initial_protective_orders(
             paper_decisions,
