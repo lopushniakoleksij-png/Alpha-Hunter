@@ -20,6 +20,9 @@
 --
 -- Scientific boundary:
 --   CAPTURE ONLY. No outcomes are queried. No evaluator is created.
+--   Decision anchors are collected only for the preregistered independent H2
+--   cohort: first H2 trigger per symbol+direction, then >=24h cooldown.
+--   Legacy scanner alignment is retained as a capture-time overlap tag only.
 --   A separately preregistered sealed evaluator is required before H2 outcomes
 --   can be read or any scientific support/falsification claim can be made.
 --
@@ -316,7 +319,7 @@ begin
       'H2 v0.1 forming-candle captures are not imported and cannot satisfy v0.2 maturity',
     'test_geometry','15m local support/resistance invalidation with 4H structural target',
     'legacy_control_reference',
-      'scanner_direction equals candidate direction under current legacy scanner; future evaluator must pair prospectively without outcome access',
+      'scanner_direction equals candidate direction is retained as a capture-time overlap tag only; legacy-only rows do not consume anchor collection capacity; any future standalone legacy-control sampler/evaluator must be separately preregistered before outcome access',
     'decision_anchor',
       'first exact public Bitget 1m candle open at or after decision_available_at_utc; source scan price is provenance only and never the decision anchor',
     'source_freshness',
@@ -863,11 +866,42 @@ begin
   get diagnostics v_inserted = row_count;
 
   for r in
+    with recursive
+    eligible as (
+      select c.*
+      from public.alpha_hunter_h2_direction_captures_v02 c
+      where c.spec_id=v_spec.spec_id
+        and c.h2_triggered=true
+    ),
+    seed as (
+      select distinct on(symbol,direction)
+        e.*
+      from eligible e
+      order by symbol,direction,decision_available_at_utc,capture_id
+    ),
+    cooldown as (
+      select s.*
+      from seed s
+
+      union all
+
+      select n.*
+      from cooldown p
+      join lateral (
+        select e.*
+        from eligible e
+        where e.symbol=p.symbol
+          and e.direction=p.direction
+          and e.decision_available_at_utc
+                >=p.decision_available_at_utc
+                  +make_interval(hours=>v_spec.candidate_cooldown_hours)
+        order by e.decision_available_at_utc,e.capture_id
+        limit 1
+      ) n on true
+    )
     select c.capture_id,c.symbol,c.decision_available_at_utc
-    from public.alpha_hunter_h2_direction_captures_v02 c
-    where c.spec_id=v_spec.spec_id
-      and (c.h2_triggered or c.legacy_scanner_aligned)
-      and c.decision_available_at_utc<=clock_timestamp()-interval '2 minutes'
+    from cooldown c
+    where c.decision_available_at_utc<=clock_timestamp()-interval '2 minutes'
       and not exists (
         select 1
         from public.alpha_hunter_h2_direction_anchor_prices_v02 a
@@ -969,6 +1003,8 @@ begin
     'capture_rows_inserted',v_inserted,
     'anchor_prices_inserted',v_anchor_inserted,
     'anchor_failure_events',v_anchor_failures,
+    'anchor_admission_contract','H2_TRIGGERED_24H_SYMBOL_DIRECTION_INDEPENDENT_ONLY',
+    'legacy_only_anchor_admission',false,
     'outcome_evidence_used',false,
     'sealed_outcome_read',false,
     'evaluator_active',false,
