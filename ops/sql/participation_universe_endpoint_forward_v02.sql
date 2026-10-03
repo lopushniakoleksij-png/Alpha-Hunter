@@ -9,6 +9,7 @@
 --   * source = PRIMARY_SCANNER_CACHED_TICKERS;
 --   * measurement_quality = CANONICAL_SCAN_TICKER_SNAPSHOT;
 --   * T0 admission requires exact same-run, same-timestamp universe evidence;
+--   * T0 admission missingness is surfaced read-only and snapshotted per run;
 --   * endpoint = first canonical universe observation at/after due within 30m;
 --   * explicit immutable censoring when the 30m endpoint window is missed;
 --   * direction-adjusted endpoint return only;
@@ -197,6 +198,9 @@ create table if not exists private.alpha_hunter_participation_universe_endpoint_
   candidates_inserted integer not null,
   outcomes_inserted integer not null,
   failures_inserted integer not null,
+  eligible_diagnostics_total integer not null,
+  anchor_admitted_total integer not null,
+  anchor_missing_at_check_total integer not null,
   candidate_rows_total integer not null,
   outcome_rows_total integer not null,
   failure_rows_total integer not null,
@@ -223,6 +227,9 @@ declare
   v_candidates_inserted integer:=0;
   v_outcomes_inserted integer:=0;
   v_failures_inserted integer:=0;
+  v_eligible_diagnostics_total integer:=0;
+  v_anchor_admitted_total integer:=0;
+  v_anchor_missing_at_check_total integer:=0;
   v_candidate_total integer:=0;
   v_outcome_total integer:=0;
   v_failure_total integer:=0;
@@ -269,6 +276,42 @@ begin
       'production_promotion_permitted',false
     );
   end if;
+
+  -- Snapshot T0 admission health before materialization. Missing anchors are
+  -- observable but not frozen as permanent rejections: a later collector pass
+  -- may admit the diagnostic if the exact canonical run evidence appears.
+  with eligible as (
+    select
+      d.diagnostic_id,
+      exists (
+        select 1
+        from public.alpha_hunter_universe_hourly u
+        where u.selection_run_id=d.run_id
+          and u.symbol=d.symbol
+          and u.observed_at_utc=d.captured_at_utc
+          and u.source=v_spec.required_source
+          and u.measurement_quality=v_spec.required_measurement_quality
+          and u.last_price is not null
+          and u.last_price>0
+      ) as has_exact_anchor
+    from public.alpha_hunter_participation_diagnostics d
+    join public.alpha_hunter_signals s
+      on s.signal_id=d.source_signal_id
+    where d.captured_at_utc>=v_spec.registered_at_utc
+      and d.candidate_direction in ('LONG','SHORT')
+      and (s.direction is null or s.direction=d.candidate_direction)
+      and d.shadow_only=true
+      and d.trade_permission=false
+  )
+  select
+    count(*),
+    count(*) filter(where has_exact_anchor),
+    count(*) filter(where not has_exact_anchor)
+  into
+    v_eligible_diagnostics_total,
+    v_anchor_admitted_total,
+    v_anchor_missing_at_check_total
+  from eligible;
 
   -- Forward-only admission. A candidate is admitted only when an exact
   -- same-run, same-timestamp canonical universe T0 observation exists.
@@ -609,12 +652,14 @@ begin
 
   insert into private.alpha_hunter_participation_universe_endpoint_runs_v02(
     run_id,spec_id,checked_at_utc,candidates_inserted,outcomes_inserted,
-    failures_inserted,candidate_rows_total,outcome_rows_total,failure_rows_total,
-    resolvable_backlog_rows,expired_uncensored_backlog_rows,evidence,
+    failures_inserted,eligible_diagnostics_total,anchor_admitted_total,
+    anchor_missing_at_check_total,candidate_rows_total,outcome_rows_total,
+    failure_rows_total,resolvable_backlog_rows,expired_uncensored_backlog_rows,evidence,
     shadow_only,trade_permission,production_promotion_permitted,order_path
   ) values (
     v_run_id,v_spec.spec_id,v_now,v_candidates_inserted,v_outcomes_inserted,
-    v_failures_inserted,v_candidate_total,v_outcome_total,v_failure_total,
+    v_failures_inserted,v_eligible_diagnostics_total,v_anchor_admitted_total,
+    v_anchor_missing_at_check_total,v_candidate_total,v_outcome_total,v_failure_total,
     v_resolvable_backlog,v_expired_uncensored_backlog,
     jsonb_build_object(
       'model_version','participation-universe-endpoint-forward-v0.2',
@@ -623,6 +668,7 @@ begin
       'source_name',v_spec.required_source,
       'measurement_quality',v_spec.required_measurement_quality,
       'endpoint_max_lag_minutes',v_spec.endpoint_max_lag_minutes,
+      't0_admission_health_snapshotted',true,
       'historical_backfill_permitted',false,
       'threshold_derivation_permitted',false
     ),
@@ -635,6 +681,9 @@ begin
     'candidates_inserted',v_candidates_inserted,
     'outcomes_inserted',v_outcomes_inserted,
     'failures_inserted',v_failures_inserted,
+    'eligible_diagnostics_total',v_eligible_diagnostics_total,
+    'anchor_admitted_total',v_anchor_admitted_total,
+    'anchor_missing_at_check_total',v_anchor_missing_at_check_total,
     'candidate_rows_total',v_candidate_total,
     'outcome_rows_total',v_outcome_total,
     'failure_rows_total',v_failure_total,
@@ -649,6 +698,67 @@ begin
   );
 end;
 $function$;
+
+create or replace view private.alpha_hunter_participation_universe_t0_admission_health_v02
+with (security_invoker=true,security_barrier=true)
+as
+with spec as (
+  select *
+  from private.alpha_hunter_participation_universe_endpoint_specs_v02
+  where spec_id='PARTICIPATION-UNIVERSE-ENDPOINT-FORWARD-V02'
+), eligible as (
+  select
+    d.diagnostic_id,
+    d.run_id as source_run_id,
+    d.captured_at_utc,
+    d.symbol,
+    d.classification,
+    exists (
+      select 1
+      from public.alpha_hunter_universe_hourly u
+      cross join spec s
+      where u.selection_run_id=d.run_id
+        and u.symbol=d.symbol
+        and u.observed_at_utc=d.captured_at_utc
+        and u.source=s.required_source
+        and u.measurement_quality=s.required_measurement_quality
+        and u.last_price is not null
+        and u.last_price>0
+    ) as has_exact_anchor
+  from public.alpha_hunter_participation_diagnostics d
+  join public.alpha_hunter_signals sig
+    on sig.signal_id=d.source_signal_id
+  cross join spec s
+  where d.captured_at_utc>=s.registered_at_utc
+    and d.candidate_direction in ('LONG','SHORT')
+    and (sig.direction is null or sig.direction=d.candidate_direction)
+    and d.shadow_only=true
+    and d.trade_permission=false
+)
+select
+  source_run_id,
+  classification,
+  min(captured_at_utc) as first_captured_at_utc,
+  max(captured_at_utc) as last_captured_at_utc,
+  count(*) as eligible_diagnostics,
+  count(*) filter(where has_exact_anchor) as anchor_admitted,
+  count(*) filter(where not has_exact_anchor) as anchor_missing,
+  100.0*count(*) filter(where has_exact_anchor)/nullif(count(*),0)
+    as exact_anchor_pct,
+  case
+    when count(*) filter(where not has_exact_anchor)>0
+      then 'NO_EXACT_CANONICAL_UNIVERSE_T0'
+    else 'NONE'
+  end as admission_gap_reason,
+  false as confirmatory_claim_permitted,
+  false as threshold_derivation_permitted,
+  false as production_promotion_permitted,
+  true as shadow_only,
+  false as trade_permission,
+  'T0_ADMISSION_OBSERVABILITY_ONLY'::text as claim_ceiling,
+  'NONE'::text as order_path
+from eligible
+group by source_run_id,classification;
 
 create or replace view private.alpha_hunter_participation_universe_endpoint_scorecard_v02
 with (security_invoker=true,security_barrier=true)
@@ -727,6 +837,8 @@ revoke all on private.alpha_hunter_participation_universe_endpoint_runs_v02
 from public,anon,authenticated,service_role;
 revoke all on private.alpha_hunter_participation_universe_endpoint_scorecard_v02
 from public,anon,authenticated,service_role;
+revoke all on private.alpha_hunter_participation_universe_t0_admission_health_v02
+from public,anon,authenticated,service_role;
 revoke all on function private.alpha_hunter_run_participation_universe_endpoint_forward_v02()
 from public,anon,authenticated,service_role;
 
@@ -741,6 +853,8 @@ to service_role;
 grant select on private.alpha_hunter_participation_universe_endpoint_runs_v02
 to service_role;
 grant select on private.alpha_hunter_participation_universe_endpoint_scorecard_v02
+to service_role;
+grant select on private.alpha_hunter_participation_universe_t0_admission_health_v02
 to service_role;
 grant execute on function private.alpha_hunter_run_participation_universe_endpoint_forward_v02()
 to postgres;
@@ -771,4 +885,5 @@ select cron.schedule(
 
 -- No v0.1 candidate or outcome row is updated/deleted.
 -- No diagnostic before registered_at_utc is admitted.
--- Missing T0 universe evidence fails closed by non-admission.
+-- Missing T0 universe evidence fails closed by non-admission and is surfaced
+-- by the T0 admission-health view plus immutable per-run health snapshots.
