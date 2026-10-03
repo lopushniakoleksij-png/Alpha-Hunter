@@ -1,4 +1,4 @@
-name: Render Cron Deploy v0.1
+name: Render Cron Deploy v0.2
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: render-cron-deploy-v01
+  group: render-cron-deploy-v02
   cancel-in-progress: true
 
 jobs:
@@ -36,31 +36,36 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Validate cron deployment contract
+      - name: Validate cron auto-deployment truth contract
         shell: bash
         run: |
           set -euo pipefail
           workflow=".github/workflows/render-cron-deploy-v01.yml"
-          grep -q 'RENDER_CRON_DEPLOY_HOOK_URL' "$workflow"
           grep -q 'TARGET_SCIENTIFIC_FINGERPRINT' "$workflow"
+          grep -q 'TARGET_COMMIT' "$workflow"
           grep -q 'RENDER_CRON' "$workflow"
           grep -q 'canonical cron did not converge' "$workflow"
+          grep -q 'commit == target_commit' "$workflow"
+          if grep -q 'RENDER_CRON_DEPLOY_HOOK_URL' "$workflow"; then
+            echo "::error::Cron service uses Render auto-deploy; redundant deploy-hook dependency is forbidden."
+            exit 1
+          fi
           forbidden_web_secret='secrets.RENDER''_DEPLOY_HOOK_URL'
           if grep -q "$forbidden_web_secret" "$workflow"; then
             echo "::error::Cron workflow must not reuse the web-service deploy hook."
             exit 1
           fi
-          echo "PASS: dedicated cron deploy hook and canonical verification are required."
+          echo "PASS: canonical cron auto-deployment must be proven by post-push runtime evidence."
 
-  deploy-and-verify:
+  verify-auto-deploy:
     if: github.event_name != 'pull_request'
     needs: contract
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 75
     env:
-      RENDER_CRON_DEPLOY_HOOK_URL: ${{ secrets.RENDER_CRON_DEPLOY_HOOK_URL }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      TARGET_COMMIT: ${{ github.sha }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -72,6 +77,14 @@ jobs:
 
       - name: Install pinned production dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Validate evidence credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_URL:-}"
+          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -n "${TARGET_COMMIT:-}"
 
       - name: Compute target scientific fingerprint
         id: science
@@ -89,40 +102,17 @@ jobs:
           print(f"fingerprint={result['sha256']}")
           PY
 
-      - name: Require cron deploy hook
-        id: hook
+      - name: Mark verification start
+        id: window
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${RENDER_CRON_DEPLOY_HOOK_URL:-}" ]]; then
-            echo "CRON_DEPLOY_HOOK_NOT_CONFIGURED" >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::Dedicated Render cron deploy hook is missing."
-            echo "::error::Add repository secret RENDER_CRON_DEPLOY_HOOK_URL before any runtime release can report deployment success."
-            exit 1
-          fi
-          test -n "${SUPABASE_URL:-}"
-          test -n "${SUPABASE_SERVICE_ROLE_KEY:-}"
-          echo "configured=true" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger Render cron deployment
-        id: trigger
-        shell: bash
-        run: |
-          set -euo pipefail
-          response="$(mktemp)"
-          not_before="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          code="$(curl --connect-timeout 15 --max-time 30 -sS -o "$response" -w '%{http_code}' "$RENDER_CRON_DEPLOY_HOOK_URL")"
-          if [[ "$code" -lt 200 || "$code" -ge 300 ]]; then
-            echo "::error::Render cron deploy hook returned HTTP $code"
-            exit 1
-          fi
-          echo "not_before=$not_before" >> "$GITHUB_OUTPUT"
-          echo "Render cron deploy hook accepted."
+          echo "not_before=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
 
       - name: Verify next canonical cron scan converges
         env:
           TARGET_SCIENTIFIC_FINGERPRINT: ${{ steps.science.outputs.fingerprint }}
-          NOT_BEFORE_UTC: ${{ steps.trigger.outputs.not_before }}
+          NOT_BEFORE_UTC: ${{ steps.window.outputs.not_before }}
         shell: python
         run: |
           import json
@@ -135,6 +125,7 @@ jobs:
           base = os.environ["SUPABASE_URL"].rstrip("/")
           key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
           target = os.environ["TARGET_SCIENTIFIC_FINGERPRINT"]
+          target_commit = os.environ["TARGET_COMMIT"]
           not_before = datetime.fromisoformat(
               os.environ["NOT_BEFORE_UTC"].replace("Z", "+00:00")
           ).astimezone(timezone.utc)
@@ -145,18 +136,14 @@ jobs:
               "order": "collected_at_utc.desc",
               "limit": "1",
           })
-          endpoint = (
-              base
-              + "/rest/v1/alpha_hunter_snapshots?"
-              + params
-          )
+          endpoint = base + "/rest/v1/alpha_hunter_snapshots?" + params
           headers = {
               "apikey": key,
               "Authorization": "Bearer " + key,
           }
 
           last = {}
-          for attempt in range(1, 91):
+          for attempt in range(1, 211):
               request = urllib.request.Request(endpoint, headers=headers)
               with urllib.request.urlopen(request, timeout=30) as response:
                   rows = json.load(response)
@@ -171,6 +158,8 @@ jobs:
                       identity.get("scientific_fingerprint_sha256") or ""
                   )
                   commit = str(identity.get("git_commit") or "")
+                  source = str(identity.get("run_source") or "")
+                  role = str(identity.get("runtime_role") or "")
                   try:
                       collected = datetime.fromisoformat(
                           collected_raw.replace("Z", "+00:00")
@@ -182,25 +171,37 @@ jobs:
                       "run_id": row.get("run_id"),
                       "collected_at_utc": collected_raw,
                       "git_commit": commit,
+                      "run_source": source,
+                      "runtime_role": role,
                       "scientific_fingerprint_sha256": fingerprint,
                   }
                   print(
-                      f"cron verification {attempt}/90: "
+                      f"cron verification {attempt}/210: "
                       f"run={last['run_id']} commit={commit[:12]} "
                       f"fingerprint={fingerprint[:12]}"
                   )
-                  if collected >= not_before and fingerprint == target:
-                      print("PASS: canonical RENDER_CRON converged to target science.")
+                  if (
+                      collected >= not_before
+                      and source == "RENDER_CRON"
+                      and role == "RENDER_CRON"
+                      and commit == target_commit
+                      and fingerprint == target
+                  ):
+                      print(
+                          "PASS: Render auto-deployed the exact target commit and "
+                          "canonical RENDER_CRON emitted the target science."
+                      )
                       raise SystemExit(0)
 
               time.sleep(20)
 
           print("Last canonical cron evidence:")
           print(json.dumps(last, sort_keys=True))
-          raise SystemExit("canonical cron did not converge to target science")
+          raise SystemExit("canonical cron did not converge to target science and commit")
 
-      - name: Deployment summary
+      - name: Deployment safety summary
         run: |
-          echo "PASS: dedicated Render cron deploy hook accepted."
-          echo "PASS: a post-deploy RENDER_CRON canonical scan matched the target scientific fingerprint."
+          echo "PASS: Render cron auto-deployment was verified from canonical runtime evidence."
+          echo "PASS: post-push RENDER_CRON scan matched the exact target commit and scientific fingerprint."
+          echo "No deploy-hook secret was required."
           echo "No exchange order authority was used."
