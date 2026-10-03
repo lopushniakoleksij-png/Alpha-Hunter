@@ -277,6 +277,28 @@ begin
     );
   end if;
 
+  -- More than one exact anchor cannot define a unique T0 price. Stop the
+  -- collector visibly rather than letting physical row order select evidence.
+  if exists (
+    select d.diagnostic_id
+    from public.alpha_hunter_participation_diagnostics d
+    join public.alpha_hunter_signals sig on sig.signal_id=d.source_signal_id
+    join public.alpha_hunter_universe_hourly u
+      on u.selection_run_id=d.run_id and u.symbol=d.symbol
+     and u.observed_at_utc=d.captured_at_utc
+     and u.source=v_spec.required_source
+     and u.measurement_quality=v_spec.required_measurement_quality
+     and u.last_price is not null and u.last_price>0
+    where d.captured_at_utc>=v_spec.registered_at_utc
+      and d.candidate_direction in ('LONG','SHORT')
+      and (sig.direction is null or sig.direction=d.candidate_direction)
+      and d.shadow_only=true and d.trade_permission=false
+    group by d.diagnostic_id
+    having count(*)>1
+  ) then
+    raise exception 'AMBIGUOUS_CANONICAL_UNIVERSE_T0: multiple exact anchor rows';
+  end if;
+
   -- Snapshot T0 admission health before materialization. Missing anchors are
   -- observable but not frozen as permanent rejections: a later collector pass
   -- may admit the diagnostic if the exact canonical run evidence appears.
@@ -709,12 +731,18 @@ with spec as (
 ), eligible as (
   select
     d.diagnostic_id,
+    exists (
+      select 1
+      from private.alpha_hunter_participation_universe_endpoint_candidates_v02 c
+      cross join spec registered
+      where c.diagnostic_id=d.diagnostic_id and c.spec_id=registered.spec_id
+    ) as is_materialized,
     d.run_id as source_run_id,
     d.captured_at_utc,
     d.symbol,
     d.classification,
-    exists (
-      select 1
+    (
+      select count(*)
       from public.alpha_hunter_universe_hourly u
       cross join spec s
       where u.selection_run_id=d.run_id
@@ -724,7 +752,7 @@ with spec as (
         and u.measurement_quality=s.required_measurement_quality
         and u.last_price is not null
         and u.last_price>0
-    ) as has_exact_anchor
+    ) as anchor_matches
   from public.alpha_hunter_participation_diagnostics d
   join public.alpha_hunter_signals sig
     on sig.signal_id=d.source_signal_id
@@ -741,12 +769,14 @@ select
   min(captured_at_utc) as first_captured_at_utc,
   max(captured_at_utc) as last_captured_at_utc,
   count(*) as eligible_diagnostics,
-  count(*) filter(where has_exact_anchor) as anchor_admitted,
-  count(*) filter(where not has_exact_anchor) as anchor_missing,
-  100.0*count(*) filter(where has_exact_anchor)/nullif(count(*),0)
+  count(*) filter(where anchor_matches>0) as anchor_admitted,
+  count(*) filter(where anchor_matches=0) as anchor_missing,
+  100.0*count(*) filter(where anchor_matches>0)/nullif(count(*),0)
     as exact_anchor_pct,
   case
-    when count(*) filter(where not has_exact_anchor)>0
+    when count(*) filter(where anchor_matches>1)>0
+      then 'AMBIGUOUS_CANONICAL_UNIVERSE_T0'
+    when count(*) filter(where anchor_matches=0)>0
       then 'NO_EXACT_CANONICAL_UNIVERSE_T0'
     else 'NONE'
   end as admission_gap_reason,
@@ -756,7 +786,13 @@ select
   true as shadow_only,
   false as trade_permission,
   'T0_ADMISSION_OBSERVABILITY_ONLY'::text as claim_ceiling,
-  'NONE'::text as order_path
+  'NONE'::text as order_path,
+  -- Legacy anchor_admitted counts available evidence, not stored candidates.
+  count(*) filter(where anchor_matches>0) as anchor_available,
+  count(*) filter(where is_materialized) as candidate_admitted,
+  count(*) filter(where anchor_matches>0 and not is_materialized)
+    as candidate_pending_materialization,
+  count(*) filter(where anchor_matches>1) as anchor_ambiguous
 from eligible
 group by source_run_id,classification;
 
@@ -824,6 +860,48 @@ select
   'NONE'::text as order_path
 from joined
 group by classification,horizon_hours;
+
+-- Append-only evidence guards also protect ordinary owner-issued DML.
+-- These do not claim protection against a superuser disabling triggers or DDL.
+-- The scientific spec is frozen; only its operational status may change.
+create or replace function private.alpha_hunter_participation_v02_block_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path=''
+as $guard$
+begin
+  if TG_TABLE_NAME='alpha_hunter_participation_universe_endpoint_specs_v02'
+     and TG_OP='UPDATE' then
+    if (to_jsonb(NEW)-'status') is not distinct from (to_jsonb(OLD)-'status') then
+      return NEW;
+    end if;
+  end if;
+  raise exception 'participation v0.2 evidence is append-only';
+end;
+$guard$;
+
+revoke all on function private.alpha_hunter_participation_v02_block_mutation()
+from public,anon,authenticated,service_role;
+
+do $guards$
+declare
+  relation_name text;
+begin
+  foreach relation_name in array array[
+    'alpha_hunter_participation_universe_endpoint_specs_v02',
+    'alpha_hunter_participation_universe_endpoint_candidates_v02',
+    'alpha_hunter_participation_universe_endpoint_outcomes_v02',
+    'alpha_hunter_participation_universe_endpoint_failures_v02',
+    'alpha_hunter_participation_universe_endpoint_runs_v02'
+  ] loop
+    execute format('drop trigger if exists participation_v02_append_only on private.%I',relation_name);
+    execute format('create trigger participation_v02_append_only before update or delete on private.%I for each row execute function private.alpha_hunter_participation_v02_block_mutation()',relation_name);
+    execute format('drop trigger if exists participation_v02_no_truncate on private.%I',relation_name);
+    execute format('create trigger participation_v02_no_truncate before truncate on private.%I for each statement execute function private.alpha_hunter_participation_v02_block_mutation()',relation_name);
+  end loop;
+end;
+$guards$;
 
 revoke all on private.alpha_hunter_participation_universe_endpoint_specs_v02
 from public,anon,authenticated,service_role;
