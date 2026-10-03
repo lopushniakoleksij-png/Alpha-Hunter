@@ -45,7 +45,8 @@ jobs:
           grep -q 'TARGET_SCIENTIFIC_FINGERPRINT' "$workflow"
           grep -q 'RENDER_CRON' "$workflow"
           grep -q 'canonical cron did not converge' "$workflow"
-          if grep -q 'secrets.RENDER_DEPLOY_HOOK_URL' "$workflow"; then
+          forbidden_web_secret='secrets.RENDER''_DEPLOY_HOOK_URL'
+          if grep -q "$forbidden_web_secret" "$workflow"; then
             echo "::error::Cron workflow must not reuse the web-service deploy hook."
             exit 1
           fi
