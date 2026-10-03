@@ -27,10 +27,12 @@ def test_cron_deploy_verifies_actual_canonical_cron_scan():
         assert marker in WORKFLOW
 
 
-def test_missing_hook_fails_safe_without_using_wrong_service():
+def test_missing_hook_fails_closed_without_using_wrong_service():
     assert "CRON_DEPLOY_HOOK_NOT_CONFIGURED" in WORKFLOW
-    assert "configured=false" in WORKFLOW
-    assert "Add the dedicated Render cron deploy hook" in WORKFLOW
+    assert "Dedicated Render cron deploy hook is missing." in WORKFLOW
+    assert "RENDER_CRON_DEPLOY_HOOK_URL" in WORKFLOW
+    assert "exit 1" in WORKFLOW
+    assert "configured=false" not in WORKFLOW
 
 
 def test_workflow_has_no_trading_authority():
