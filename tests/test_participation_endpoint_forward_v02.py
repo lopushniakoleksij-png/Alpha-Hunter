@@ -73,3 +73,9 @@ def test_service_role_remains_read_only():
         "grant execute on function private.alpha_hunter_run_participation_endpoint_forward_v02()\n"
         "to postgres"
     ) in SQL
+
+
+def test_overlapping_v02_runs_fail_closed():
+    assert "pg_try_advisory_xact_lock" in SQL
+    assert "hashtextextended('alpha-hunter-participation-endpoint-forward-v02',0)" in SQL
+    assert "'run_already_active'" in SQL
