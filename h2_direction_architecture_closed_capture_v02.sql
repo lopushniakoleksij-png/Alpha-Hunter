@@ -555,6 +555,7 @@ begin
       from public.alpha_hunter_symbol_snapshots s
       where s.run_id=g.run_id
         and s.symbol=g.symbol
+        and s.collected_at_utc=g.captured_at_utc
         and s.trade_permission=false
       order by s.created_at desc
       limit 1
