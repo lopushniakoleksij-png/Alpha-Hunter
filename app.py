@@ -543,16 +543,55 @@ def latest_snapshot() -> dict[str, Any]:
 
 
 def latest_test_engine_status() -> dict[str, Any]:
+    engine: dict[str, Any] = {}
+    successor_read_failed = False
     try:
         rows = supabase_get_rows(
-            "alpha_hunter_test_engine_latest_v01",
+            "alpha_hunter_paper_profitability_status_v09",
             {"select": "*", "limit": "1"},
         )
         if rows and isinstance(rows[0], dict):
-            return rows[0]
+            engine = dict(rows[0])
     except (requests.RequestException, RuntimeError, ValueError):
+        successor_read_failed = True
+    if not engine:
+        try:
+            rows = supabase_get_rows(
+                "alpha_hunter_test_engine_latest_v01",
+                {"select": "*", "limit": "1"},
+            )
+            if rows and isinstance(rows[0], dict):
+                engine = dict(rows[0])
+        except (requests.RequestException, RuntimeError, ValueError):
+            return {}
+    if not engine:
         return {}
-    return {}
+    blockers = list(engine.get("blockers") or [])
+    if successor_read_failed:
+        blockers.append("SUCCESSOR_STATUS_UNAVAILABLE")
+    try:
+        rows = supabase_get_rows("alpha_hunter_paper_repair_status_v01",
+                                 {"select": "*", "limit": "1"})
+        repair = rows[0] if rows and isinstance(rows[0], dict) else {}
+    except (requests.RequestException, RuntimeError, ValueError):
+        repair = {}
+    if not repair:
+        blockers.append("REPAIR_DIAGNOSTICS_UNAVAILABLE")
+    else:
+        if repair.get("unresolved_entry_orders", 0) > 0:
+            blockers.append("UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR")
+        if repair.get("open_positions_over_24h", 0) > 0:
+            blockers.append("OPEN_PAPER_POSITIONS_EXCEED_24H")
+    engine["repair_status"] = repair
+    engine["blockers"] = list(dict.fromkeys(blockers))
+    engine["collection_status"] = engine.get("operational_status", "UNKNOWN")
+    # This is a display overlay. The immutable scientific evaluation is untouched.
+    if any(b in blockers for b in (
+        "UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR", "OPEN_PAPER_POSITIONS_EXCEED_24H",
+        "REPAIR_DIAGNOSTICS_UNAVAILABLE", "SUCCESSOR_STATUS_UNAVAILABLE",
+    )):
+        engine["operational_status"] = "REVIEW_REQUIRED"
+    return engine
 
 def latest_paper_lifecycle_status() -> dict[str, Any]:
     """Return clean execution-lifecycle evidence separately from sealed science."""
@@ -1624,21 +1663,22 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <h2 style="margin-top:0">Real-Time Profitability Test Engine</h2>
     {% if data.test_engine %}
       <div class="action-grid">
-        <div class="metric"><span class="label">Operational</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
+        <div class="metric"><span class="label">System integrity</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
         <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
-        <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration',0) }}</b></div>
-        <div class="metric"><span class="label">Sealed 24H sample</span><b>{{ data.test_engine.get('completed_paper_trades',0) }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
-        <div class="metric"><span class="label">Clean lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades',0) }}</b></div>
+        <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration','Unavailable') }}</b></div>
+        <div class="metric"><span class="label">Current cohort completions</span><b>{{ data.test_engine.get('completed_paper_trades','Unavailable') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
+        <div class="metric"><span class="label">Historical lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
         <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
-        <div class="metric"><span class="label">24H outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration',0) }}</b></div>
+        <div class="metric"><span class="label">Separate 24H signal outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration','Unavailable') }}</b></div>
       </div>
       <div class="reason">
         <b>Real-time:</b> {{ data.test_engine.get('evaluated_at_utc') }}<br>
+        <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
         <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
         <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
         <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
-        <b>Execution lifecycle:</b> {{ data.paper_lifecycle.get('valid_completed_trades',0) }} valid closed · {{ data.paper_lifecycle.get('active_valid_positions',0) }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined',0) }} geometry-quarantined<br>
-        <span class="small">Sealed 24H sample and execution lifecycle are separate evidence streams and are never added together. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
+        <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
+        <span class="small">Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams and are never added together. Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
       </div>
     {% else %}
       <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
@@ -1648,7 +1688,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   {% if data.best_action %}
     {% set row=data.best_action %}{% set a=row._action %}
     <div class="panel {{ 'action-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'action-retest' }}">
-      <div class="action-title {{ 'ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'retest' }}">🟢 MONEY ACTION NOW — {{ a.label }}</div>
+      <div class="action-title retest">PAPER CANDIDATE — {{ a.label }}</div>
+      <div class="small">Simulated decision support. Profitability is unproven; this is not an exchange order instruction.</div>
       <h2 style="margin:8px 0 0">{{ row.symbol|symbol_label }} {{ a.direction }}</h2>
       <div class="action-grid">
         <div class="metric"><span class="label">Status</span><b>{{ a.status }}</b></div>

@@ -32,9 +32,13 @@ from .paper_reconciliation import (
 )
 from .paper_exit import (
     ATTEMPT_TABLE as PAPER_EXIT_ATTEMPT_TABLE,
-    OPEN_VIEW as PAPER_PROTECTION_OPEN_VIEW,
-    reconcile_active_protections,
 )
+from .paper_horizon import (
+    reconcile_successor_protections as reconcile_active_protections,
+    successor_admission_permitted,
+)
+
+PAPER_PROTECTION_OPEN_VIEW = "alpha_hunter_paper_protection_horizon_open_v09"
 
 
 class SupabaseStorageError(RuntimeError):
@@ -761,15 +765,17 @@ class SupabaseStorage:
         r8_execution_gate_open = False
         active_exposure_keys: set[tuple[str, str, str]] = set()
         if has_paper_authority:
-            r8_activation_rows = self._select_json(
-                "alpha_hunter_paper_execution_integrity_activation_v08",
+            successor_activation_rows = self._select_json(
+                "alpha_hunter_paper_admission_open_v09",
                 {
-                    "select": "activation_id,activated_at_utc",
-                    "activation_id": "eq.PAPER_EXECUTION_R8",
-                    "limit": "1",
+                    "select": "*",
+                    "activation_id": "eq.PAPER_EXECUTION_R9",
+                    "limit": "2",
                 },
             )
-            r8_execution_gate_open = bool(r8_activation_rows)
+            r8_execution_gate_open = successor_admission_permitted(
+                snapshot, successor_activation_rows,
+            )
             active_exposure_rows = self._select_json(
                 "alpha_hunter_paper_active_exposure_keys_v08",
                 {

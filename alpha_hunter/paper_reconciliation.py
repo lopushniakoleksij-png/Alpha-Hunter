@@ -442,6 +442,72 @@ def reconcile_open_orders(
 
         prior_filled_quantity = _optional_float(order.get("filled_quantity")) or 0.0
         remaining_quantity = _optional_float(order.get("remaining_quantity")) or 0.0
+        execution_state = str(order.get("execution_state") or "")
+
+        if execution_state == PaperState.RECONCILIATION_REQUIRED.value:
+            # Initial fill evidence was incomplete. Do not turn a failed market
+            # decision into a delayed fill on a later snapshot. Keep the order
+            # fail-closed until the already-frozen 35-minute entry age expires.
+            if prior_filled_quantity > 0:
+                attempts.append(
+                    _attempt(
+                        order,
+                        None,
+                        outcome="INPUT_MISSING",
+                        blockers=[
+                            "RECONCILIATION_REQUIRED_WITH_EXISTING_FILL_UNSUPPORTED"
+                        ],
+                        observed_at_utc=observed_at,
+                    )
+                )
+                continue
+
+            age_minutes = _entry_order_age_minutes(order, observed_at)
+            if age_minutes is None:
+                attempts.append(
+                    _attempt(
+                        order,
+                        None,
+                        outcome="INPUT_MISSING",
+                        blockers=["ENTRY_ORDER_AGE_UNAVAILABLE"],
+                        observed_at_utc=observed_at,
+                    )
+                )
+                continue
+
+            if age_minutes > ENTRY_ORDER_MAX_AGE_MINUTES:
+                blockers = ["ENTRY_ORDER_EXPIRED_35M"]
+                attempts.append(
+                    _attempt(
+                        order,
+                        None,
+                        outcome="EXPIRED",
+                        blockers=blockers,
+                        observed_at_utc=observed_at,
+                    )
+                )
+                events.append(
+                    _terminal_event(
+                        order,
+                        occurred_at_utc=observed_at,
+                        state=PaperState.EXPIRED,
+                        event_type="PAPER_RECONCILIATION_REQUIRED_ENTRY_EXPIRED",
+                        blockers=blockers,
+                    )
+                )
+                continue
+
+            attempts.append(
+                _attempt(
+                    order,
+                    None,
+                    outcome="INPUT_MISSING",
+                    blockers=["RECONCILIATION_REQUIRED_NO_DELAYED_FILL"],
+                    observed_at_utc=observed_at,
+                )
+            )
+            continue
+
         if prior_filled_quantity > 0 and remaining_quantity > 0:
             blockers = ["LEGACY_PARTIAL_ENTRY_NOT_R8_ELIGIBLE"]
             attempts.append(

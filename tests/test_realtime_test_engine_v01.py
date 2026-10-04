@@ -231,6 +231,7 @@ def test_authoritative_db_status_avoids_heavy_validation_views():
     assert report.row["engine_version"] == "realtime-test-engine-db-v0.4-direct-gates"
     assert report.row["trade_permission"] is False
     assert [relation for relation, _ in session.gets] == [
+        "alpha_hunter_paper_profitability_status_v09",
         "alpha_hunter_test_engine_latest_v01"
     ]
 
@@ -284,3 +285,12 @@ def test_authoritative_db_status_rejects_any_order_authority():
         assert "trade permission" in str(exc)
     else:
         raise AssertionError("expected trade permission to fail closed")
+
+
+def test_authoritative_successor_status_precedes_legacy_engine():
+    row=authoritative_row()
+    row.update(engine_version='realtime-test-engine-r9-horizon-v0.1',spec_id='R9')
+    session=FakeSession({'alpha_hunter_paper_profitability_status_v09':row})
+    report=RealtimeTestEngine(settings(),session=session).load_authoritative()
+    assert report.row['spec_id']=='R9'
+    assert [relation for relation,_ in session.gets]==['alpha_hunter_paper_profitability_status_v09']
