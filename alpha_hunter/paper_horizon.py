@@ -77,12 +77,21 @@ def reconcile_successor_protections(
             attempts.extend(a); fills.extend(f); events.extend(e)
             continue
 
+        # Discovery/web/GitHub scans are not observations in the sealed Render
+        # cohort. They must not manufacture failures or advance its gap clock.
+        # A purported canonical run with the wrong role/fingerprint still fails
+        # closed below. Legacy protection routing above remains unchanged.
+        if identity.get("run_source") != "RENDER_CRON":
+            continue
+
         quote = quotes.get(str(position.get("symbol") or "").upper())
         observed_text = str((quote or {}).get("_captured_at_utc")
                             or snapshot["collected_at_utc"])
         observed = _time(observed_text)
         entry = _time(position.get("entry_completed_at_utc"))
-        previous = _time(position.get("previous_exit_observed_at_utc")) or entry
+        previous_text = position.get("previous_exit_observed_at_utc")
+        previous_observation = _time(previous_text)
+        previous = previous_observation if previous_text is not None else entry
         failures = []
         if position.get("horizon_protocol") != PROTOCOL:
             failures.append("HORIZON_PROTOCOL_UNKNOWN")
@@ -94,6 +103,17 @@ def reconcile_successor_protections(
             failures.append("HORIZON_FINGERPRINT_MISMATCH")
         if observed is None or entry is None or previous is None:
             failures.append("HORIZON_CLOCK_EVIDENCE_INVALID")
+        elif (
+            not failures
+            and previous_text is None
+            and str(position.get("entry_completed_source_run_id") or "") == run_id
+            and scan_at <= entry <= scan_at + MAX_LAG
+            and scan_at <= observed <= scan_at + MAX_LAG
+        ):
+            # This immutable run established the fill, not a later observation.
+            # Do not mark it AMBIGUOUS/FAILED or fabricate a NO_TRIGGER baseline.
+            # First later monitoring is still timed from the actual entry fill.
+            continue
         elif observed < scan_at or observed < entry or observed <= previous:
             failures.append("HORIZON_OBSERVATION_REPLAY_OR_CLOCK_INVALID")
 
