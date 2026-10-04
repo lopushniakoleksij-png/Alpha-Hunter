@@ -1,0 +1,41 @@
+name: R9 Depth and Timing Diagnostic
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+  pull_request:
+    paths: ['ops/r9_depth_timing.py', 'ops/sql/r9_depth_timing_v01.sql', 'tests/test_r9_depth_timing.py', '.github/workflows/r9-depth-timing-v01.yml']
+  push:
+    branches: [main]
+    paths: ['ops/r9_depth_timing.py', 'ops/sql/r9_depth_timing_v01.sql', 'tests/test_r9_depth_timing.py', '.github/workflows/r9-depth-timing-v01.yml']
+permissions:
+  contents: read
+concurrency:
+  group: r9-depth-timing
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+      - run: pip install requests==2.34.2
+      - run: python -m unittest discover -s tests -p test_r9_depth_timing.py -v
+  collect:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+      - run: pip install requests==2.34.2
+      - run: python -m ops.r9_depth_timing
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
