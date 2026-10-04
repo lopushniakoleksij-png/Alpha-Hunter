@@ -104,7 +104,11 @@ def _exit_event(
         "decision_id": position["decision_id"],
         "sequence": int(position["event_sequence"]) + 1,
         "occurred_at_utc": observed_at_utc,
-        "event_type": "PAPER_PROTECTIVE_EXIT_RECONCILED",
+        "event_type": (
+            "PAPER_HORIZON_EXIT_RECONCILED"
+            if state == PaperState.HORIZON_CLOSED
+            else "PAPER_PROTECTIVE_EXIT_RECONCILED"
+        ),
         "state": state.value,
         "payload": {
             "entry_order_id": position["entry_order_id"],
@@ -195,12 +199,16 @@ def _modeled_exit_fill(
     if planned_risk is None or planned_risk <= 0:
         return None, ["PLANNED_RISK_INVALID"]
 
+    if protection_type not in {"STOP_LOSS", "TAKE_PROFIT", "HORIZON_24H"}:
+        return None, ["EXIT_TYPE_INVALID"]
     trigger_id = (
         position.get("stop_protective_order_id")
         if protection_type == "STOP_LOSS"
         else position.get("target_protective_order_id")
     )
-    if not trigger_id:
+    if protection_type == "HORIZON_24H":
+        trigger_id = None
+    elif not trigger_id:
         return None, ["TRIGGERED_PROTECTIVE_ORDER_MISSING"]
 
     cross_price = bid if side == "SELL" else ask
@@ -242,7 +250,7 @@ def _modeled_exit_fill(
         "entry_order_id": position["entry_order_id"],
         "decision_id": position["decision_id"],
         "source_run_id": source_run_id,
-        "triggered_protective_order_id": str(trigger_id),
+        "triggered_protective_order_id": str(trigger_id) if trigger_id else None,
         "protection_type": protection_type,
         "filled_at_utc": observed_at_utc,
         "symbol": position["symbol"],

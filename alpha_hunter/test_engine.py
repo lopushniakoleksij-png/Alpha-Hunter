@@ -76,12 +76,19 @@ class RealtimeTestEngine:
         return row if isinstance(row, dict) else None
 
     def load_authoritative(self) -> TestEngineReport:
-        row = self._get_one("alpha_hunter_test_engine_latest_v01")
+        row = self._get_one("alpha_hunter_paper_profitability_status_v09")
+        successor = row is not None
+        if row is None:
+            row = self._get_one("alpha_hunter_test_engine_latest_v01")
         if row is None:
             raise RuntimeError("Authoritative DB test-engine status is missing")
 
         engine_version = str(row.get("engine_version") or "")
-        if engine_version != AUTHORITATIVE_ENGINE_VERSION:
+        expected_version = (
+            "realtime-test-engine-r9-horizon-v0.1"
+            if successor else AUTHORITATIVE_ENGINE_VERSION
+        )
+        if engine_version != expected_version:
             raise RuntimeError(
                 "Authoritative DB test-engine status is not current: "
                 f"engine_version={engine_version or 'MISSING'}"

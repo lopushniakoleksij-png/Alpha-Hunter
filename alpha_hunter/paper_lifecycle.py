@@ -25,6 +25,7 @@ class PaperState(str, Enum):
     EXPIRED = "EXPIRED"
     STOPPED = "STOPPED"
     TARGETED = "TARGETED"
+    HORIZON_CLOSED = "HORIZON_CLOSED"
     RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
 
 
@@ -60,6 +61,7 @@ ALLOWED_TRANSITIONS: dict[PaperState, frozenset[PaperState]] = {
         {
             PaperState.STOPPED,
             PaperState.TARGETED,
+            PaperState.HORIZON_CLOSED,
             PaperState.RECONCILIATION_REQUIRED,
         }
     ),
@@ -68,6 +70,7 @@ ALLOWED_TRANSITIONS: dict[PaperState, frozenset[PaperState]] = {
     PaperState.EXPIRED: frozenset(),
     PaperState.STOPPED: frozenset(),
     PaperState.TARGETED: frozenset(),
+    PaperState.HORIZON_CLOSED: frozenset(),
     # Fail-closed R8 recovery only. A reconciliation-required entry must never
     # be filled later; it may only age out under the frozen entry-age contract.
     PaperState.RECONCILIATION_REQUIRED: frozenset({PaperState.EXPIRED}),
