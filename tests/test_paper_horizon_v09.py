@@ -204,3 +204,46 @@ def test_first_later_observation_preserves_recorded_failure():
     a,f,e=reconcile_successor_protections(s,[p])
     assert a[0]['evidence']['horizon_integrity_failed'] is True
     assert 'HORIZON_PRIOR_FAILURE' in a[0]['blockers']
+
+
+@pytest.mark.parametrize('direction,bid,kind', [
+    ('LONG',8.9,'STOP_LOSS'),('LONG',15.1,'TAKE_PROFIT'),
+    ('SHORT',11.1,'STOP_LOSS'),('SHORT',4.8,'TAKE_PROFIT')])
+def test_approved_changed_runtime_manages_protection_but_retains_failure(direction,bid,kind):
+    s,p=inputs(1500,direction)
+    s['validation_identity']['scientific_fingerprint_sha256']='corrected'
+    p['horizon_management_fingerprints']=['corrected']
+    p['horizon_integrity_failed']=True
+    s['symbols'][0].update(bid_price=bid,ask_price=bid+.1)
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert len(f)==1 and e and f[0]['protection_type']==kind
+    assert a[0]['evidence']['horizon_integrity_failed'] is True
+    assert a[0]['evidence']['horizon_management_only'] is True
+    assert 'HORIZON_MANAGEMENT_ONLY_RUNTIME' in a[0]['blockers']
+    assert 'HORIZON_PRIOR_FAILURE' in a[0]['blockers']
+
+
+def test_management_approval_never_grants_timeout_or_new_admission():
+    s,p=inputs()
+    s['validation_identity']['scientific_fingerprint_sha256']='corrected'
+    p['horizon_management_fingerprints']=['corrected']
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and a[0]['outcome']=='HORIZON_FAILED'
+    assert a[0]['evidence']['horizon_integrity_failed'] is True
+    assert not successor_admission_permitted(s,[])
+
+
+@pytest.mark.parametrize('defect',['absent','other','string','role','clock','protocol'])
+def test_management_approval_does_not_bypass_identity_clock_or_protocol(defect):
+    s,p=inputs()
+    s['symbols'][0].update(bid_price=8.9,ask_price=9)
+    s['validation_identity']['scientific_fingerprint_sha256']='corrected'
+    p['horizon_management_fingerprints']=['corrected']
+    if defect=='absent':p.pop('horizon_management_fingerprints')
+    if defect=='other':p['horizon_management_fingerprints']=['unapproved']
+    if defect=='string':p['horizon_management_fingerprints']='corrected'
+    if defect=='role':s['validation_identity']['runtime_role']='WEB'
+    if defect=='clock':p['previous_exit_observed_at_utc']=s['collected_at_utc']
+    if defect=='protocol':p['horizon_protocol']='unknown'
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and a[0]['outcome']=='HORIZON_FAILED'

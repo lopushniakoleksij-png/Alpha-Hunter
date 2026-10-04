@@ -99,7 +99,14 @@ def reconcile_successor_protections(
                 or identity.get("runtime_role") != "RENDER_CRON"):
             failures.append("HORIZON_SOURCE_NOT_CANONICAL")
         frozen = position.get("horizon_scientific_fingerprint_sha256")
-        if not frozen or identity.get("scientific_fingerprint_sha256") != frozen:
+        current_fingerprint = identity.get("scientific_fingerprint_sha256")
+        approved_management = position.get("horizon_management_fingerprints")
+        management_only = bool(
+            frozen and current_fingerprint and current_fingerprint != frozen
+            and isinstance(approved_management, list)
+            and current_fingerprint in approved_management
+        )
+        if not frozen or (current_fingerprint != frozen and not management_only):
             failures.append("HORIZON_FINGERPRINT_MISMATCH")
         if observed is None or entry is None or previous is None:
             failures.append("HORIZON_CLOCK_EVIDENCE_INVALID")
@@ -129,6 +136,10 @@ def reconcile_successor_protections(
 
         deadline = entry + HORIZON
         due = observed >= deadline
+        if management_only:
+            # Owner-approved per-order compatibility is protection-only. It never
+            # replaces the original scientific identity or repairs its evidence.
+            failures.append("HORIZON_MANAGEMENT_ONLY_RUNTIME")
         if observed - previous > MAX_LAG:
             failures.append("HORIZON_MONITORING_GAP_EXCEEDED")
         if position.get("horizon_integrity_failed") is True:
@@ -166,6 +177,7 @@ def reconcile_successor_protections(
         attempt["evidence"].update({
             "horizon_protocol": PROTOCOL,
             "horizon_integrity_failed": bool(failures),
+            "horizon_management_only": management_only,
             "entry_completed_at_utc": entry.isoformat(),
             "horizon_deadline_utc": deadline.isoformat(),
             "actual_holding_seconds": (observed-entry).total_seconds(),

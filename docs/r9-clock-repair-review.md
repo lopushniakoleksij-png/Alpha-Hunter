@@ -40,5 +40,6 @@ existing management), preserve the failed cohort and pending orders, prepare a
 separately preregistered successor plus management compatibility for existing R9
 positions, then deploy/verify before enabling new successor admission. Existing
 R9 positions must retain protection even after the runtime fingerprint changes;
-this compatibility bridge is not implemented here. Do not simply overwrite the
+the candidate compatibility bridge is now implemented but is not installed or
+approved in production. See `r10-preparation.md`. Do not simply overwrite the
 immutable R9 fingerprint or clear its failure flags.

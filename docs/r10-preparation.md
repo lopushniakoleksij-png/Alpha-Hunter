@@ -33,6 +33,23 @@ This is a candidate fingerprint, not the final R10 freeze. A management bridge
 or further scientific changes require a new fingerprint and fresh validation.
 The corrected code has not been deployed.
 
+### Management bridge candidate
+
+`ops/sql/r9_management_bridge_v01.sql` installs an empty, owner-written,
+append-only approval table keyed by admitted order and exact new scientific
+fingerprint. It requires a prior R9 halt and an order submitted between the
+original activation and halt. Runtime credentials cannot create approvals.
+The protection view exposes approved fingerprints without replacing the original
+R9 identity or changing membership. No approvals are bundled in the migration.
+
+The Python reconciler accepts these approvals for canonical stop-loss/take-profit
+management only. Every such observation retains an integrity-failure flag and
+`HORIZON_MANAGEMENT_ONLY_RUNTIME`; timeout exits remain prohibited. Protocol,
+source role, replay/clock, executable-side depth and fee requirements still apply.
+The SQL timeout contract independently rejects a different scientific identity.
+This additional code supersedes the candidate fingerprint above; obtain the final
+fingerprint from CI before any approval. The bridge is not yet installed live.
+
 ## Required handover work
 
 1. Preserve existing R9 position management across a runtime fingerprint change.
