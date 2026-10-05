@@ -72,17 +72,19 @@ test('R10 owner activation creates execution cadence and profitability atomicall
    insert into alpha_hunter_profitability_test_specs_v01(spec_id)
    values('R9-FIXTURE');
 
+   with t as (
+    select clock_timestamp()-interval '2 days' as activated
+   )
    insert into alpha_hunter_paper_execution_activation_v09(
     activation_id,spec_id,protocol_version,activated_at_utc,
     runtime_verified_at_utc,admission_cutoff_at_utc,release_git_commit,
     scientific_fingerprint_sha256,evidence
-   ) values(
+   )
+   select
     'PAPER_EXECUTION_R9','R9-FIXTURE','paper-horizon-24h-v0.1',
-    clock_timestamp()-interval '2 days',
-    clock_timestamp()-interval '2 days 1 second',
-    clock_timestamp()+interval '28 days',
+    activated,activated-interval '1 second',activated+interval '30 days',
     repeat('9',40),repeat('8',64),'{}'
-   );
+   from t;
 
    insert into alpha_hunter_paper_admission_halts_v09(
     activation_id,halted_at_utc,reason
