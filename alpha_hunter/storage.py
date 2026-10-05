@@ -762,20 +762,23 @@ class SupabaseStorage:
             decision.get("paper_authority") is True
             for decision in paper_decisions
         )
-        r8_execution_gate_open = False
+        successor_execution_gate_open = False
+        successor_identity: dict[str, Any] | None = None
         active_exposure_keys: set[tuple[str, str, str]] = set()
         if has_paper_authority:
             successor_activation_rows = self._select_json(
-                "alpha_hunter_paper_admission_open_v09",
+                "alpha_hunter_paper_admission_open_v10",
                 {
                     "select": "*",
-                    "activation_id": "eq.PAPER_EXECUTION_R9",
+                    "activation_id": "eq.PAPER_EXECUTION_R10",
                     "limit": "2",
                 },
             )
-            r8_execution_gate_open = successor_admission_permitted(
+            successor_execution_gate_open = successor_admission_permitted(
                 snapshot, successor_activation_rows,
             )
+            if successor_execution_gate_open and len(successor_activation_rows) == 1:
+                successor_identity = successor_activation_rows[0]
             active_exposure_rows = self._select_json(
                 "alpha_hunter_paper_active_exposure_keys_v08",
                 {
@@ -797,7 +800,10 @@ class SupabaseStorage:
         paper_orders, paper_fills, execution_events = build_initial_paper_execution(
             paper_decisions,
             active_exposure_keys=active_exposure_keys,
-            execution_gate_open=r8_execution_gate_open,
+            execution_gate_open=successor_execution_gate_open,
+            execution_gate_blocker="PAPER_SUCCESSOR_ADMISSION_NOT_ACTIVATED",
+            successor_identity=successor_identity,
+            successor_identity_required=True,
         )
         initial_protections = build_initial_protective_orders(
             paper_decisions,
