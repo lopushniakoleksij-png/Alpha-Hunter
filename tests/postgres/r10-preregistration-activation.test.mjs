@@ -196,6 +196,17 @@ test('R10 owner activation requires post-prereg canonical context and exact free
    select count(*)::int n from alpha_hunter_paper_admission_open_v10
   `)).rows[0].n;
   assert.equal(open,1);
+
+  const timing=(await db.query(`
+   select
+    admission_cutoff_at_utc-activated_at_utc = interval '30 days' as exact_cutoff,
+    activated_at_utc>runtime_verified_at_utc as verification_precedes_activation
+   from alpha_hunter_paper_execution_activation_v10
+  `)).rows[0];
+  assert.deepEqual(timing,{
+   exact_cutoff:true,
+   verification_precedes_activation:true
+  });
  }finally{
   await db.close();
  }
