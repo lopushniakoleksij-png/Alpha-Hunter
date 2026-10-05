@@ -232,3 +232,54 @@ def test_single_strategy_matching_canonical_state_remains_eligible():
     assert len(data["actionable"]) == 1
     assert data["actionable"][0]["_action"]["status"] == "EXECUTE_NOW_PAPER"
     assert data["actionable"][0]["_action"]["direction"] == "LONG"
+
+
+def test_cap_mixed_strategy_sides_fail_closed_even_if_long_is_limit():
+    cap = _market(
+        "CAPUSDT",
+        0.07047,
+        [
+            _strategy("SHORT", 0.07047, 0.07142, 0.065381, strategy_id="S8"),
+            _strategy(
+                "LONG",
+                0.06979,
+                0.06851094843033799,
+                0.08902,
+                strategy_id="S2",
+                action="PLACE_LIMIT",
+            ),
+        ],
+        price_place=6,
+        state="NEUTRAL",
+    )
+
+    data = dashboard_payload(_snapshot([cap]))
+
+    assert data["actionable"] == []
+    assert _blockers(data, "CAPUSDT").count("DIRECTION_CONFLICT") == 2
+
+
+def test_watch_setup_intent_is_not_promoted_to_action_queue():
+    watch = _market(
+        "MOVRUSDT",
+        2.0072,
+        [],
+        state="WATCH_LONG",
+    )
+    watch["multi_strategy_engine"]["strategies"] = [{
+        "strategy_id": "S4",
+        "strategy_name": "Relative Strength / Weakness",
+        "status": "WATCH",
+        "action": "WAIT_FOR_TRIGGER",
+        "proposed_action": "EXECUTE_NOW",
+        "direction": "LONG",
+        "entry": 2.0072,
+        "stop": 1.6538,
+        "target": 3.3487,
+        "rr": 3.8,
+        "signal_score": 10.0,
+    }]
+
+    data = dashboard_payload(_snapshot([watch]))
+
+    assert data["actionable"] == []
