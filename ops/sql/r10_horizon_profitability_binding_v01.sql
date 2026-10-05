@@ -81,6 +81,183 @@ grant select on public.alpha_hunter_paper_protection_horizon_open_v09
 to service_role;
 
 
+-- R9 quality remains frozen to exact pre-halt membership. Future explicit
+-- successors are excluded from R9 valid/quarantine evidence entirely.
+create or replace view public.alpha_hunter_paper_completed_trade_quality_v09
+with (security_invoker=true,security_barrier=true)
+as
+with activation as (
+  select
+    a.*,
+    least(
+      a.admission_cutoff_at_utc,
+      coalesce(h.halted_at_utc,a.admission_cutoff_at_utc)
+    ) as membership_end_at_utc
+  from public.alpha_hunter_paper_execution_activation_v09 a
+  left join public.alpha_hunter_paper_admission_halts_v09 h
+    on h.activation_id=a.activation_id
+  where a.activation_id='PAPER_EXECUTION_R9'
+  order by a.activated_at_utc desc
+  limit 1
+),
+base as (
+  select
+    c.*,
+    o.submitted_at_utc,
+    o.quantity as ordered_quantity,
+    d.strategy_id,
+    d.strategy_name,
+    d.evidence as decision_evidence,
+    a.activated_at_utc as r9_activated_at_utc,
+    a.release_git_commit as r9_release_git_commit,
+    a.scientific_fingerprint_sha256 as r9_scientific_fingerprint_sha256,
+    a.maximum_entry_age_minutes,
+    a.maximum_monitoring_gap_minutes,
+    a.required_run_source,
+    a.required_runtime_role
+  from public.alpha_hunter_paper_completed_trades_valid_v05 c
+  join public.alpha_hunter_paper_orders_v02 o
+    on o.order_id=c.entry_order_id
+  join public.alpha_hunter_paper_decisions_v01 d
+    on d.decision_id=c.decision_id
+  cross join activation a
+  where o.successor_activation_id is null
+    and o.submitted_at_utc>a.activated_at_utc
+    and o.submitted_at_utc<=a.membership_end_at_utc
+),
+fill_summary as (
+  select
+    f.order_id,
+    count(*)::integer as entry_fill_count,
+    sum(f.quantity) as total_entry_fill_quantity,
+    min(f.filled_at_utc) as first_entry_fill_at_utc,
+    max(f.filled_at_utc) as final_entry_fill_at_utc
+  from public.alpha_hunter_paper_fills_v02 f
+  group by f.order_id
+),
+partial_history as (
+  select
+    d.decision_id,
+    count(*) filter(where e.state='PARTIALLY_FILLED')::integer
+      as partial_fill_state_count
+  from public.alpha_hunter_paper_decisions_v01 d
+  left join public.alpha_hunter_paper_events_v01 e using(decision_id)
+  group by d.decision_id
+),
+protection_start as (
+  select
+    p.entry_order_id,
+    min(p.created_at_utc) as protection_created_at_utc
+  from public.alpha_hunter_paper_protective_orders_v03 p
+  group by p.entry_order_id
+),
+timeline as (
+  select
+    b.entry_order_id,
+    ps.protection_created_at_utc as observed_at_utc
+  from base b
+  join protection_start ps using(entry_order_id)
+
+  union all
+
+  select
+    b.entry_order_id,
+    a.observed_at_utc
+  from base b
+  join public.alpha_hunter_paper_exit_attempts_v04 a using(entry_order_id)
+
+  union all
+
+  select
+    b.entry_order_id,
+    b.closed_at_utc
+  from base b
+),
+gaps as (
+  select
+    entry_order_id,
+    observed_at_utc,
+    extract(epoch from (
+      observed_at_utc
+      - lag(observed_at_utc) over(
+          partition by entry_order_id
+          order by observed_at_utc
+        )
+    ))/60.0 as monitoring_gap_minutes
+  from timeline
+),
+monitoring as (
+  select
+    entry_order_id,
+    max(monitoring_gap_minutes) as maximum_monitoring_gap_minutes_observed
+  from gaps
+  group by entry_order_id
+)
+select
+  b.*,
+  fs.entry_fill_count,
+  fs.total_entry_fill_quantity,
+  fs.first_entry_fill_at_utc,
+  fs.final_entry_fill_at_utc,
+  ph.partial_fill_state_count,
+  m.maximum_monitoring_gap_minutes_observed,
+  extract(epoch from (
+    fs.final_entry_fill_at_utc-b.submitted_at_utc
+  ))/60.0 as entry_fill_age_minutes,
+
+  (
+    coalesce(
+      (b.decision_evidence->'paper_authority_source_gate'->>'passed')::boolean,
+      false
+    )
+    and coalesce(
+      b.decision_evidence->'paper_authority_source_gate'->>'observed_run_source',
+      ''
+    )=b.required_run_source
+    and coalesce(
+      b.decision_evidence->'paper_authority_source_gate'->>'observed_runtime_role',
+      ''
+    )=b.required_runtime_role
+  ) as canonical_paper_authority_source_valid,
+
+  (
+    coalesce(
+      b.decision_evidence->'validation_identity'
+        ->>'scientific_fingerprint_sha256',
+      ''
+    )=b.r9_scientific_fingerprint_sha256
+  ) as scientific_fingerprint_match,
+
+  (
+    coalesce(fs.entry_fill_count,0)=1
+    and abs(
+      coalesce(fs.total_entry_fill_quantity,0)-b.ordered_quantity
+    )<=0.000000000001
+    and coalesce(ph.partial_fill_state_count,0)=0
+  ) as all_or_none_entry_valid,
+
+  (
+    fs.final_entry_fill_at_utc is not null
+    and extract(epoch from (
+      fs.final_entry_fill_at_utc-b.submitted_at_utc
+    ))/60.0<=b.maximum_entry_age_minutes
+  ) as entry_freshness_valid,
+
+  (
+    m.maximum_monitoring_gap_minutes_observed is not null
+    and m.maximum_monitoring_gap_minutes_observed
+        <=b.maximum_monitoring_gap_minutes
+  ) as monitoring_cadence_valid,
+
+  false as live_money_claim_permitted,
+  false as production_promotion_permitted
+from base b
+left join fill_summary fs on fs.order_id=b.entry_order_id
+left join partial_history ph on ph.decision_id=b.decision_id
+left join monitoring m on m.entry_order_id=b.entry_order_id;
+
+
+
 create or replace view public.alpha_hunter_paper_completed_trade_quality_v10
 with (security_invoker=true,security_barrier=true)
 as
