@@ -102,8 +102,8 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     'baseline-none','2026-10-05T08:11:00Z','0.7.1','USDT-FUTURES',50,0,
     jsonb_build_object(
      'validation_identity',jsonb_build_object(
-      'git_commit',$1,'run_source','RENDER_CRON','runtime_role','RENDER_CRON',
-      'scientific_fingerprint_sha256',$2
+      'git_commit',$1::text,'run_source','RENDER_CRON','runtime_role','RENDER_CRON',
+      'scientific_fingerprint_sha256',$2::text
      ),
      'previous_snapshot_context',jsonb_build_object('source','NONE','run_id',null),
      'multi_strategy_summary',jsonb_build_object(
@@ -140,8 +140,8 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     'baseline-good','2026-10-05T08:20:00Z','0.7.1','USDT-FUTURES',50,0,
     jsonb_build_object(
      'validation_identity',jsonb_build_object(
-      'git_commit',$1,'run_source','RENDER_CRON','runtime_role','RENDER_CRON',
-      'scientific_fingerprint_sha256',$2
+      'git_commit',$1::text,'run_source','RENDER_CRON','runtime_role','RENDER_CRON',
+      'scientific_fingerprint_sha256',$2::text
      ),
      'previous_snapshot_context',jsonb_build_object(
       'source','SUPABASE','run_id','prior-run'
