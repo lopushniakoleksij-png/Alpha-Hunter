@@ -82,7 +82,9 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     $1,'paper-horizon-24h-v0.1',$2,10,5,24,30,100,1.96,true,
     '2026-10-05T08:10:00Z','SUCCESSOR_EXECUTED_PAPER_24H_R10',
     true,false,false,'NONE','RENDER_CRON',$3
-   )
+   );
+   insert into alpha_hunter_profitability_test_specs_v01(spec_id,scientific_role)
+   values('R9-FIXTURE','SUCCESSOR_EXECUTED_PAPER_24H');
   `,[spec,commit,fp]);
 
   await db.query(`
@@ -178,11 +180,19 @@ test('R10 owner activation requires post-prereg canonical context and exact free
   assert.equal(ready,true);
 
   await db.exec(`
-   create table if not exists public.alpha_hunter_paper_admission_halts_v09(
-    activation_id text primary key,halted_at_utc timestamptz,reason text
+   insert into public.alpha_hunter_paper_execution_activation_v09(
+    activation_id,spec_id,protocol_version,activated_at_utc,runtime_verified_at_utc,
+    admission_cutoff_at_utc,release_git_commit,scientific_fingerprint_sha256,evidence
+   ) values(
+    'PAPER_EXECUTION_R9','R9-FIXTURE','paper-horizon-24h-v0.1',
+    '2026-10-04T12:37:51Z','2026-10-04T12:37:50Z','2026-11-03T12:37:51Z',
+    repeat('9',40),repeat('8',64),'{}'
    );
-   insert into public.alpha_hunter_paper_admission_halts_v09
-   values('PAPER_EXECUTION_R9','2026-10-04T20:02:43Z','halt');
+   insert into public.alpha_hunter_paper_admission_halts_v09(
+    activation_id,halted_at_utc,reason
+   ) values(
+    'PAPER_EXECUTION_R9','2026-10-04T20:02:43Z','halt'
+   );
   `);
 
   const activated=(await db.query(`
