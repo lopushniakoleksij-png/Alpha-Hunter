@@ -196,6 +196,7 @@ declare
   existing public.alpha_hunter_paper_execution_activation_v10%rowtype;
   open_r9 integer:=0;
   after_halt integer:=0;
+  activated_at timestamptz;
 begin
   if p_registration_id<>'PAPER_EXECUTION_R10' then
     raise exception 'R10 registration identity mismatch';
@@ -323,6 +324,8 @@ begin
     raise exception 'R10 is already activated';
   end if;
 
+  activated_at:=clock_timestamp();
+
   insert into public.alpha_hunter_paper_execution_activation_v10(
     activation_id,
     spec_id,
@@ -348,9 +351,9 @@ begin
     r.registration_id,
     r.spec_id,
     r.protocol_version,
-    clock_timestamp(),
+    activated_at,
     v.verified_at_utc,
-    clock_timestamp()+(r.admission_window_days||' days')::interval,
+    activated_at+(r.admission_window_days||' days')::interval,
     r.frozen_git_commit,
     r.frozen_scientific_fingerprint_sha256,
     r.maximum_entry_age_minutes,
