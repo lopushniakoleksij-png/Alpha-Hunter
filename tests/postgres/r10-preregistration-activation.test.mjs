@@ -82,10 +82,13 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     $1,'paper-horizon-24h-v0.1',$2,10,5,24,30,100,1.96,true,
     '2026-10-05T08:10:00Z','SUCCESSOR_EXECUTED_PAPER_24H_R10',
     true,false,false,'NONE','RENDER_CRON',$3
-   );
+   )
+  `,[spec,commit,fp]);
+
+  await db.exec(`
    insert into alpha_hunter_profitability_test_specs_v01(spec_id,scientific_role)
    values('R9-FIXTURE','SUCCESSOR_EXECUTED_PAPER_24H');
-  `,[spec,commit,fp]);
+  `);
 
   await db.query(`
    insert into alpha_hunter_r10_preregistrations_v01(
