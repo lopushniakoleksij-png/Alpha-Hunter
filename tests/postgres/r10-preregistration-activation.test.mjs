@@ -177,6 +177,7 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     configured_strategy_count,total_strategy_evaluations,
     protected_open_positions,unprotected_open_positions,
     r9_admission_open_rows,orders_after_r9_halt,
+    r9_cohort_rows,r9_integrity_failed_orders,
     trade_permission_any,exchange_authority_any,order_path_all_none,
     r10_spec_rows,r10_activation_rows_before,evidence
    ) values(
