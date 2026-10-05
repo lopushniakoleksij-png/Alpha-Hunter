@@ -435,7 +435,8 @@ select
   ) as monitoring_cadence_valid,
 
   (
-    not coalesce(h.horizon_integrity_failed,false)
+    h.entry_order_id is not null
+    and not coalesce(h.horizon_integrity_failed,false)
     and not coalesce(h.unresolved_protective_evidence,false)
   ) as horizon_integrity_valid,
 
@@ -443,8 +444,9 @@ select
     b.closed_at_utc is not null
     and fs.final_entry_fill_at_utc is not null
     and b.closed_at_utc>=fs.final_entry_fill_at_utc
+    and b.exit_reason in ('STOP_LOSS','TAKE_PROFIT','HORIZON_24H')
     and (
-      b.exit_reason is distinct from 'HORIZON_24H'
+      b.exit_reason<>'HORIZON_24H'
       or b.closed_at_utc between
          fs.final_entry_fill_at_utc+interval '24 hours'
          and fs.final_entry_fill_at_utc+interval '24 hours 35 minutes'
