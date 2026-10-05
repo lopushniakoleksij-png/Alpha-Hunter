@@ -141,7 +141,7 @@ test('R10 owner activation requires post-prereg canonical context and exact free
      (select collected_at_utc from alpha_hunter_snapshots where run_id='baseline-none'),
      $2,$3,
      'RENDER_CRON','RENDER_CRON','NONE','',
-     10,500,19,0,0,0,false,false,true,1,0,'{}'
+     10,500,19,0,0,0,0,0,false,false,true,1,0,'{}'
     )
    `,[spec,commit,fp])
   );
