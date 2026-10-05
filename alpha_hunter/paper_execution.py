@@ -299,6 +299,39 @@ def _fill_from_order(
     }, []
 
 
+def _successor_identity_fields(
+    decision: dict[str, Any],
+    successor_identity: dict[str, Any] | None,
+    *,
+    required: bool,
+) -> dict[str, str] | None:
+    if successor_identity is None:
+        return None if required else {}
+    activation_id = str(successor_identity.get("activation_id") or "")
+    spec_id = str(successor_identity.get("spec_id") or "")
+    fingerprint = str(
+        successor_identity.get("scientific_fingerprint_sha256") or ""
+    ).lower()
+    source_run_id = str(decision.get("run_id") or "")
+    valid_fingerprint = (
+        len(fingerprint) == 64
+        and all(char in "0123456789abcdef" for char in fingerprint)
+    )
+    if (
+        activation_id != "PAPER_EXECUTION_R10"
+        or not spec_id
+        or not valid_fingerprint
+        or not source_run_id
+    ):
+        return None
+    return {
+        "successor_activation_id": activation_id,
+        "successor_spec_id": spec_id,
+        "successor_scientific_fingerprint_sha256": fingerprint,
+        "successor_source_run_id": source_run_id,
+    }
+
+
 def paper_exposure_key(decision: dict[str, Any]) -> tuple[str, str, str]:
     return (
         str(decision.get("symbol") or "").upper(),
@@ -312,6 +345,9 @@ def build_initial_paper_execution(
     *,
     active_exposure_keys: set[tuple[str, str, str]] | None = None,
     execution_gate_open: bool = True,
+    execution_gate_blocker: str = "PAPER_R8_INTEGRITY_NOT_ACTIVATED",
+    successor_identity: dict[str, Any] | None = None,
+    successor_identity_required: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Create deterministic paper submissions and at most one top-of-book fill.
 
@@ -329,7 +365,18 @@ def build_initial_paper_execution(
             continue
         if not execution_gate_open:
             events.append(
-                _cancelled_event(decision, ["PAPER_R8_INTEGRITY_NOT_ACTIVATED"])
+                _cancelled_event(decision, [execution_gate_blocker])
+            )
+            continue
+
+        successor_fields = _successor_identity_fields(
+            decision,
+            successor_identity,
+            required=successor_identity_required,
+        )
+        if successor_fields is None:
+            events.append(
+                _cancelled_event(decision, ["PAPER_SUCCESSOR_IDENTITY_INVALID"])
             )
             continue
 
@@ -349,6 +396,7 @@ def build_initial_paper_execution(
         if order is None:
             events.append(_cancelled_event(decision, blockers))
             continue
+        order.update(successor_fields)
         orders.append(order)
         occupied.add(exposure_key)
         events.append(_submission_event(decision, order))
