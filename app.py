@@ -1455,6 +1455,45 @@ def dashboard_payload(
         reverse=True,
     )
 
+    # The matrix is diagnostic evidence, not the final action queue. Make
+    # conflicting symbol directions and WATCH-only setup intent explicit so the
+    # operator cannot mistake raw per-strategy intent for a canonical decision.
+    strategy_directions_by_symbol: dict[str, set[str]] = {}
+    for item in strategy_shadow:
+        if str(item.get("status") or "") != "SHADOW_CANDIDATE":
+            continue
+        direction = str(item.get("direction") or "").upper()
+        action = str(item.get("action") or "").upper()
+        if direction in {"LONG", "SHORT"} and action in {"EXECUTE_NOW", "PLACE_LIMIT"}:
+            strategy_directions_by_symbol.setdefault(
+                str(item.get("symbol") or ""), set()
+            ).add(direction)
+
+    for item in strategy_shadow:
+        symbol = str(item.get("symbol") or "")
+        status = str(item.get("status") or "")
+        action = str(item.get("action") or "").upper()
+        proposed = str(item.get("proposed_action") or action).upper()
+        item["_symbol_direction_conflict"] = (
+            len(strategy_directions_by_symbol.get(symbol, set())) > 1
+        )
+        item["_display_gate_action"] = action
+        item["_display_setup_intent"] = proposed
+        item["_display_warning"] = ""
+        if item["_symbol_direction_conflict"]:
+            item["_display_gate_action"] = "BLOCKED_CONFLICT"
+            item["_display_setup_intent"] = "NO_ACTION"
+            item["_display_warning"] = (
+                "Symbol has opposing LONG/SHORT executable strategy candidates; "
+                "final action queue fails closed."
+            )
+        elif status != "SHADOW_CANDIDATE" and proposed in {"EXECUTE_NOW", "PLACE_LIMIT"}:
+            item["_display_setup_intent"] = "WATCH_ONLY"
+            item["_display_warning"] = (
+                f"Raw setup intent {proposed} is not executable because strategy "
+                f"status is {status or 'UNKNOWN'}."
+            )
+
     strategy_ready = []
     for item in strategy_shadow:
         action = build_strategy_money_action(item)
@@ -1727,14 +1766,14 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <td>{{ s._persistence_state }}</td>
         <td>{{ s._consecutive_scans }}</td>
         <td class="{{ 'long' if s.direction=='LONG' else 'short' if s.direction=='SHORT' else '' }}">{{ s.direction or '—' }}</td>
-        <td>{{ s.action }}</td>
-        <td>{{ s.proposed_action or s.action }}</td>
+        <td>{{ s._display_gate_action }}</td>
+        <td>{{ s._display_setup_intent }}</td>
         <td>{{ '%.2f'|format(s.signal_score or 0) }}</td>
         <td>{{ s.entry if s.entry is not none else '—' }}</td>
         <td>{{ s.stop if s.stop is not none else '—' }}</td>
         <td>{{ s.target if s.target is not none else '—' }}</td>
         <td>{{ '%.2f'|format(s.rr) if s.rr is not none else '—' }}</td>
-        <td class="wrap-cell muted">{{ (s.reasons or [])|join('; ') }}</td>
+        <td class="wrap-cell muted">{{ s._display_warning or ((s.reasons or [])|join('; ')) }}</td>
       </tr>
     {% endfor %}
     </tbody></table>
