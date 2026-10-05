@@ -77,12 +77,21 @@ def reconcile_successor_protections(
             attempts.extend(a); fills.extend(f); events.extend(e)
             continue
 
+        # Discovery/web/GitHub scans are not observations in the sealed Render
+        # cohort. They must not manufacture failures or advance its gap clock.
+        # A purported canonical run with the wrong role/fingerprint still fails
+        # closed below. Legacy protection routing above remains unchanged.
+        if identity.get("run_source") != "RENDER_CRON":
+            continue
+
         quote = quotes.get(str(position.get("symbol") or "").upper())
         observed_text = str((quote or {}).get("_captured_at_utc")
                             or snapshot["collected_at_utc"])
         observed = _time(observed_text)
         entry = _time(position.get("entry_completed_at_utc"))
-        previous = _time(position.get("previous_exit_observed_at_utc")) or entry
+        previous_text = position.get("previous_exit_observed_at_utc")
+        previous_observation = _time(previous_text)
+        previous = previous_observation if previous_text is not None else entry
         failures = []
         if position.get("horizon_protocol") != PROTOCOL:
             failures.append("HORIZON_PROTOCOL_UNKNOWN")
@@ -90,10 +99,28 @@ def reconcile_successor_protections(
                 or identity.get("runtime_role") != "RENDER_CRON"):
             failures.append("HORIZON_SOURCE_NOT_CANONICAL")
         frozen = position.get("horizon_scientific_fingerprint_sha256")
-        if not frozen or identity.get("scientific_fingerprint_sha256") != frozen:
+        current_fingerprint = identity.get("scientific_fingerprint_sha256")
+        approved_management = position.get("horizon_management_fingerprints")
+        management_only = bool(
+            frozen and current_fingerprint and current_fingerprint != frozen
+            and isinstance(approved_management, list)
+            and current_fingerprint in approved_management
+        )
+        if not frozen or (current_fingerprint != frozen and not management_only):
             failures.append("HORIZON_FINGERPRINT_MISMATCH")
         if observed is None or entry is None or previous is None:
             failures.append("HORIZON_CLOCK_EVIDENCE_INVALID")
+        elif (
+            not failures
+            and previous_text is None
+            and str(position.get("entry_completed_source_run_id") or "") == run_id
+            and scan_at <= entry <= scan_at + MAX_LAG
+            and scan_at <= observed <= scan_at + MAX_LAG
+        ):
+            # This immutable run established the fill, not a later observation.
+            # Do not mark it AMBIGUOUS/FAILED or fabricate a NO_TRIGGER baseline.
+            # First later monitoring is still timed from the actual entry fill.
+            continue
         elif observed < scan_at or observed < entry or observed <= previous:
             failures.append("HORIZON_OBSERVATION_REPLAY_OR_CLOCK_INVALID")
 
@@ -109,6 +136,10 @@ def reconcile_successor_protections(
 
         deadline = entry + HORIZON
         due = observed >= deadline
+        if management_only:
+            # Owner-approved per-order compatibility is protection-only. It never
+            # replaces the original scientific identity or repairs its evidence.
+            failures.append("HORIZON_MANAGEMENT_ONLY_RUNTIME")
         if observed - previous > MAX_LAG:
             failures.append("HORIZON_MONITORING_GAP_EXCEEDED")
         if position.get("horizon_integrity_failed") is True:
@@ -146,6 +177,7 @@ def reconcile_successor_protections(
         attempt["evidence"].update({
             "horizon_protocol": PROTOCOL,
             "horizon_integrity_failed": bool(failures),
+            "horizon_management_only": management_only,
             "entry_completed_at_utc": entry.isoformat(),
             "horizon_deadline_utc": deadline.isoformat(),
             "actual_holding_seconds": (observed-entry).total_seconds(),

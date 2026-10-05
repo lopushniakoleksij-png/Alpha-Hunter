@@ -39,12 +39,13 @@ test('horizon RPC persists executable exit with null protective ID and is replay
   assert.equal((await db.query('select state from alpha_hunter_paper_events_v01')).rows[0].state,'HORIZON_CLOSED');
  }finally{await db.close();}
 });
-for(const defect of ['unactivated','prior-failure','noncanonical','late','insufficient-depth','stop-precedence','quantity']){
+for(const defect of ['unactivated','prior-failure','noncanonical','fingerprint','late','insufficient-depth','stop-precedence','quantity']){
  test(`SQL rejects ${defect} horizon evidence atomically`,async()=>{
   const db=await setup(defect!=='unactivated');try{
    const f=structuredClone(fixture);
    if(defect==='prior-failure')await db.exec(`update alpha_hunter_paper_exit_attempts_v04 set evidence='{"horizon_integrity_failed":true}' where attempt_id='prior'`);
    if(defect==='noncanonical')await db.exec(`update alpha_hunter_snapshots set payload=jsonb_set(payload,'{validation_identity,run_source}','"WEB"')`);
+   if(defect==='fingerprint')await db.exec(`update alpha_hunter_snapshots set payload=jsonb_set(payload,'{validation_identity,scientific_fingerprint_sha256}','"changed"')`);
    if(defect==='late')f.fills[0].filled_at_utc='2026-10-05T00:35:01+00:00';
    if(defect==='insufficient-depth')f.attempts[0].best_bid_size=1;
    if(defect==='stop-precedence')f.attempts[0].best_bid=8;

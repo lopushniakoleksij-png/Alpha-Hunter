@@ -143,3 +143,107 @@ def test_missing_predue_observation_cannot_reset_monitoring_gap_as_valid():
 
 def test_activation_functions_parse():
     assert parse_sql((Path(__file__).parents[1]/'ops/sql/paper_successor_activation_v09.sql').read_text())
+
+
+@pytest.mark.parametrize('direction', ['LONG', 'SHORT'])
+@pytest.mark.parametrize('offset_seconds', [0, 8])
+def test_entry_run_is_not_a_post_fill_monitoring_observation(direction, offset_seconds):
+    s,p=inputs(0,direction)
+    p['entry_completed_source_run_id']=s['run_id']
+    p['entry_completed_at_utc']=(ENTRY+timedelta(seconds=offset_seconds)).isoformat()
+    p['previous_exit_observed_at_utc']=None
+    # Even a trigger-like quote cannot establish ordering within the entry run.
+    s['symbols'][0].update(bid_price=8,ask_price=8.1)
+    assert reconcile_successor_protections(s,[p])==([],[],[])
+
+
+@pytest.mark.parametrize('minutes,failed', [(20,False),(35,False),(35.01,True)])
+def test_first_later_observation_gap_is_measured_from_fill(minutes,failed):
+    s,p=inputs(minutes)
+    p['previous_exit_observed_at_utc']=None
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e
+    assert a[0]['evidence']['horizon_integrity_failed'] is failed
+    assert ('HORIZON_MONITORING_GAP_EXCEEDED' in a[0]['blockers']) is failed
+
+
+@pytest.mark.parametrize('source', ['GITHUB_REALTIME_HOURLY','WEB',None])
+def test_noncanonical_discovery_cannot_poison_or_advance_successor_history(source):
+    s,p=inputs()
+    s['validation_identity'].update(run_source=source,runtime_role='OTHER',
+                                    scientific_fingerprint_sha256='other')
+    assert reconcile_successor_protections(s,[p])==([],[],[])
+    legacy=deepcopy(p);legacy.pop('horizon_protocol')
+    assert reconcile_successor_protections(s,[legacy])==reconcile_active_protections(s,[legacy])
+
+
+@pytest.mark.parametrize('previous', ['invalid',''])
+def test_corrupt_previous_clock_is_not_treated_as_first_observation(previous):
+    s,p=inputs(0);p['previous_exit_observed_at_utc']=previous
+    p['entry_completed_source_run_id']=s['run_id']
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and 'HORIZON_CLOCK_EVIDENCE_INVALID' in a[0]['blockers']
+
+
+def test_entry_run_with_existing_history_is_still_replay_failure():
+    s,p=inputs(0);p['entry_completed_source_run_id']=s['run_id']
+    p['previous_exit_observed_at_utc']=s['collected_at_utc']
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and a[0]['outcome']=='HORIZON_FAILED'
+
+
+def test_same_time_from_different_run_is_not_exempt():
+    s,p=inputs(0);p['previous_exit_observed_at_utc']=None
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and a[0]['outcome']=='HORIZON_FAILED'
+
+
+def test_first_later_observation_preserves_recorded_failure():
+    s,p=inputs(20);p['previous_exit_observed_at_utc']=None
+    p['horizon_integrity_failed']=True
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert a[0]['evidence']['horizon_integrity_failed'] is True
+    assert 'HORIZON_PRIOR_FAILURE' in a[0]['blockers']
+
+
+@pytest.mark.parametrize('direction,bid,kind', [
+    ('LONG',8.9,'STOP_LOSS'),('LONG',15.1,'TAKE_PROFIT'),
+    ('SHORT',11.1,'STOP_LOSS'),('SHORT',4.8,'TAKE_PROFIT')])
+def test_approved_changed_runtime_manages_protection_but_retains_failure(direction,bid,kind):
+    s,p=inputs(1500,direction)
+    s['validation_identity']['scientific_fingerprint_sha256']='corrected'
+    p['horizon_management_fingerprints']=['corrected']
+    p['horizon_integrity_failed']=True
+    s['symbols'][0].update(bid_price=bid,ask_price=bid+.1)
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert len(f)==1 and e and f[0]['protection_type']==kind
+    assert a[0]['evidence']['horizon_integrity_failed'] is True
+    assert a[0]['evidence']['horizon_management_only'] is True
+    assert 'HORIZON_MANAGEMENT_ONLY_RUNTIME' in a[0]['blockers']
+    assert 'HORIZON_PRIOR_FAILURE' in a[0]['blockers']
+
+
+def test_management_approval_never_grants_timeout_or_new_admission():
+    s,p=inputs()
+    s['validation_identity']['scientific_fingerprint_sha256']='corrected'
+    p['horizon_management_fingerprints']=['corrected']
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and a[0]['outcome']=='HORIZON_FAILED'
+    assert a[0]['evidence']['horizon_integrity_failed'] is True
+    assert not successor_admission_permitted(s,[])
+
+
+@pytest.mark.parametrize('defect',['absent','other','string','role','clock','protocol'])
+def test_management_approval_does_not_bypass_identity_clock_or_protocol(defect):
+    s,p=inputs()
+    s['symbols'][0].update(bid_price=8.9,ask_price=9)
+    s['validation_identity']['scientific_fingerprint_sha256']='corrected'
+    p['horizon_management_fingerprints']=['corrected']
+    if defect=='absent':p.pop('horizon_management_fingerprints')
+    if defect=='other':p['horizon_management_fingerprints']=['unapproved']
+    if defect=='string':p['horizon_management_fingerprints']='corrected'
+    if defect=='role':s['validation_identity']['runtime_role']='WEB'
+    if defect=='clock':p['previous_exit_observed_at_utc']=s['collected_at_utc']
+    if defect=='protocol':p['horizon_protocol']='unknown'
+    a,f,e=reconcile_successor_protections(s,[p])
+    assert not f and not e and a[0]['outcome']=='HORIZON_FAILED'
