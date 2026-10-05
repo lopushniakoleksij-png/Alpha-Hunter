@@ -40,6 +40,8 @@ create table if not exists public.alpha_hunter_r10_preregistrations_v01 (
     check(minimum_test_days=30),
   minimum_completed_paper_trades integer not null default 100
     check(minimum_completed_paper_trades=100),
+  confidence_z numeric not null default 1.96
+    check(confidence_z=1.96),
   maximum_entry_age_minutes integer not null default 35
     check(maximum_entry_age_minutes=35),
   maximum_monitoring_gap_minutes integer not null default 35
@@ -50,9 +52,12 @@ create table if not exists public.alpha_hunter_r10_preregistrations_v01 (
     check(require_validated_cost_model),
   admission_window_days integer not null default 30
     check(admission_window_days=30),
+  maximum_activation_verification_age_minutes integer not null default 10
+    check(maximum_activation_verification_age_minutes=10),
   evidence jsonb not null check(jsonb_typeof(evidence)='object'),
   scientific_role text not null default 'SUCCESSOR_EXECUTED_PAPER_24H_R10'
     check(scientific_role='SUCCESSOR_EXECUTED_PAPER_24H_R10'),
+  shadow_only boolean not null default true check(shadow_only),
   paper_only boolean not null default true check(paper_only),
   exchange_authority boolean not null default false check(not exchange_authority),
   trade_permission boolean not null default false check(not trade_permission),
@@ -85,6 +90,7 @@ create table if not exists public.alpha_hunter_r10_runtime_verifications_v01 (
   run_id text not null unique,
   verified_at_utc timestamptz not null,
   scan_collected_at_utc timestamptz not null,
+  check(verified_at_utc>=scan_collected_at_utc),
   git_commit text not null check(git_commit ~ '^[a-f0-9]{40}$'),
   scientific_fingerprint_sha256 text not null
     check(scientific_fingerprint_sha256 ~ '^[a-f0-9]{64}$'),
@@ -100,6 +106,8 @@ create table if not exists public.alpha_hunter_r10_runtime_verifications_v01 (
   unprotected_open_positions integer not null check(unprotected_open_positions=0),
   r9_admission_open_rows integer not null check(r9_admission_open_rows=0),
   orders_after_r9_halt integer not null check(orders_after_r9_halt=0),
+  r9_cohort_rows integer not null check(r9_cohort_rows>=0),
+  r9_integrity_failed_orders integer not null check(r9_integrity_failed_orders>=0),
   trade_permission_any boolean not null check(not trade_permission_any),
   exchange_authority_any boolean not null check(not exchange_authority_any),
   order_path_all_none boolean not null check(order_path_all_none),
@@ -196,6 +204,12 @@ declare
   existing public.alpha_hunter_paper_execution_activation_v10%rowtype;
   open_r9 integer:=0;
   after_halt integer:=0;
+  current_protected integer:=0;
+  current_r9_cohort integer:=0;
+  current_integrity_failures integer:=0;
+  current_trade_permission boolean:=false;
+  current_exchange_authority boolean:=false;
+  current_order_path_all_none boolean:=true;
   activated_at timestamptz;
 begin
   if p_registration_id<>'PAPER_EXECUTION_R10' then
@@ -235,7 +249,12 @@ begin
      or s.evaluation_horizon_hours<>r.evaluation_horizon_hours
      or s.minimum_test_days<>r.minimum_test_days
      or s.minimum_completed_paper_trades<>r.minimum_completed_paper_trades
+     or s.confidence_z<>r.confidence_z
      or not s.require_validated_cost_model
+     or not s.shadow_only
+     or s.trade_permission
+     or s.production_promotion_permitted
+     or s.order_path<>'NONE'
      or s.required_run_source<>r.required_run_source
      or s.frozen_git_commit<>r.frozen_git_commit
      or s.frozen_scientific_fingerprint_sha256<>r.frozen_scientific_fingerprint_sha256
@@ -287,6 +306,8 @@ begin
      or v.unprotected_open_positions<>0
      or v.r9_admission_open_rows<>0
      or v.orders_after_r9_halt<>0
+     or v.r9_cohort_rows<0
+     or v.r9_integrity_failed_orders<0
      or v.trade_permission_any
      or v.exchange_authority_any
      or not v.order_path_all_none
@@ -325,6 +346,45 @@ begin
   end if;
 
   activated_at:=clock_timestamp();
+
+  if v.verified_at_utc< v.scan_collected_at_utc
+     or activated_at<=v.verified_at_utc
+     or activated_at-v.verified_at_utc
+        > make_interval(mins=>r.maximum_activation_verification_age_minutes)
+     or activated_at-v.scan_collected_at_utc
+        > make_interval(mins=>r.maximum_monitoring_gap_minutes)
+  then
+    raise exception 'R10 activation verification is stale or temporally invalid';
+  end if;
+
+  select
+    count(*)::integer,
+    coalesce(bool_or(trade_permission),false),
+    coalesce(bool_or(exchange_authority),false),
+    coalesce(bool_and(order_path='NONE'),true)
+  into
+    current_protected,
+    current_trade_permission,
+    current_exchange_authority,
+    current_order_path_all_none
+  from public.alpha_hunter_paper_protection_horizon_open_v09;
+
+  select count(*)::integer into current_r9_cohort
+  from public.alpha_hunter_paper_cohort_members_v09;
+
+  select coalesce(max(integrity_failed_orders),0)::integer
+  into current_integrity_failures
+  from public.alpha_hunter_paper_profitability_status_v09;
+
+  if current_protected<>v.protected_open_positions
+     or current_r9_cohort<>v.r9_cohort_rows
+     or current_integrity_failures<>v.r9_integrity_failed_orders
+     or current_trade_permission
+     or current_exchange_authority
+     or not current_order_path_all_none
+  then
+    raise exception 'R10 production state changed after runtime verification';
+  end if;
 
   insert into public.alpha_hunter_paper_execution_activation_v10(
     activation_id,
@@ -370,6 +430,11 @@ begin
       'verified_scan_at_utc',v.scan_collected_at_utc,
       'previous_snapshot_source',v.previous_snapshot_source,
       'previous_snapshot_run_id',v.previous_snapshot_run_id,
+      'verified_protected_open_positions',v.protected_open_positions,
+      'verified_r9_cohort_rows',v.r9_cohort_rows,
+      'verified_r9_integrity_failed_orders',v.r9_integrity_failed_orders,
+      'activation_verification_age_seconds',
+        extract(epoch from (activated_at-v.verified_at_utc)),
       'historical_rows_reused',false,
       'r9_reopened',false
     ),
