@@ -80,7 +80,7 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     frozen_scientific_fingerprint_sha256
    ) values(
     $1,'paper-horizon-24h-v0.1',$2,10,5,24,30,100,1.96,true,
-    '2026-10-05T08:10:00Z','SUCCESSOR_EXECUTED_PAPER_24H_R10',
+    clock_timestamp()-interval '3 minutes','SUCCESSOR_EXECUTED_PAPER_24H_R10',
     true,false,false,'NONE','RENDER_CRON',$3
    )
   `,[spec,commit,fp]);
@@ -94,17 +94,21 @@ test('R10 owner activation requires post-prereg canonical context and exact free
    insert into alpha_hunter_r10_preregistrations_v01(
     registration_id,spec_id,preregistered_at_utc,frozen_git_commit,
     frozen_scientific_fingerprint_sha256,protocol_version,evidence
-   ) values(
-    'PAPER_EXECUTION_R10',$1,'2026-10-05T08:10:00Z',$2,$3,
-    'paper-horizon-24h-v0.1','{}'
    )
+   select
+    'PAPER_EXECUTION_R10',s.spec_id,s.preregistered_at_utc,$2,$3,
+    'paper-horizon-24h-v0.1','{}'::jsonb
+   from alpha_hunter_profitability_test_specs_v01 s
+   where s.spec_id=$1
   `,[spec,commit,fp]);
 
   await db.query(`
    insert into alpha_hunter_snapshots(
     run_id,collected_at_utc,version,product_type,symbol_count,error_count,payload
-   ) values(
-    'baseline-none','2026-10-05T08:11:00Z','0.7.1','USDT-FUTURES',50,0,
+   )
+   select
+    'baseline-none',s.preregistered_at_utc+interval '30 seconds',
+    '0.7.1','USDT-FUTURES',50,0,
     jsonb_build_object(
      'validation_identity',jsonb_build_object(
       'git_commit',$1::text,'run_source','RENDER_CRON','runtime_role','RENDER_CRON',
@@ -115,7 +119,8 @@ test('R10 owner activation requires post-prereg canonical context and exact free
       'configured_strategy_count',10,'total_evaluations',500
      )
     )
-   )
+   from alpha_hunter_profitability_test_specs_v01 s
+   where s.spec_id='SEALED-R10-TEST'
   `,[commit,fp]);
 
   await assert.rejects(
@@ -127,11 +132,14 @@ test('R10 owner activation requires post-prereg canonical context and exact free
      configured_strategy_count,total_strategy_evaluations,
      protected_open_positions,unprotected_open_positions,
      r9_admission_open_rows,orders_after_r9_halt,
+     r9_cohort_rows,r9_integrity_failed_orders,
      trade_permission_any,exchange_authority_any,order_path_all_none,
      r10_spec_rows,r10_activation_rows_before,evidence
     ) values(
      'bad-none','PAPER_EXECUTION_R10',$1,'baseline-none',
-     '2026-10-05T08:12:00Z','2026-10-05T08:11:00Z',$2,$3,
+     clock_timestamp()-interval '1 minute',
+     (select collected_at_utc from alpha_hunter_snapshots where run_id='baseline-none'),
+     $2,$3,
      'RENDER_CRON','RENDER_CRON','NONE','',
      10,500,19,0,0,0,false,false,true,1,0,'{}'
     )
@@ -141,8 +149,10 @@ test('R10 owner activation requires post-prereg canonical context and exact free
   await db.query(`
    insert into alpha_hunter_snapshots(
     run_id,collected_at_utc,version,product_type,symbol_count,error_count,payload
-   ) values(
-    'baseline-good','2026-10-05T08:20:00Z','0.7.1','USDT-FUTURES',50,0,
+   )
+   select
+    'baseline-good',s.preregistered_at_utc+interval '1 minute',
+    '0.7.1','USDT-FUTURES',50,0,
     jsonb_build_object(
      'validation_identity',jsonb_build_object(
       'git_commit',$1::text,'run_source','RENDER_CRON','runtime_role','RENDER_CRON',
@@ -155,7 +165,8 @@ test('R10 owner activation requires post-prereg canonical context and exact free
       'configured_strategy_count',10,'total_evaluations',500
      )
     )
-   )
+   from alpha_hunter_profitability_test_specs_v01 s
+   where s.spec_id='SEALED-R10-TEST'
   `,[commit,fp]);
 
   await db.query(`
@@ -170,9 +181,13 @@ test('R10 owner activation requires post-prereg canonical context and exact free
     r10_spec_rows,r10_activation_rows_before,evidence
    ) values(
     'verify-good','PAPER_EXECUTION_R10',$1,'baseline-good',
-    '2026-10-05T08:21:00Z','2026-10-05T08:20:00Z',$2,$3,
+    (select collected_at_utc+interval '30 seconds'
+     from alpha_hunter_snapshots where run_id='baseline-good'),
+    (select collected_at_utc
+     from alpha_hunter_snapshots where run_id='baseline-good'),
+    $2,$3,
     'RENDER_CRON','RENDER_CRON','SUPABASE','prior-run',
-    10,500,19,0,0,0,false,false,true,1,0,'{}'
+    10,500,0,0,0,0,0,0,false,false,true,1,0,'{}'
    )
   `,[spec,commit,fp]);
 
