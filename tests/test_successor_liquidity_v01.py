@@ -188,3 +188,18 @@ def test_historical_super_entry_quote_still_cannot_guarantee_later_exit():
     assert result["status"] == "SHADOW_FEASIBLE_AT_ENTRY_SNAPSHOT_ONLY"
     assert result["exit_book_quantity"] == 266
     # No assertion of guaranteed 24h exit capacity: stop-time ask was just 13.
+
+
+@pytest.mark.parametrize("field,value", [("best_bid_size", "1e999999"), ("best_ask_size", "1e-5000")])
+def test_overflow_and_underflow_quotes_are_rejected(field, value):
+    c, q, p = setup()
+    q[field] = value
+    assert assess_successor_liquidity(c, q, p)["status"] == "BLOCKED"
+
+
+def test_extreme_risk_ratio_is_fail_closed_instead_of_returning_infinity():
+    c, q, p = setup()
+    p["risk_budget_usdt"] = "1e308"
+    result = assess_successor_liquidity(c, q, p)
+    assert result["status"] == "BLOCKED"
+    assert "SIZE_NUMERIC_OVERFLOW" in result["blockers"]
