@@ -7,6 +7,7 @@ pre-entry top-of-book check is NOT a promise of liquidity at a later exit.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any
 
@@ -20,9 +21,13 @@ def _positive(value: Any) -> Decimal | None:
         return None
     try:
         result = Decimal(str(value))
-    except (InvalidOperation, ValueError):
+        float_value = float(result)
+    except (InvalidOperation, ValueError, OverflowError):
         return None
-    return result if result.is_finite() and result > 0 else None
+    return (
+        result if result.is_finite() and result > 0
+        and math.isfinite(float_value) and float_value > 0 else None
+    )
 
 
 def _time(value: Any) -> datetime | None:
@@ -140,11 +145,16 @@ def assess_successor_liquidity(
     exit_book = bid_size if direction == "LONG" else ask_size
     entry_side = "BUY" if direction == "LONG" else "SELL"
     exit_side = "SELL" if direction == "LONG" else "BUY"
-    risk_quantity = risk_budget / abs(entry - stop)
-    # Cap BOTH sides with the same explicit, yet-to-be-frozen conservative
-    # participation parameter; never assume a later quote stays this deep.
-    upper_bound = min(risk_quantity, entry_book * participation, exit_book * participation)
-    quantity = (upper_bound / step).to_integral_value(rounding=ROUND_DOWN) * step
+    try:
+        risk_quantity = risk_budget / abs(entry - stop)
+        # Cap BOTH sides with the same explicit, yet-to-be-frozen conservative
+        # participation parameter; never assume a later quote stays this deep.
+        upper_bound = min(risk_quantity, entry_book * participation, exit_book * participation)
+        quantity = (upper_bound / step).to_integral_value(rounding=ROUND_DOWN) * step
+        if not all(math.isfinite(float(v)) for v in (risk_quantity, quantity)):
+            return _deny(["SIZE_NUMERIC_OVERFLOW"], identity=identity)
+    except (InvalidOperation, OverflowError, ZeroDivisionError):
+        return _deny(["SIZE_NUMERIC_OVERFLOW"], identity=identity)
     if quantity <= 0 or quantity < min_qty:
         return _deny(["BELOW_MINIMUM_TRADE_QUANTITY"], identity=identity)
     if quantity * entry < min_notional:
