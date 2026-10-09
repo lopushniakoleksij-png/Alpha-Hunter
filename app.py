@@ -1749,15 +1749,15 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   {% endif %}
 
   <div class="panel">
-    <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
-    <div class="small" style="margin-bottom:10px">S1-S10 candidates can now feed the Money Action decision-support queue when they pass their strategy gates, valid geometry and the configured 5R minimum. They still cannot grant exchange/order authority. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
+    <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow evidence</h2>
+    <div class="small" style="margin-bottom:10px">S1-S10 candidates can now feed the Money Action decision-support queue when they pass their strategy gates, valid geometry and the configured 5R minimum. These rows describe strategy intent, not R10 paper-admission permission. Scores are uncalibrated 0-10 rule checklists: 10.00 is not confidence or a profitability estimate. R:R is planned price geometry, not realized return. They cannot grant exchange/order authority. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous comparison source (not proof of current canonical authority): {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
     <div class="toolbar" style="margin-bottom:12px">
       {% for row in data.strategy_coverage %}
       <span class="badge badge-research">{{ row.strategy_id }}: {{ row.evaluations }} eval / {{ row.candidates }} cand</span>
       {% endfor %}
     </div>
     {% if data.strategy_shadow %}
-    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Gate action</th><th>Setup intent</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
+    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Strategy gate (shadow)</th><th>Setup intent</th><th>Rule score /10</th><th>Entry</th><th>Stop</th><th>Target</th><th>Planned R:R</th><th>Why / blocker</th></tr></thead><tbody>
     {% for s in data.strategy_shadow %}
       <tr>
         <td><b>{{ s.symbol|symbol_label }}</b></td>
