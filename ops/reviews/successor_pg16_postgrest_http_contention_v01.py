@@ -162,7 +162,7 @@ def exact_comparison(dsn,run_id,expected):
     right=projection(dsn,NEW_DB,run_id)
     if left!=right:
         raise AssertionError("BASELINE_CANDIDATE_FULL_STRATEGY_EVIDENCE_MISMATCH")
-    if len(left["obs"])!=expected*10 or len(left["epi"])!=expected*2:
+    if len(left["observations"])!=expected*10 or len(left["episodes"])!=expected*2:
         raise AssertionError("EXACT_SOURCE_STRATEGY_ROW_COUNT_MISMATCH")
 
 
