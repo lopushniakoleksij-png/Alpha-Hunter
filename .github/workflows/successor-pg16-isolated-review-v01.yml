@@ -18,6 +18,7 @@ on:
       - 'ops/reviews/successor_pg16_atomic_http_cycle_v01.py'
       - 'ops/reviews/successor_all_residual_monitor_qualification_v01.py'
       - 'ops/reviews/successor_dual_pg16_position_diagnostic_v01.py'
+      - 'ops/reviews/successor_mock_http_transport_independent_custody_v01.py'
       - 'tests/test_successor_all_residual_monitor_qualification_v01.py'
       - 'tests/test_successor_bounded_child_writer_v01.py'
       - '.github/workflows/successor-pg16-isolated-review-v01.yml'
@@ -105,6 +106,15 @@ jobs:
           AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
         run: |
           python ops/reviews/successor_dual_pg16_position_diagnostic_v01.py
+
+      - name: P2 simulated real HTTP quote collection and durable second-DB custody under primary timeout
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: |
+          python ops/reviews/successor_mock_http_transport_independent_custody_v01.py
 
       - name: P0 verify real repeatable-read source snapshot and concurrent ledger writes
         env:
