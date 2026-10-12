@@ -1754,8 +1754,18 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V{{ data.build.version }}</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div><div class="small" style="margin-top:5px">Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · deployed {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start fallback){% endif %}</div></div>
-    <div><div class="toolbar"><a href="/execution-freeze" style="color:#24d18f;text-decoration:none;font-weight:800">Freeze Decision</a><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
+    <div><div class="toolbar"><a href="/execution-freeze" style="color:#24d18f;text-decoration:none;font-weight:800">Freeze Decision</a><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()" {% if data.detail_integrity == 'INCOMPLETE' %}disabled title="Database persistence incomplete; a manual scan is not a repair"{% endif %}>Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">{% if data.detail_integrity == 'INCOMPLETE' %}Canonical symbol persistence incomplete — waiting for database repair{% else %}Scanner ready{% endif %}</div></div>
   </div>
+
+  {% if data.detail_integrity == 'INCOMPLETE' %}
+  <div class="panel" style="border-color:#a84b44" role="alert">
+    <h2 class="warning" style="margin-top:0">SCAN INCOMPLETE — STRATEGY LISTS UNAVAILABLE</h2>
+    <div class="small">Latest canonical run {{ data.snapshot.run_id }} · {{ data.updated or 'unknown time' }}. Symbol records saved: <b>{{ data.detail_persisted }}</b> of <b>{{ data.detail_expected }}</b>.
+      Summary counters are from the parent scan only. This DOES NOT mean there were zero opportunities, zero safety blocks or no open positions.
+      Paper action decisions are unavailable; no stale research will be promoted to a live trade recommendation.
+      This is a database persistence incident, not a reason to start another manual scan.</div>
+  </div>
+  {% endif %}
 
   <div class="cards">
     <div class="card"><div class="label">Universe</div><div class="value">{{ data.universe.get('selected_count',0) }}</div><div class="small">deep-scanned</div></div>
@@ -1814,8 +1824,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   {% else %}
     <div class="panel action-none">
       <div class="action-title">MONEY ACTION NOW</div>
-      <h2 style="margin:8px 0">NO VALID EXECUTION YET</h2>
-      <div class="reason">The app will not turn a discovery coin into a trade recommendation. Run a fresh scan or wait for the next scan; the first candidate that passes the execution contract will replace this block automatically.</div>
+      <h2 style="margin:8px 0">{% if data.detail_integrity == 'INCOMPLETE' %}EXECUTION DATA UNAVAILABLE{% else %}NO VALID EXECUTION YET{% endif %}</h2>
+      <div class="reason">{% if data.detail_integrity == 'INCOMPLETE' %}The latest canonical child-symbol persistence failed or is incomplete. There is no verified current candidate list. No historical candidates will be used for action.{% else %}The app will not turn a discovery coin into a trade recommendation. Only a new fully persisted canonical scan can replace this block.{% endif %}</div>
     </div>
   {% endif %}
 
@@ -1849,10 +1859,30 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     {% endfor %}
     </tbody></table>
     {% else %}
-      <div class="empty">No S1-S10 matrix in this snapshot yet. Run a fresh scan after this build is deployed.</div>
+      <div class="empty">{% if data.detail_integrity == 'INCOMPLETE' %}S1-S10 evidence unavailable: current scan has {{ data.detail_persisted }} / {{ data.detail_expected }} persisted symbol records. Parent counters cannot reconstruct these strategy rows.{% else %}No S1-S10 matrix in this snapshot.{% endif %}</div>
     {% endif %}
   </div>
 
+  {% if data.detail_integrity == 'INCOMPLETE' %}
+    <div class="panel">
+      <h2 style="margin-top:0">Previous complete scan — research only</h2>
+      {% if data.historical_research %}
+      <div class="warning small">Historical snapshot {{ data.historical_research.collected_at_utc }}. {{ data.historical_research.persisted_symbols }} validated symbol rows. This is NOT current market evidence and cannot generate paper or real orders.</div>
+      <h3>Previous S1–S10 strategy observations</h3>
+      <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status then</th><th>Direction then</th><th>Score then</th><th>Authority</th></tr></thead><tbody>
+      {% for s in data.historical_research.strategies %}
+      <tr><td><b>{{ s.symbol|symbol_label }}</b></td><td>{{ s.strategy_id }}</td><td>{{ s.status }}</td><td>{{ s.direction }}</td><td>{{ s.score }}</td><td>RESEARCH ONLY · STALE</td></tr>
+      {% endfor %}</tbody></table>
+      <h3>Previous discovery radar</h3>
+      <table><thead><tr><th>Symbol</th><th>Phase then</th><th>Timing then</th><th>State then</th><th>Action</th></tr></thead><tbody>
+      {% for s in data.historical_research.research %}
+      <tr><td><b>{{ s.symbol|symbol_label }}</b></td><td>{{ s.phase }}</td><td>{{ s.timing }}</td><td>{{ s.state }}</td><td>NOT EXECUTABLE</td></tr>
+      {% endfor %}</tbody></table>
+      {% else %}
+      <div class="warning small">No previously complete canonical scan could be independently verified. Historical research is unavailable; no results are inferred.</div>
+      {% endif %}
+    </div>
+  {% endif %}
   <div class="layout">
     <main>
       <div class="panel">
@@ -1863,7 +1893,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% for row in data.actionable %}{% set a=row._action %}
         <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
         {% endfor %}</tbody></table>
-        {% else %}<div class="empty">NO SAFE PAPER TRADE in the current canonical snapshot.</div>{% endif %}
+        {% else %}<div class="empty">{% if data.detail_integrity == 'INCOMPLETE' %}PAPER ACTION QUEUE UNAVAILABLE — latest canonical symbol persistence incomplete. No valid zero-trade conclusion can be drawn.{% else %}NO SAFE PAPER TRADE in the current canonical snapshot.{% endif %}</div>{% endif %}
       </div>
 
       <div class="panel">
@@ -1873,7 +1903,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% for row in data.blocked_actions %}{% set a=row._action %}
         <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction or '—' }}</td><td><span class="badge badge-research">BLOCKED</span></td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
         {% endfor %}</tbody></table>
-        {% else %}<div class="empty">No final action-gate blocks in this snapshot.</div>{% endif %}
+        {% else %}<div class="empty">{% if data.detail_integrity == 'INCOMPLETE' %}SAFETY BLOCKS UNKNOWN — child evidence missing. Do not interpret this as zero blockers.{% else %}No final action-gate blocks in this snapshot.{% endif %}</div>{% endif %}
       </div>
 
       <div class="panel">
@@ -1883,6 +1913,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% for row in data.research %}
         <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
         {% endfor %}</tbody></table>
+        {% if data.detail_integrity == 'INCOMPLETE' %}<div class="warning small">Current research radar unavailable because the canonical child rows were not saved. Historical research is displayed separately where available.</div>{% endif %}
       </div>
 
       <div class="panel"><h2 style="margin-top:0">Bitget Open Positions</h2>
@@ -1894,7 +1925,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     </main>
 
     <aside>
-      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
+      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% if data.detail_integrity == 'INCOMPLETE' %}<div class="warning small">Reference observations unavailable: the current scan is incomplete.</div>{% else %}{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}{% endif %}</div>
       <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>EXECUTE_NOW_PAPER and PLACE_LIMIT_PAPER require canonical freshness, one direction per symbol, valid bounded geometry, public fee/spread evidence and Bitget price precision.<br><br>WAIT_FOR_TRIGGER is monitoring only. BLOCKED rows retain their evidence and state the failed gate.<br><br>No screen grants real-order authority and no threshold is relaxed.</div></div>
     </aside>
   </div>
