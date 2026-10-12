@@ -125,6 +125,9 @@ def test_conflicting_quote_and_bad_attempt_outcome_not_accepted():
     data = list(sample())
     data[3][0]["outcome"] = "INPUT_MISSING"
     assert "EXIT_ATTEMPT_OUTCOME_UNVERIFIED" in receipt(assess(tuple(data)), "QUSDT")["blockers"]
+    data = list(sample())
+    data[3][0]["outcome"] = "FUTURE_UNKNOWN_STATUS"
+    assert "EXIT_ATTEMPT_OUTCOME_UNVERIFIED" in receipt(assess(tuple(data)), "QUSDT")["blockers"]
 
 
 def test_position_identity_is_bound_to_attempt():
