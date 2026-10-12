@@ -156,7 +156,15 @@ def do_ingest(dsn: str, dbname: str, run_id: str, records: list[dict],
             cx.execute("INSERT INTO public.alpha_hunter_snapshots(run_id) VALUES (%s) ON CONFLICT DO NOTHING", (run_id,))
             cx.execute(CHILD_INSERT, (json.dumps(records, separators=(",", ":")),))
             for statement in statements:
-                cx.execute(statement.replace("$1", "%s"), (run_id,))
+                # Strip SQL-only comment lines before converting the single
+                # parameter. A candidate comment also documents "$1"; psycopg
+                # counts any "%s" even if the placeholder is inside a comment.
+                executable = "\n".join(line for line in statement.splitlines()
+                                       if not line.lstrip().startswith("--"))
+                executable = executable.replace("$1", "%s")
+                if executable.count("%s") != 1:
+                    raise AssertionError("One canonical run_id binding required per statement")
+                cx.execute(executable, (run_id,))
         return (time.perf_counter()-start)*1000
 
 
