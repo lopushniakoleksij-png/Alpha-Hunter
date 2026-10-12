@@ -14,6 +14,12 @@ This report diagnoses the **already-mature** preregistered pilot of 2026-10-08 1
 - No quote-group book conflicts, invalid top-book pairs, or mixed source labels were observed in the selected historical sample, but this is **not** permission to loosen integrity checks.
 - R10 MAGMA and SUPER size failures and WLD/MEGA horizon failures remain **frozen invalid**. Global scanner continuity can be healthy while instrument-specific monitoring samples are incomplete.
 
+### Missing exit-attempt evidence on a real canonical scan
+
+A second SELECT joined all 72 canonical runs to paper-exit attempts at the run-id grain. Exactly **two canonical scans have zero exit-attempt records** in this pilot: **2026-10-08 12:04:52.722 UTC** (pilot opening boundary) and **2026-10-08 16:23:40.182 UTC** (interior). The interior missing scan appears between actual ARKUSDT LONG, QUSDT LONG and SOONUSDT SHORT exit attempts at approximately **16:04** and **16:43** UTC. That omission accounts for the shared ~39-minute symbol-monitoring observation gap; **its operational root cause is NOT established** by this data.
+
+Do not fill the gap with a neighboring quote or assume scanner SUCCESS means protection attempts occurred. Investigate separately without altering the historical R10 failures or restarting the test.
+
 Reproducible read-only per-symbol inspection:
 `ops/reviews/future_exit_liquidity_pilot_diagnostics_20261012_readonly_v01.sql`.
 Keep original `ops/reviews/future_exit_liquidity_24h_readonly_v01.sql` unchanged. This diagnostic is not a second, favorable holdout. A right-censored series is **not** a stable-depth series. The quote-size data do not prove multilevel fill capacity, slippage, queue priority or stop-time liquidity.
