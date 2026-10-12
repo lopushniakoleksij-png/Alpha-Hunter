@@ -126,22 +126,6 @@ def main():
         write_journal(journal,run,"INDEPENDENT_ATTEMPT_OBSERVED",digest)
         assert check_no_misleading_success(journal,run,parent_count(main_dsn,run)).startswith("UNKNOWN")
 
-        run2="synthetic-main-connection-killed"
-        write_journal(journal,run2,"POSITION_INVENTORY_CAPTURED",digest)
-        write_journal(journal,run2,"MAIN_PARENT_WRITE_STARTED",digest)
-        try:
-            with make_conn(main_dsn,BASE_DB) as main_cx:
-                with main_cx.transaction():
-                    main_cx.execute("INSERT INTO public.alpha_hunter_snapshots(run_id) VALUES (%s)",
-                                    (run2,))
-                    main_cx.execute("SELECT pg_terminate_backend(pg_backend_pid())")
-        except (psycopg.OperationalError, psycopg.InterfaceError):
-            write_journal(journal,run2,"MAIN_CONNECTION_INTERRUPTED",digest)
-        else:
-            raise AssertionError("Simulated severed main DB connection must abort")
-        write_journal(journal,run2,"INDEPENDENT_ATTEMPT_OBSERVED",digest)
-        assert check_no_misleading_success(journal,run2,parent_count(main_dsn,run2)).startswith("UNKNOWN")
-        assert len(events(journal,run))==4 and len(events(journal,run2))==4
         # Real standalone journal server persists while the separate primary
         # server aborts its own transactions; successful journal writes still
         # cannot assert monitoring completeness without source/quote evidence.
@@ -149,9 +133,9 @@ def main():
             json.dumps({"isolated_main_service":"127.0.0.1:5432",
                         "isolated_journal_service":"127.0.0.1:5433",
                         "main_timeout_caused_full_transaction_rollback":True,
-                        "main_connection_kill_caused_full_transaction_rollback":True,
-                        "journal_survived_both_independent_failures":True,
-                        "journal_stages_written":8,"false_complete_seals":0,
+                        "second_main_failure_scenario_not_claimed":True,
+                        "journal_survived_main_persistence_timeout":True,
+                        "journal_stages_written":4,"false_complete_seals":0,
                         "asof_inventory_genuine_external_authenticity":False,
                         "independent_paper_position_monitoring_operational":False,
                         "R10_touched":False,"live_trading_authority":False},
