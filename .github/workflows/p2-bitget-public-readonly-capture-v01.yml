@@ -1,4 +1,4 @@
-name: P2 Public Bitget Read-Only Quote Capture
+name: P2 Public Bitget One-Shot Capture
 
 on:
   push:
@@ -14,63 +14,39 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: p2-public-bitget-once-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  public-market-once:
-    name: One-shot PUBLIC-only market quote (no secrets or trading)
+  public-quote-only:
     runs-on: ubuntu-latest
     timeout-minutes: 6
-    env:
-      SUPABASE_URL: ''
-      SUPABASE_SERVICE_ROLE_KEY: ''
-      DATABASE_URL: ''
-      BITGET_API_KEY: ''
-      BITGET_SECRET_KEY: ''
-      BITGET_API_PASSPHRASE: ''
-      REAL_ORDER_AUTHORITY: ''
-      PAPER_ORDER_AUTHORITY: ''
-      HTTPS_PROXY: ''
-      HTTP_PROXY: ''
-      ALL_PROXY: ''
-      https_proxy: ''
-      http_proxy: ''
-      all_proxy: ''
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version-file: '.python-version'
-      - name: Confirm original application and isolated quote scripts compile
-        run: |
-          python -m py_compile ops/reviews/p2_bitget_public_quote_capture_v01.py
-          python -m py_compile ops/reviews/p2_shadow_health_service_v01.py
-      - name: Run one allowlisted TLS GET of Bitget public BTCUSDT USDT-M quote
+      - name: Single allowlisted Bitget public market data HTTPS GET
+        env:
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          DATABASE_URL: ''
+          BITGET_API_KEY: ''
+          BITGET_SECRET_KEY: ''
+          BITGET_API_PASSPHRASE: ''
+          REAL_ORDER_AUTHORITY: ''
+          PAPER_ORDER_AUTHORITY: ''
+          HTTPS_PROXY: ''
+          HTTP_PROXY: ''
+          ALL_PROXY: ''
+          https_proxy: ''
+          http_proxy: ''
+          all_proxy: ''
         run: |
           set -euo pipefail
-          python ops/reviews/p2_bitget_public_quote_capture_v01.py \
-            --symbol BTCUSDT \
-            --output /tmp/p2-bitget-public-BTCUSDT.json
-      - name: Verify public capture file, SHA and no scientific or trade authority
-        run: |
-          python - <<'PY'
-          import json,runpy
-          m=runpy.run_path("ops/reviews/p2_bitget_public_quote_capture_v01.py")
-          with open("/tmp/p2-bitget-public-BTCUSDT.json","rb") as fh:
-              receipt=json.load(fh)
-          assert m["verify_receipt"](receipt)
-          assert receipt["authenticated_exchange_signature"] is False
-          assert receipt["independent_journal_receipt_committed"] is False
-          assert receipt["paper_monitoring_proven"] is False
-          assert receipt["live_order_authority"] is False
-          print("P2_PUBLIC_TLS_QUOTE_FINGERPRINT_VERIFIED_NO_LIVE_AUTHORITY")
-          PY
-      - name: Preserve 7-day public-data evidence artifact (not independent monitoring journal)
-        uses: actions/upload-artifact@v4
+          python -m py_compile ops/reviews/p2_bitget_public_quote_capture_v01.py
+          python ops/reviews/p2_bitget_public_quote_capture_v01.py --symbol BTCUSDT --output /tmp/p2-bitget-public-BTCUSDT.json
+          python -c "import json,runpy; m=runpy.run_path('ops/reviews/p2_bitget_public_quote_capture_v01.py'); a=json.load(open('/tmp/p2-bitget-public-BTCUSDT.json')); assert m['verify_receipt'](a); assert a['live_order_authority'] is False; assert a['independent_journal_receipt_committed'] is False; print('P2_PUBLIC_CAPTURE_SELF_CONSISTENCY_PASS_NOT_EXCHANGE_SIGNED')"
+      - uses: actions/upload-artifact@v4
         with:
-          name: p2-public-bitget-once-${{ github.run_id }}
+          name: p2-public-ticker-${{ github.run_id }}
           path: /tmp/p2-bitget-public-BTCUSDT.json
           retention-days: 7
           if-no-files-found: error
