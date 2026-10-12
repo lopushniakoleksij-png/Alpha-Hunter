@@ -186,6 +186,19 @@ BEGIN
    OR v_actual_observations<>p_expected_observations
    OR v_actual_episodes<>p_expected_episodes
  THEN RAISE EXCEPTION 'INCOMPLETE_ATOMIC_STRATEGY_EVIDENCE'; END IF;
+ -- Verify DB-persisted child payload identity, not only a count or a digest
+ -- computed from the submitted HTTP request. This query is in the SAME
+ -- pending transaction, so any readback failure aborts ALL five stages.
+ IF EXISTS(
+  SELECT 1 FROM pg_catalog.jsonb_to_recordset(p_rows)
+    req(run_id text,symbol text,collected_at_utc timestamptz,payload jsonb)
+  LEFT JOIN public.alpha_hunter_symbol_snapshots saved
+    ON saved.run_id=req.run_id AND saved.symbol=req.symbol
+  WHERE saved.run_id IS NULL
+    OR saved.payload IS DISTINCT FROM req.payload
+    OR saved.collected_at_utc IS DISTINCT FROM req.collected_at_utc
+    OR saved.trade_permission IS DISTINCT FROM false
+ ) THEN RAISE EXCEPTION 'ATOMIC_CHILD_SOURCE_READBACK_MISMATCH'; END IF;
  IF p_fault='BEFORE_RECEIPT' THEN
    RAISE EXCEPTION 'INJECTED_FAULT_BEFORE_RECEIPT'; END IF;
  INSERT INTO successor_shadow.atomic_stage_receipts(
