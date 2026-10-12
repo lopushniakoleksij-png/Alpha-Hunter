@@ -54,8 +54,7 @@ def test_missing_all_63_child_records_is_incomplete_not_zero_candidates():
     status=inspect_child_stage(row,row["payload"],[])
     assert status["status"]=="INCOMPLETE"
     assert status["expected"]==63 and status["persisted"]==0
-    hydrated=dashboard._hydrate_dashboard_snapshot(row,row["payload"])
-    # No mocked Supabase here; direct helper is canonical for this assertion.
+    # Pure inspection never contacts production Supabase.
     assert status["symbols"]==[]
 
 
