@@ -8,6 +8,9 @@ on:
       - '.github/workflows/p2-shadow-health-live-v01.yml'
       - 'ops/reviews/p2_shadow_health_service_v01.py'
       - 'ops/reviews/p2_shadow_render_deployment_gate_20261012.md'
+      - 'ops/reviews/p2_bitget_public_quote_capture_v01.py'
+      - 'tests/test_p2_bitget_public_quote_capture_v01.py'
+      - 'ops/reviews/p2_public_quote_capture_gate_20261012.md'
   workflow_dispatch:
 
 permissions:
@@ -87,3 +90,36 @@ jobs:
               "real_order_authority":False
           },sort_keys=True))
           PY
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+      - name: One-time read-only public Bitget USDT-M ticker over direct TLS
+        shell: bash
+        env:
+          SUPABASE_URL: ''
+          SUPABASE_SERVICE_ROLE_KEY: ''
+          DATABASE_URL: ''
+          BITGET_API_KEY: ''
+          BITGET_SECRET_KEY: ''
+          BITGET_API_PASSPHRASE: ''
+          REAL_ORDER_AUTHORITY: ''
+          PAPER_ORDER_AUTHORITY: ''
+          HTTPS_PROXY: ''
+          HTTP_PROXY: ''
+          ALL_PROXY: ''
+          https_proxy: ''
+          http_proxy: ''
+          all_proxy: ''
+        run: |
+          set -euo pipefail
+          python -m py_compile ops/reviews/p2_bitget_public_quote_capture_v01.py
+          python ops/reviews/p2_bitget_public_quote_capture_v01.py --symbol BTCUSDT --output /tmp/p2-bitget-public-BTCUSDT.json
+          python -c "import json,runpy; m=runpy.run_path('ops/reviews/p2_bitget_public_quote_capture_v01.py'); a=json.load(open('/tmp/p2-bitget-public-BTCUSDT.json')); assert m['verify_receipt'](a); assert a['live_order_authority'] is False; assert a['independent_journal_receipt_committed'] is False; print('P2_PUBLIC_CAPTURE_SELF_CONSISTENCY_PASS_NOT_EXCHANGE_SIGNED')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-public-ticker-${{ github.run_id }}
+          path: /tmp/p2-bitget-public-BTCUSDT.json
+          retention-days: 7
+          if-no-files-found: error
