@@ -118,7 +118,7 @@ jobs:
           docker pull postgrest/postgrest:v12.2.3
           trap 'docker logs ah-p2-trigger --tail 15 2>/dev/null || true; docker logs ah-p2-candidate --tail 15 2>/dev/null || true; docker rm -f ah-p2-trigger ah-p2-candidate >/dev/null 2>&1 || true' EXIT
           docker run -d --rm --name ah-p2-trigger --network host \
-            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_bench_trigger_ephemeral" \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_pgrst_trigger_fresh_ephemeral" \
             -e "PGRST_DB_ANON_ROLE=bench_api" \
             -e "PGRST_DB_SCHEMAS=public" \
             -e "PGRST_SERVER_HOST=127.0.0.1" \
@@ -126,7 +126,7 @@ jobs:
             -e "PGRST_DB_POOL=10" \
             postgrest/postgrest:v12.2.3
           docker run -d --rm --name ah-p2-candidate --network host \
-            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_bench_setbased_ephemeral" \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_pgrst_setbased_fresh_ephemeral" \
             -e "PGRST_DB_ANON_ROLE=bench_api" \
             -e "PGRST_DB_SCHEMAS=public" \
             -e "PGRST_SERVER_HOST=127.0.0.1" \
