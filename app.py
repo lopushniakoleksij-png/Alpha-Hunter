@@ -17,6 +17,10 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 from alpha_hunter.services.statistics import StatisticsService
+from alpha_hunter.dashboard_observability import (
+    inspect_child_stage,
+    format_historical_research,
+)
 from performance_page import PERFORMANCE_PAGE
 
 
@@ -496,12 +500,13 @@ def _hydrate_dashboard_snapshot(
             "limit": "2000",
         },
     )
-    snapshot["symbols"] = [
-        child.get("payload")
-        for child in children
-        if isinstance(child, dict)
-        and isinstance(child.get("payload"), dict)
-    ]
+    integrity = inspect_child_stage(row, payload, children)
+    snapshot["_detail_integrity"] = integrity["status"]
+    snapshot["_detail_failure_reason"] = integrity["reason"]
+    snapshot["_detail_expected"] = integrity["expected"]
+    snapshot["_detail_persisted"] = integrity["persisted"]
+    # NEVER admit partially persisted symbol evidence to the live decision gate.
+    snapshot["symbols"] = integrity["symbols"]
     return snapshot
 
 
@@ -540,6 +545,63 @@ def latest_snapshot() -> dict[str, Any]:
             )
 
     return _hydrate_dashboard_snapshot(row, payload)
+
+
+def latest_historical_research_snapshot(
+    current_run_id: str,
+    *,
+    search_limit: int = 8,
+) -> dict[str, Any] | None:
+    """Historical display ONLY, never fallback for latest executable actions.
+
+    Fetch bounded canonical parents and independently validate the full child
+    symbol manifest. Do not replace the current incomplete scan as current.
+    """
+    params = {
+        "select": "run_id,collected_at_utc,symbol_count,payload",
+        "order": "collected_at_utc.desc",
+        "limit": str(search_limit),
+    }
+    if CANONICAL_RUN_SOURCE:
+        params["payload->validation_identity->>run_source"] = (
+            f"eq.{CANONICAL_RUN_SOURCE}"
+        )
+    for row in supabase_get_rows(SNAPSHOT_TABLE, params):
+        if not isinstance(row, dict) or row.get("run_id") == current_run_id:
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("_storage_contract") != "snapshot-parent-v0.2":
+            continue
+        identity = payload.get("validation_identity")
+        if not isinstance(identity, dict) or (
+            str(identity.get("run_source") or "").upper() != CANONICAL_RUN_SOURCE
+        ):
+            continue
+        # Every row is checked for exact child identity. Never splice one run's
+        # parent counters with another run's detailed strategy evidence.
+        hydrated = _hydrate_dashboard_snapshot(row, payload)
+        if hydrated.get("_detail_integrity") == "COMPLETE_SYMBOL_ROWS_NOT_MONITORING_PROOF":
+            return hydrated
+    return None
+
+
+def dashboard_view_data() -> dict[str, Any]:
+    current = latest_snapshot()
+    history = None
+    if current.get("_detail_integrity") == "INCOMPLETE":
+        try:
+            history = latest_historical_research_snapshot(str(current.get("run_id") or ""))
+        except (requests.RequestException, RuntimeError, ValueError) as exc:
+            # A missing historical read must not fabricate a current trade.
+            app.logger.warning("Historical research-only fallback unavailable: %s", exc)
+    return dashboard_payload(
+        current,
+        latest_test_engine_status(),
+        latest_paper_lifecycle_status(),
+        historical_snapshot=history,
+    )
 
 
 def latest_test_engine_status() -> dict[str, Any]:
@@ -1393,12 +1455,16 @@ def dashboard_payload(
     snapshot: dict[str, Any],
     test_engine: dict[str, Any] | None = None,
     paper_lifecycle: dict[str, Any] | None = None,
+    *,
+    historical_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    detail_integrity = snapshot.get("_detail_integrity", "LEGACY_OR_IN_MEMORY")
+    # Partial compact data is NEVER routed into strategy/paper action scoring.
     symbols = [
         dict(row)
         for row in snapshot.get("symbols", [])
-        if "error" not in row
-    ]
+        if isinstance(row, dict) and "error" not in row
+    ] if detail_integrity != "INCOMPLETE" else []
 
     for row in symbols:
         intel = row.get("intelligence", {})
@@ -1575,6 +1641,11 @@ def dashboard_payload(
 
     return {
         "snapshot": snapshot,
+        "detail_integrity": detail_integrity,
+        "detail_expected": snapshot.get("_detail_expected"),
+        "detail_persisted": snapshot.get("_detail_persisted"),
+        "detail_failure_reason": snapshot.get("_detail_failure_reason"),
+        "historical_research": format_historical_research(historical_snapshot),
         "best_action": best_action,
         "actionable": combined_actionable[:10],
         "blocked_actions": blocked_actions[:25],
@@ -2300,11 +2371,7 @@ def dashboard():
     try:
         return render_template_string(
             PAGE,
-            data=dashboard_payload(
-                latest_snapshot(),
-                latest_test_engine_status(),
-                latest_paper_lifecycle_status(),
-            ),
+            data=dashboard_view_data(),
         )
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
@@ -2318,11 +2385,7 @@ def dashboard():
 def api_latest():
     try:
         return jsonify(
-            dashboard_payload(
-                latest_snapshot(),
-                latest_test_engine_status(),
-                latest_paper_lifecycle_status(),
-            )
+            dashboard_view_data()
         )
     except Exception:
         app.logger.exception("API latest live-data read failed")
