@@ -97,3 +97,12 @@ jobs:
           python-version-file: '.python-version'
       - name: One direct allowlisted Bitget public ticker capture
         run: python ops/reviews/p2_bitget_public_quote_capture_v01.py --symbol BTCUSDT --output /tmp/p2-bitget-public-BTCUSDT.json
+      - name: Reverify stored public bytes and zero paper or trading authority
+        run: |
+          python -c "import json,runpy; m=runpy.run_path('ops/reviews/p2_bitget_public_quote_capture_v01.py'); a=json.load(open('/tmp/p2-bitget-public-BTCUSDT.json')); assert m['verify_receipt'](a); assert a['authenticated_exchange_signature'] is False; assert a['independent_journal_receipt_committed'] is False; assert a['paper_monitoring_proven'] is False; assert a['live_order_authority'] is False; print('P2_PUBLIC_TLS_CAPTURE_BYTES_VERIFIED_NOT_INDEPENDENT_MONITORING')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: p2-public-ticker-one-shot
+          path: /tmp/p2-bitget-public-BTCUSDT.json
+          retention-days: 7
+          if-no-files-found: error
