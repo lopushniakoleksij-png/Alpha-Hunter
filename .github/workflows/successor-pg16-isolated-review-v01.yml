@@ -6,6 +6,9 @@ on:
       - 'ops/reviews/successor_pg16_tcp_benchmark_v01.py'
       - 'ops/reviews/successor_full_schema_set_based_candidate_v01.sql'
       - 'tests/postgres/successor-full-production-schema-fixture.sql'
+      - 'tests/postgres/successor-monitoring-cycle-seal-schema.sql'
+      - 'tests/postgres/successor-monitoring-cycle-seal.test.mjs'
+      - 'ops/reviews/successor_pg16_cycle_seal_verify_v01.py'
       - '.github/workflows/successor-pg16-isolated-review-v01.yml'
 
 permissions:
@@ -55,3 +58,9 @@ jobs:
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
         run: |
           python ops/reviews/successor_pg16_tcp_benchmark_v01.py
+      - name: Verify isolated per-position sealed cycle receipt and committed source evidence
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_cycle_seal_verify_v01.py
