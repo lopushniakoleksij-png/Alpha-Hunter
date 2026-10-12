@@ -24,7 +24,7 @@ def response(symbol="QUSDT",age_s=3):
 def capture(row=None,endpoint=EP,symbol="QUSDT",when=base):
     return s.build_transport_quote_capture(endpoint=endpoint,
        requested_symbol=symbol,observed_at_utc=when.isoformat(),
-       transport_request_id="synthetic-bitget-response-id",source_run_id=RUN,
+       transport_request_id="synthetic-bitget-response-id",run_id=RUN,
        raw_response_row=row if row is not None else response(symbol),
        upstream_call_succeeded=True)
 
