@@ -224,7 +224,8 @@ def range_report(values):
 def main():
     only_local_endpoints()
     dsn=guard_dsn()
-    pg_candidates_for_local_ci(dsn)
+    # The --prepare phase has ALREADY created pristine databases and roles
+    # BEFORE the two PostgREST containers started. Never create them twice.
     wait_for_http()
     sizes,preload_ms=preload(dsn)
     runs={}
