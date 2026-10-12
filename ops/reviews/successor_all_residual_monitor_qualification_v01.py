@@ -62,6 +62,13 @@ def score_monitoring_coverage(
     if not isinstance(inventory.get("positions"),list) or not isinstance(inventory.get("manifest_sha256"),str):
         return _output([],["SOURCE_RESIDUAL_MANIFEST_MISSING"],"SOURCE_INCOMPLETE",inventory)
     positions=inventory["positions"]
+    # A matching supplied 'complete' flag is insufficient even for local
+    # consistency: source positions must match the fill-minus-exit manifest
+    # digest. This still does NOT authenticate the external data provider.
+    recomputed_sha=sha256(dumps(positions,sort_keys=True,
+       separators=(",",":"),ensure_ascii=False).encode()).hexdigest()
+    if recomputed_sha!=inventory["manifest_sha256"]:
+        blockers.append("SOURCE_RESIDUAL_MANIFEST_DIGEST_MISMATCH")
     identity=cycle.get("validation_identity") if isinstance(cycle,dict) else None
     identity=identity if isinstance(identity,dict) else {}
     run=text(cycle.get("run_id")) if isinstance(cycle,dict) else ""
@@ -195,6 +202,8 @@ def score_monitoring_coverage(
            "scientific_pass_permitted":False})
     if blockers or any(x["blockers"] for x in output):
         status="FAIL_CLOSED_COVERAGE_OR_MONITORING_GAP"
+    elif not output:
+        status="EMPTY_SOURCE_INVENTORY_UNAUTHENTICATED_NO_LIVE_POSITION_CLAIM"
     else:
         status="ALL_SUPPLIED_MANAGED_ATTEMPTS_LOCALLY_QUALIFIED_NOT_AUTHENTICATED"
     return _output(output,blockers,status,inventory)
