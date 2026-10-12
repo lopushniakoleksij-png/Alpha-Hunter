@@ -300,8 +300,24 @@ def compare_baseline(dsn,run,payload):
         raise AssertionError("ATOMIC_RPC_STRATEGY_PARITY_FAILED")
     return (len(a["observations"]),len(a["episodes"]))
 
+def wait_for_postgrest_schema_cache():
+    """Do not treat a fresh container's PGRST002 schema-cache 503 as a code regression.
+
+    Wait only for the isolated localhost API health route. No POST, no retries
+    of an unknown production order, no production service or DB access.
+    """
+    for _ in range(40):
+        try:
+            with urlopen("http://127.0.0.1:3002/",timeout=2) as response:
+                if response.status==200:
+                    return
+        except (HTTPError,URLError,TimeoutError):
+            time.sleep(.35)
+    raise AssertionError("ISOLATED_POSTGREST_SCHEMA_CACHE_NOT_READY")
+
 def verify():
     dsn=guard_dsn()
+    wait_for_postgrest_schema_cache()
     durations=[]
     for i in range(3):
         run=f"synthetic-p2-atomic-clean-{i}"
