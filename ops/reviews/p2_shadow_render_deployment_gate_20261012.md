@@ -8,7 +8,7 @@
 
 | Runtime | ID | Actual deployment boundary |
 |---|---|---|
-| Primary hourly Render cron | crn-d9nmbjbm8hqs73elu6hg | branch **main**, autoDeploy **yes**, schedule **0 * * * *** |
+| Primary hourly Render cron | crn-d9nmbjbm8hqs73elu6hg | branch **main**, autoDeploy **yes**, schedule **0 * * * ***; start command **python3 hourly.py --once** |
 | Existing web UI | srv-d9notmtaeets73cdrbc0 | branch **main**, autoDeploy **no** |
 | Proposed successor inert web probe | new service | branch **p2-isolated-shadow-guard-20261012**, autoDeploy **no** |
 
