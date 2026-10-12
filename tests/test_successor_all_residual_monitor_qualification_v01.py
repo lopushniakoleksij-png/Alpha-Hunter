@@ -82,3 +82,25 @@ def test_duplicate_attempt_or_missing_disposition_cannot_pass():
 def test_fabricated_source_completeness_not_accepted_as_real_proof():
     a=fixture();a[0]["status"]="SOURCE_EVIDENCE_UNKNOWN_OR_INVALID"
     assert score(a)["status"]=="SOURCE_INCOMPLETE"
+
+
+def test_tampered_source_residual_manifest_refused_even_when_attempts_match():
+    a=fixture()
+    a[0]["positions"][0]["residual_qty"]="999"
+    result=score(a)
+    assert result["status"]=="FAIL_CLOSED_COVERAGE_OR_MONITORING_GAP"
+    assert "SOURCE_RESIDUAL_MANIFEST_DIGEST_MISMATCH" in result["run_blockers"]
+
+def test_empty_supplied_inventory_cannot_claim_absence_of_live_positions():
+    a=fixture()
+    a[0]["positions"]=[]
+    a[0]["manifest_sha256"]=mod.sha256(
+      mod.dumps([],sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+    ).hexdigest()
+    a[2]=[]
+    a[3]=[]
+    a[4]=[]
+    result=score(a)
+    assert result["status"]=="EMPTY_SOURCE_INVENTORY_UNAUTHENTICATED_NO_LIVE_POSITION_CLAIM"
+    assert not result["independently_authenticated_source"]
+    assert not result["scientific_pass_permitted"]
