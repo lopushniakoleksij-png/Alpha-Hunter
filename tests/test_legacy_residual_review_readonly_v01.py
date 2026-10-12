@@ -22,9 +22,9 @@ class LegacyResidualContractTests(unittest.TestCase):
         for path in FILES:
             with self.subTest(path=path.name):
                 sql = sanitized(path)
-                self.assertRegex(sql.lstrip(), r"(?i)^with\\b")
-                self.assertNotRegex(sql, r"(?i)\\b(insert|update|delete|merge|create|alter|drop|truncate|grant|revoke|call|execute|copy|vacuum|do)\\b")
-                self.assertRegex(sql, r"(?i)\\bselect\\b")
+                self.assertRegex(sql.lstrip(), r"(?i)^with\b")
+                self.assertNotRegex(sql, r"(?i)\b(insert|update|delete|merge|create|alter|drop|truncate|grant|revoke|call|execute|copy|vacuum|do)\b")
+                self.assertRegex(sql, r"(?i)\bselect\b")
 
     def test_no_cohort_date_lifecycle_exclusion(self):
         for path in FILES:
