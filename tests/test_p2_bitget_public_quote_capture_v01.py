@@ -40,9 +40,6 @@ class Stub:
         self.read_limit=n
         return self.raw[:n]
 
-def transport(raw=None,**,):
-    pass
-
 def stubbed(raw=None,status=200,content_type="application/json",url=None):
     calls=[]
     def opener(req,*,timeout):
