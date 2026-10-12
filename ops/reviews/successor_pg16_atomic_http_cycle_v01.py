@@ -349,6 +349,39 @@ def verify():
     if response.get("error_http") not in (400,409)        or inspect(dsn,invalid["p_run_id"])!=(0,0,0,0,0):
         raise AssertionError("Bad scientific geometry bypassed immutable constraints")
 
+    # Deliberately mutate a source payload through an isolated BEFORE INSERT
+    # trigger: equal row COUNTS are not enough; exact persisted readback must
+    # reject the whole transaction and leave zero durable rows.
+    forged=make_payload(2,"synthetic-p2-atomic-persisted-payload-different")
+    with make_conn(dsn,DBNAME) as db:
+        db.execute("""
+          CREATE FUNCTION successor_shadow.synthetic_mutate_child()
+          RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER
+          SET search_path='' AS $mut$
+          BEGIN
+            NEW.payload=pg_catalog.jsonb_set(
+              NEW.payload,'{last_price}','\"98765\"'::jsonb,true);
+            RETURN NEW;
+          END;
+          $mut$;
+          CREATE TRIGGER synthetic_child_payload_mutation
+          BEFORE INSERT ON public.alpha_hunter_symbol_snapshots
+          FOR EACH ROW EXECUTE FUNCTION successor_shadow.synthetic_mutate_child();
+        """)
+    try:
+        response,_=postgrest(forged)
+        if response.get("error_http") not in (400,409) or (
+            "ATOMIC_CHILD_SOURCE_READBACK_MISMATCH"
+            not in response.get("body","")):
+            raise AssertionError("Corrupted persisted payload was not refused "+str(response))
+    finally:
+        with make_conn(dsn,DBNAME) as db:
+            db.execute("""DROP TRIGGER synthetic_child_payload_mutation
+              ON public.alpha_hunter_symbol_snapshots;
+              DROP FUNCTION successor_shadow.synthetic_mutate_child()""")
+    if inspect(dsn,forged["p_run_id"])!=(0,0,0,0,0):
+        raise AssertionError("Corrupted source payload left committed partial rows")
+
     # Unsealed previous parent cannot be overwritten or 'fixed up' as history.
     prior="synthetic-p2-atomic-prior-unsealed"
     with make_conn(dsn,DBNAME) as db:
@@ -408,6 +441,7 @@ def verify():
             "all_parent_child_observation_episode_receipt_rows_rollback":True,
             "ambiguous_http_retry_idempotent":True,
             "true_pg_statement_cancellation_rolls_back_all_stages":timed_out,
+            "persisted_payload_mutation_detected_and_rolled_back":True,
             "three_same_run_http_retries_have_one_receipt":True,
             "conflicting_retry_refused":True,"historic_parent_backfill_refused":True,
             "production_scan_monitored_positions":False,
