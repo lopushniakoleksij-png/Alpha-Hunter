@@ -53,7 +53,7 @@ async function stage(db,options={}){
    VALUES($1,$2,'RENDER_CRON','RENDER_CRON',$3,$4,$5,
    'synthetic-canonical-manifest','synthetic-independent-asof-inventory',
    $6,true,'synthetic-explicit-approved-source-policy',$7,$8)`,
-   [run,collected,FINGERPRINT,manifestCount,inventoryCount,'2026-10-12T09:59:00Z',quoteSources,offsetSeconds]);
+   [run,collected,FINGERPRINT,manifestCount,inventoryCount,new Date(Date.parse(collected)-60000).toISOString(),quoteSources,offsetSeconds]);
   for(const symbol of manifest)
    await db.query(`INSERT INTO successor_shadow.expected_symbols(run_id,symbol) VALUES($1,$2)`,[run,symbol]);
   for(const symbol of persisted)
