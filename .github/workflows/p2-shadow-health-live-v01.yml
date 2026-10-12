@@ -91,5 +91,9 @@ jobs:
           },sort_keys=True))
           PY
 
-      - name: Verify collector release remains disabled
-        run: echo P2_COLLECTOR_NOT_DEPLOYED
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: '.python-version'
+      - name: One direct allowlisted Bitget public ticker capture
+        run: python ops/reviews/p2_bitget_public_quote_capture_v01.py --symbol BTCUSDT --output /tmp/p2-bitget-public-BTCUSDT.json
