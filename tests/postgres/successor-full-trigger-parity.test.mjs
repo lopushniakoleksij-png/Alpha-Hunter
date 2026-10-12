@@ -17,7 +17,7 @@ const candidate = readFileSync(
 ).split('-- NEXT STATEMENT').map(x=>x.trim()).filter(Boolean);
 
 assert.equal(candidate.length,2,'two explicit SELECT-INSERT statements');
-const sizes = [16,48,64];
+const sizes = [16,48,64,64,64]; // three independent fresh 64-symbol trials
 const CLOCK = '2026-10-12T12:00:00Z';
 
 function payload(runId,i,mode='normal') {
@@ -120,7 +120,7 @@ async function projection(db,runId){
   return {obs,epi};
 }
 
-test('verbatim production trigger vs full-column set-based candidate on 3 isolated sizes: exact evidence, retry and rollback parity',async()=>{
+test('verbatim production trigger vs full-column set-based candidate on 3 sizes and 3 repeated 64-symbol trials: exact evidence and rollback parity',async()=>{
   const baseline=await startDb(false);
   const challenger=await startDb(true);
   let results=[];
@@ -128,12 +128,24 @@ test('verbatim production trigger vs full-column set-based candidate on 3 isolat
     for(let n=0;n<sizes.length;n++){
       const count=sizes[n],runId=`synthetic-full-parity-run-${n}`;
       const rows=makeRows(runId,count,n===sizes.length-1);
-      const a0=performance.now();
-      await runIngest(baseline,false,runId,rows);
-      const aMs=performance.now()-a0;
-      const b0=performance.now();
-      await runIngest(challenger,true,runId,rows);
-      const bMs=performance.now()-b0;
+      // Alternate first-execution order to reduce simple warm-cache ordering bias.
+      // This remains an in-memory illustrative workload, NOT production profiling.
+      let aMs,bMs;
+      if(n%2===1){
+        const b0=performance.now();
+        await runIngest(challenger,true,runId,rows);
+        bMs=performance.now()-b0;
+        const a0=performance.now();
+        await runIngest(baseline,false,runId,rows);
+        aMs=performance.now()-a0;
+      }else{
+        const a0=performance.now();
+        await runIngest(baseline,false,runId,rows);
+        aMs=performance.now()-a0;
+        const b0=performance.now();
+        await runIngest(challenger,true,runId,rows);
+        bMs=performance.now()-b0;
+      }
       const left=await projection(baseline,runId);
       const right=await projection(challenger,runId);
       assert.equal(left.obs.length,count*10);
