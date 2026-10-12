@@ -100,7 +100,7 @@ def check_no_misleading_success(journal, run,main_parent_rows):
 def main():
     main_dsn=guard_dsn()
     separate_dsn=journal_dsn()
-    with psycopg.connect(separate_dsn) as journal:
+    with psycopg.connect(separate_dsn, autocommit=True) as journal:
         journal.execute(JOURNAL_SCHEMA)
         # A previously captured inventory manifest comes from a synthetic,
         # explicitly non-authentic forward AS-OF ledger. It will not provide
