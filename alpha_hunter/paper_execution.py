@@ -351,13 +351,19 @@ def _normalize_active_exposure_keys(
     """Accept legacy (symbol, strategy, direction) rows but enforce portfolio identity."""
     normalized: set[tuple[str, str]] = set()
     for key in keys or set():
+        if not isinstance(key, tuple):
+            raise ValueError("ACTIVE_PAPER_EXPOSURE_KEY_SHAPE_INVALID")
         if len(key) == 2:
             symbol, direction = key
         elif len(key) == 3:
             symbol, _strategy, direction = key
         else:
-            continue
-        normalized.add((str(symbol).upper(), str(direction).upper()))
+            raise ValueError("ACTIVE_PAPER_EXPOSURE_KEY_SHAPE_INVALID")
+        normalized_symbol = str(symbol or "").strip().upper()
+        normalized_direction = str(direction or "").strip().upper()
+        if not normalized_symbol or normalized_direction not in {"LONG", "SHORT"}:
+            raise ValueError("ACTIVE_PAPER_EXPOSURE_KEY_VALUE_INVALID")
+        normalized.add((normalized_symbol, normalized_direction))
     return normalized
 
 
@@ -380,7 +386,17 @@ def build_initial_paper_execution(
     orders: list[dict[str, Any]] = []
     fills: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
-    occupied = _normalize_active_exposure_keys(active_exposure_keys)
+    try:
+        occupied = _normalize_active_exposure_keys(active_exposure_keys)
+    except ValueError:
+        # Any incomplete or malformed exposure ledger blocks every new paper
+        # admission in this batch. Never interpret an unknown key as no risk.
+        for decision in decisions:
+            if decision.get("paper_authority") is True:
+                events.append(
+                    _cancelled_event(decision, ["PAPER_ACTIVE_EXPOSURE_KEYS_INVALID"])
+                )
+        return orders, fills, events
     for decision in decisions:
         if decision.get("paper_authority") is not True:
             continue
