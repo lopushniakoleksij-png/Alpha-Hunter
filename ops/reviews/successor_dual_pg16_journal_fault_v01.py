@@ -105,10 +105,30 @@ def main():
         # A previously captured inventory manifest comes from a synthetic,
         # explicitly non-authentic forward AS-OF ledger. It will not provide
         # proof of live source completeness, even if mirrored safely here.
-        digest=sha256(json.dumps([
-          {"entry_order_id":"synthetic-paper-1","symbol":"QUSDT",
-           "residual_qty":"1.5","direction":"LONG"}
-        ],sort_keys=True).encode()).hexdigest()
+        from successor_forward_asof_inventory_v01 import build_forward_asof_inventory
+        scope={"paper_only":True,"exchange_authority":False,
+               "trade_permission":False,"order_path":"NONE"}
+        synthetic_orders=[dict(order_id="synthetic-paper-1",
+          symbol="QUSDT",direction="LONG",submitted_at_utc="2026-10-12T11:40:00Z",
+          created_at="2026-10-12T11:40:01Z",**scope)]
+        synthetic_fills=[dict(fill_id="synthetic-entry-1",
+          order_id="synthetic-paper-1",quantity="1.5",source_run_id="synthetic-run",
+          filled_at_utc="2026-10-12T11:42:00Z",
+          created_at="2026-10-12T11:42:03Z",**scope)]
+        table_names=("alpha_hunter_paper_orders_v02",
+                     "alpha_hunter_paper_fills_v02",
+                     "alpha_hunter_paper_exit_fills_v04")
+        source_receipts={table:dict(source_table=table,complete=True,
+          consistent_snapshot_id="TEST_ONLY_NOT_AUTHENTIC",
+          captured_at_utc="2026-10-12T12:00:05Z") for table in table_names}
+        inventory=build_forward_asof_inventory(
+          synthetic_orders,synthetic_fills,[],source_receipts,
+          asof_utc="2026-10-12T12:00:00Z",
+          max_source_capture_lag_seconds=30)
+        assert inventory["expected_position_count"]==1
+        assert inventory["positions"][0]["residual_qty"]=="1.5"
+        assert inventory["status"]=="SUPPLIED_SOURCE_ROWS_RECONCILED_NOT_INDEPENDENT_ATTESTATION"
+        digest=inventory["manifest_sha256"]
         run="synthetic-main-supabase-timeout"
         write_journal(journal,run,"POSITION_INVENTORY_CAPTURED",digest)
         write_journal(journal,run,"MAIN_PARENT_WRITE_STARTED",digest)
