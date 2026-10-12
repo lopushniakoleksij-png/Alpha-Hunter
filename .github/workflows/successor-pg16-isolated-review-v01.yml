@@ -9,6 +9,8 @@ on:
       - 'tests/postgres/successor-monitoring-cycle-seal-schema.sql'
       - 'tests/postgres/successor-monitoring-cycle-seal.test.mjs'
       - 'ops/reviews/successor_pg16_cycle_seal_verify_v01.py'
+      - 'ops/reviews/successor_dual_pg16_journal_fault_v01.py'
+      - 'ops/reviews/successor_forward_asof_inventory_v01.py'
       - '.github/workflows/successor-pg16-isolated-review-v01.yml'
 
 permissions:
@@ -42,6 +44,19 @@ jobs:
           --health-interval 5s
           --health-timeout 4s
           --health-retries 12
+      journal:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: journal
+          POSTGRES_PASSWORD: journalpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U journal -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
     steps:
       - name: Checkout draft only
         uses: actions/checkout@v4
@@ -64,3 +79,11 @@ jobs:
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
         run: |
           python ops/reviews/successor_pg16_cycle_seal_verify_v01.py
+      - name: Isolated main write-timeout and independent diagnostic journal
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: |
+          python ops/reviews/successor_dual_pg16_journal_fault_v01.py
