@@ -20,14 +20,19 @@ import sys
 import statistics
 import time
 from pathlib import Path
+import psycopg
+from psycopg import sql
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from successor_pg16_tcp_benchmark_v01 import (
-    BASE_DB, NEW_DB, CANDIDATE, guard_dsn, make_conn,
-    synthetic_rows, do_ingest, exact_comparison, extract as projection,
+    CANDIDATE, SCHEMA, guard_dsn, make_conn,
+    synthetic_rows, do_ingest, extract as projection,
 )
+# IMPORTANT: pristine DBs separate from the prior contract/receipt test's data.
+BASE_DB="ah_pgrst_trigger_fresh_ephemeral"
+NEW_DB="ah_pgrst_setbased_fresh_ephemeral"
 from successor_bounded_child_writer_v01 import child_manifest_sha256
 
 API = {"baseline": "http://127.0.0.1:3000", "candidate": "http://127.0.0.1:3001"}
@@ -51,9 +56,20 @@ def only_local_endpoints():
 
 
 def pg_candidates_for_local_ci(dsn):
-    """Grant ONLY the child table data API in two ephemeral databases."""
+    """Two FRESH identical schema/row-count DBs; add only local bench_api role.
+
+    This fixes the experimental confound from prior tests, which used the
+    existing ah_bench* DBs and had different fixture rows by test end.
+    """
+    with psycopg.connect(dsn,autocommit=True) as admin:
+        for name in (BASE_DB,NEW_DB):
+            admin.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     for dbname in (BASE_DB,NEW_DB):
         with make_conn(dsn,dbname) as cx:
+            cx.execute(SCHEMA.read_text())
+            if dbname==NEW_DB:
+                # ISOLATED candidate only: never a Supabase migration.
+                cx.execute("DROP TRIGGER trg_ah_capture_strategy_observations_v01 ON public.alpha_hunter_symbol_snapshots")
             cx.execute("""
                 DO $$BEGIN
                   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='bench_api') THEN
@@ -140,6 +156,16 @@ def wait_for_http():
             raise AssertionError(f"ISOLATED_PGRST_NOT_READY_{mode}")
 
 
+def exact_comparison(dsn,run_id,expected):
+    """Run-local full-row baseline equality, ignoring creation timestamps."""
+    left=projection(dsn,BASE_DB,run_id)
+    right=projection(dsn,NEW_DB,run_id)
+    if left!=right:
+        raise AssertionError("BASELINE_CANDIDATE_FULL_STRATEGY_EVIDENCE_MISMATCH")
+    if len(left["obs"])!=expected*10 or len(left["epi"])!=expected*2:
+        raise AssertionError("EXACT_SOURCE_STRATEGY_ROW_COUNT_MISMATCH")
+
+
 def preload(dsn):
     """Both databases same synthetic history/row IDs, candidate projected."""
     start=time.perf_counter()
@@ -163,6 +189,10 @@ def preload(dsn):
             """).fetchone()
             sizes[mode]=dict(zip(("symbol_relation_bytes","observation_relation_bytes",
                      "episode_relation_bytes","child_count","strategy_obs_count"),v))
+    # Background history MUST have identical cardinality in both DBs.
+    for k in ("child_count","strategy_obs_count"):
+        if sizes["baseline"][k]!=sizes["candidate"][k]:
+            raise AssertionError("UNFAIR_PRELOAD_"+k)
     return sizes,round((time.perf_counter()-start)*1000,1)
 
 
@@ -258,6 +288,7 @@ def main():
         "strategy_observations_verified":HTTP_RUNS_PER_SIDE*63*10,
         "strategy_episodes_verified":HTTP_RUNS_PER_SIDE*63*2,
         "preloaded_symbol_rows_per_side":PRELOAD_RUNS*PRELOAD_SYMBOLS,
+        "pristine_identical_starting_databases":True,
         "preload_elapsed_ms":preload_ms,
         "synthetic_relation_sizes":sizes,
         "measurements":measurements,
