@@ -1,0 +1,89 @@
+name: P2 Inert Shadow Public Endpoint Contract
+
+on:
+  push:
+    branches:
+      - p2-isolated-shadow-guard-20261012
+    paths:
+      - '.github/workflows/p2-shadow-health-live-v01.yml'
+      - 'ops/reviews/p2_shadow_health_service_v01.py'
+      - 'ops/reviews/p2_shadow_render_deployment_gate_20261012.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p2-inert-public-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shadow-public-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      ENDPOINT: 'https://alpha-hunter-p2-inert-shadow.onrender.com'
+    steps:
+      - name: Verify public ONLY inert endpoint and reject trading and mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import Request,urlopen
+          from urllib.error import HTTPError,URLError
+
+          url=os.environ["ENDPOINT"]
+          assert url=="https://alpha-hunter-p2-inert-shadow.onrender.com"
+          def probe(path, method="GET", timeout=15):
+              req=Request(url+path,method=method,headers={"Accept":"application/json"})
+              try:
+                  with urlopen(req,timeout=timeout) as response:
+                      return response.status,response.read().decode("utf-8"),dict(response.headers)
+              except HTTPError as exc:
+                  return exc.code,exc.read().decode("utf-8"),dict(exc.headers)
+
+          response=None
+          for retry in range(15):
+              try:
+                  status,body,headers=probe("/healthz")
+                  if status==200:
+                      response=json.loads(body)
+                      break
+                  print("Health waiting, code=",status,"retry=",retry)
+              except (URLError,TimeoutError,ValueError) as exc:
+                  print("Shadow cold-start or network retry",type(exc).__name__,retry)
+              time.sleep(5)
+          if response is None:
+              raise SystemExit("P2_INERT_SHADOW_PUBLIC_HEALTH_UNAVAILABLE")
+          assert response["status"]=="INERT_ISOLATED_HEALTH_ONLY",response
+          for key in ("active_scanner","scheduler_active","source_quote_authenticated",
+                      "live_source_snapshot_verified","paper_monitoring_proven",
+                      "real_order_authority","paper_admission_authority",
+                      "database_write_authority","scientific_pass_permitted"):
+              assert response[key] is False,(key,response.get(key))
+          for path in ("/","/api/latest","/api/scan","/api/trade",
+                       "/quote","/paper/open","/metrics"):
+              code,_,_=probe(path)
+              assert code==404,(path,code)
+          for method in ("POST","PUT","PATCH","DELETE"):
+              code,_,_=probe("/healthz",method)
+              assert code==405,(method,code)
+          print("P2_EXTERNAL_INERT_SHADOW_HEALTH_PASS",json.dumps({
+              "live_http_status":200,
+              "inert_flag_checks":9,
+              "forbidden_routes_404":7,
+              "mutations_405":4,
+              "real_market_quotes_authenticated":False,
+              "paper_monitoring_35m_proven":False,
+              "production_database_touched":False,
+              "real_order_authority":False
+          },sort_keys=True))
+          PY
