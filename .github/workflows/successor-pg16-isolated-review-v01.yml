@@ -14,6 +14,7 @@ on:
       - 'ops/reviews/successor_pg16_repeatable_source_capture_v01.py'
       - 'ops/reviews/successor_bounded_child_writer_v01.py'
       - 'ops/reviews/successor_pg16_bounded_child_fanout_v01.py'
+      - 'ops/reviews/successor_pg16_postgrest_http_contention_v01.py'
       - 'tests/test_successor_bounded_child_writer_v01.py'
       - '.github/workflows/successor-pg16-isolated-review-v01.yml'
 
@@ -105,3 +106,31 @@ jobs:
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
         run: |
           python ops/reviews/successor_pg16_bounded_child_fanout_v01.py
+
+      - name: Probe identical strategy fanout via actual isolated PostgREST HTTP under concurrent synthetic load
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          set -euo pipefail
+          # Own runner-local disposable databases only. Never connect to Supabase.
+          python ops/reviews/successor_pg16_postgrest_http_contention_v01.py --prepare
+          docker pull postgrest/postgrest:v12.2.3
+          trap 'docker logs ah-p2-trigger --tail 15 2>/dev/null || true; docker logs ah-p2-candidate --tail 15 2>/dev/null || true; docker rm -f ah-p2-trigger ah-p2-candidate >/dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name ah-p2-trigger --network host \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_bench_trigger_ephemeral" \
+            -e "PGRST_DB_ANON_ROLE=bench_api" \
+            -e "PGRST_DB_SCHEMAS=public" \
+            -e "PGRST_SERVER_HOST=127.0.0.1" \
+            -e "PGRST_SERVER_PORT=3000" \
+            -e "PGRST_DB_POOL=10" \
+            postgrest/postgrest:v12.2.3
+          docker run -d --rm --name ah-p2-candidate --network host \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_bench_setbased_ephemeral" \
+            -e "PGRST_DB_ANON_ROLE=bench_api" \
+            -e "PGRST_DB_SCHEMAS=public" \
+            -e "PGRST_SERVER_HOST=127.0.0.1" \
+            -e "PGRST_SERVER_PORT=3001" \
+            -e "PGRST_DB_POOL=10" \
+            postgrest/postgrest:v12.2.3
+          python ops/reviews/successor_pg16_postgrest_http_contention_v01.py
