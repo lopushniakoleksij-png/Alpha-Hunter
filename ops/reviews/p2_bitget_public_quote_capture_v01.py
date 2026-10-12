@@ -178,6 +178,7 @@ def collect_once(symbol:str, *,
         "capture_started_utc":started.astimezone(timezone.utc).isoformat(),
         "origin_verification":"SYSTEM_CA_TLS_HOSTNAME_VALIDATION_NOT_VENUE_SIGNED",
         "response_body_sha256":sha256(raw).hexdigest(),
+        "raw_response_body_utf8":raw.decode("utf-8"),
         "raw_response_public_data":json.loads(raw),
         "quote":book,
         "scientific_pass_permitted":False,
@@ -211,19 +212,25 @@ def verify_receipt(capture:dict[str,Any])->bool:
                   "authenticated_exchange_signature"):
         if capture.get(field) is not False:
             raise CaptureRejected("UNAUTHORIZED_QUOTE_RECEIPT_PROMOTION")
-    if sha256(canonical(capture["raw_response_public_data"])).hexdigest()=="":
-        raise CaptureRejected("UNREACHABLE")
-    # Validate quote linkage to supplied public raw row; not timestamp freshness
-    # against verification time (historic proof must remain inspectable).
-    raw=capture["raw_response_public_data"]
-    row=raw.get("data",[])
-    if raw.get("code")!="00000" or len(row)!=1 or row[0].get("symbol")!=sym:
+    # Preserve and validate the exact original public HTTP bytes, rather
+    # than calling re-serialized JSON an authentic response-body hash.
+    raw_body=capture.get("raw_response_body_utf8")
+    if not isinstance(raw_body,str):
+        raise CaptureRejected("RAW_RESPONSE_BODY_MISSING")
+    raw_bytes=raw_body.encode("utf-8")
+    if capture.get("response_body_sha256")!=sha256(raw_bytes).hexdigest():
+        raise CaptureRejected("RAW_HTTP_BYTES_DIGEST_MISMATCH")
+    try:
+        parsed=json.loads(raw_body)
+    except json.JSONDecodeError as exc:
+        raise CaptureRejected("RAW_BODY_NOT_JSON") from exc
+    if parsed!=capture.get("raw_response_public_data"):
         raise CaptureRejected("RAW_SOURCE_ENVELOPE_CHANGED")
-    q=capture["quote"]
-    if q.get("raw_row_sha256")!=sha256(canonical(row[0])).hexdigest():
-        raise CaptureRejected("RAW_SOURCE_ROW_MISMATCH")
-    if capture.get("response_body_sha256") is None:
-        raise CaptureRejected("RAW_RESPONSE_DIGEST_MISSING")
+    when=datetime.fromisoformat(capture["quote"]["captured_at_utc"])
+    # Validate freshness at original capture time, never at verification.
+    verified_book=parse_public_response(raw_bytes,sym,when)
+    if verified_book!=capture["quote"]:
+        raise CaptureRejected("RAW_SOURCE_ROW_OR_BOOK_MISMATCH")
     return True
 
 def save_local_artifact(capture:dict[str,Any],output_path:str)->None:
