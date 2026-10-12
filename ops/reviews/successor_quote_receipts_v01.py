@@ -148,7 +148,7 @@ def build_monitoring_receipts(
                 failures.append("EXIT_ATTEMPT_MISSING")
             elif count != 1:
                 failures.append("EXIT_ATTEMPT_DUPLICATE")
-            elif _identifier(attempt_map[oid][0].get("outcome")) in {"", "INPUT_MISSING", "AMBIGUOUS"}:
+            elif _identifier(attempt_map[oid][0].get("outcome")) not in {"NO_TRIGGER", "STOP_TRIGGERED", "TARGET_TRIGGERED", "HORIZON_CLOSED"}:
                 failures.append("EXIT_ATTEMPT_OUTCOME_UNVERIFIED")
 
         candidates = quote_map.get(sym, [])
