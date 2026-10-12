@@ -12,6 +12,9 @@ on:
       - 'ops/reviews/successor_dual_pg16_journal_fault_v01.py'
       - 'ops/reviews/successor_forward_asof_inventory_v01.py'
       - 'ops/reviews/successor_pg16_repeatable_source_capture_v01.py'
+      - 'ops/reviews/successor_bounded_child_writer_v01.py'
+      - 'ops/reviews/successor_pg16_bounded_child_fanout_v01.py'
+      - 'tests/test_successor_bounded_child_writer_v01.py'
       - '.github/workflows/successor-pg16-isolated-review-v01.yml'
 
 permissions:
@@ -95,3 +98,10 @@ jobs:
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
         run: |
           python ops/reviews/successor_pg16_repeatable_source_capture_v01.py
+
+      - name: Compare bounded and bulk child fanout with identical production trigger in two isolated PG16 databases
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_bounded_child_fanout_v01.py
