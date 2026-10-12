@@ -1769,8 +1769,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   <div class="cards">
     <div class="card"><div class="label">Universe</div><div class="value">{{ data.universe.get('selected_count',0) }}</div><div class="small">deep-scanned</div></div>
-    <div class="card"><div class="label">Ready now</div><div class="value ready">{{ data.trade_ready|length }}</div><div class="small">strict execution</div></div>
-    <div class="card"><div class="label">Retest plans</div><div class="value warning">{{ data.retest_plans|length }}</div><div class="small">price must come to us</div></div>
+    <div class="card"><div class="label">Ready now</div><div class="value ready">{% if data.detail_integrity == 'INCOMPLETE' %}—{% else %}{{ data.trade_ready|length }}{% endif %}</div><div class="small">{% if data.detail_integrity == 'INCOMPLETE' %}unverified · persistence failed{% else %}strict execution{% endif %}</div></div>
+    <div class="card"><div class="label">Retest plans</div><div class="value warning">{% if data.detail_integrity == 'INCOMPLETE' %}—{% else %}{{ data.retest_plans|length }}{% endif %}</div><div class="small">{% if data.detail_integrity == 'INCOMPLETE' %}unverified · persistence failed{% else %}price must come to us{% endif %}</div></div>
     <div class="card"><div class="label">Minimum R:R</div><div class="value">{{ '%.1f'|format(data.minimum_execution_rr) }}R</div><div class="small">not relaxed</div></div>
     <div class="card"><div class="label">BTC 24H</div><div class="value {{ 'long' if data.btc_change_24h>0 else 'short' if data.btc_change_24h<0 else '' }}">{{ '%.2f'|format(data.btc_change_24h) }}%</div><div class="small">regime reference</div></div>
     <div class="card"><div class="label">Strategies</div><div class="value">{{ data.strategy_summary.get('configured_strategy_count',0) }}</div><div class="small">S1-S10 shadow · {{ data.strategy_summary.get('shadow_candidate_count',0) }} candidates</div></div>
@@ -1917,6 +1917,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       </div>
 
       <div class="panel"><h2 style="margin-top:0">Bitget Open Positions</h2>
+      {% if data.detail_integrity == 'INCOMPLETE' %}<div class="warning small">Observed in a canonical scan whose symbol persistence failed. Position/protection values are not freshly reverified here; verify directly in Bitget before changing any orders.</div>{% endif %}
       {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th><th>SL</th><th>TP</th><th>Protection</th></tr></thead><tbody>
       {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td><td>{{ p._stop_loss_display }}</td><td>{{ p._take_profit_display }}</td><td><span class="badge {{ 'badge-ready' if p._protection_state=='OBSERVED' else 'badge-research' }}">{{ p._protection_state }}</span>{% if p._protection_warning %}<div class="small warning">{{ p._protection_warning }}</div>{% endif %}<div class="small muted">observer={{ p._protection_observation_status }} · {{ p._protection_observed_at_utc or 'time unavailable' }}</div></td></tr>{% endfor %}
       </tbody></table>
