@@ -7,7 +7,7 @@ CREATE SCHEMA successor_shadow;
 REVOKE ALL ON SCHEMA successor_shadow FROM PUBLIC;
 
 CREATE TABLE successor_shadow.cycles (
-  run_id text PRIMARY KEY,
+  run_id text PRIMARY KEY REFERENCES public.alpha_hunter_snapshots(run_id),
   collected_at_utc timestamptz NOT NULL,
   run_source text NOT NULL CHECK(run_source='RENDER_CRON'),
   runtime_role text NOT NULL CHECK(runtime_role='RENDER_CRON'),
@@ -36,7 +36,8 @@ CREATE TABLE successor_shadow.committed_symbols(
   run_id text NOT NULL REFERENCES successor_shadow.cycles(run_id),
   symbol text NOT NULL CHECK(length(trim(symbol))>0 AND symbol=upper(symbol)),
   source_row_id text NOT NULL CHECK(length(trim(source_row_id))>0),
-  PRIMARY KEY(run_id,symbol)
+  PRIMARY KEY(run_id,symbol),
+  FOREIGN KEY(run_id,symbol) REFERENCES public.alpha_hunter_symbol_snapshots(run_id,symbol)
 );
 
 -- The initial FILL_ATTESTED reference is external to this isolated schema and
