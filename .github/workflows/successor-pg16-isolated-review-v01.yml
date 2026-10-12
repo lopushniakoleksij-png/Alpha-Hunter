@@ -15,6 +15,7 @@ on:
       - 'ops/reviews/successor_bounded_child_writer_v01.py'
       - 'ops/reviews/successor_pg16_bounded_child_fanout_v01.py'
       - 'ops/reviews/successor_pg16_postgrest_http_contention_v01.py'
+      - 'ops/reviews/successor_pg16_atomic_http_cycle_v01.py'
       - 'tests/test_successor_bounded_child_writer_v01.py'
       - '.github/workflows/successor-pg16-isolated-review-v01.yml'
 
@@ -134,3 +135,22 @@ jobs:
             -e "PGRST_DB_POOL=10" \
             postgrest/postgrest:v12.2.3
           python ops/reviews/successor_pg16_postgrest_http_contention_v01.py
+
+      - name: P2 verify atomic parent + child + strategies + receipt in ONE isolated PostgREST HTTP request
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          set -euo pipefail
+          # Third entirely disposable DB. Test RPC schema is NEVER exposed on Supabase.
+          python ops/reviews/successor_pg16_atomic_http_cycle_v01.py --prepare
+          trap 'docker logs ah-p2-atomic --tail 20 2>/dev/null || true; docker rm -f ah-p2-atomic >/dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name ah-p2-atomic --network host \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_p2_atomic_only_ephemeral" \
+            -e "PGRST_DB_ANON_ROLE=bench_api" \
+            -e "PGRST_DB_SCHEMAS=successor_shadow" \
+            -e "PGRST_SERVER_HOST=127.0.0.1" \
+            -e "PGRST_SERVER_PORT=3002" \
+            -e "PGRST_DB_POOL=10" \
+            postgrest/postgrest:v12.2.3
+          python ops/reviews/successor_pg16_atomic_http_cycle_v01.py
