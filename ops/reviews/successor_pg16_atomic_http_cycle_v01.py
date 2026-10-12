@@ -344,6 +344,43 @@ def verify():
     if response.get("error_http") not in (400,409)        or inspect(dsn,prior)!=(1,0,0,0,0):
         raise AssertionError("Prior partially persisted run was backfilled")
 
+    # A REAL PG statement cancellation (far shorter ONLY in ephemeral test)
+    # must roll back the entire function call including any attempted parent,
+    # child, strategy observation/episode and structural receipt.
+    timeout_payload=make_payload(63,"synthetic-p2-atomic-sql-timeout")
+    timed_out=False
+    with make_conn(dsn,DBNAME) as db:
+        db.execute("SET ROLE bench_api")
+        db.execute("SET statement_timeout = '25ms'")
+        db.commit()
+        try:
+            db.execute("""SELECT successor_shadow.atomic_accept_scan(
+                %s,%s::jsonb,%s,%s,%s,%s,%s)""",(
+                timeout_payload["p_run_id"],json.dumps(timeout_payload["p_rows"]),
+                63,630,126,FINGERPRINT,None))
+        except psycopg.errors.QueryCanceled:
+            timed_out=True
+            db.rollback()
+        if not timed_out:
+            raise AssertionError("Atomic function did not hit injected local SQL timeout")
+    if inspect(dsn,timeout_payload["p_run_id"])!=(0,0,0,0,0):
+        raise AssertionError("SQL cancellation retained a partial receipt or child write")
+
+    # Multiple exact HTTP retries racing on the SAME run may create precisely
+    # ONE run + ONE sealed receipt. A mutated concurrent retry cannot replace
+    # an already locked/committed run.
+    race=make_payload(63,"synthetic-p2-atomic-racing-retries")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+        replies=[f.result()[0] for f in [
+          pool.submit(postgrest,race) for _ in range(3)]]
+    assert sorted(r["stage"] for r in replies)==[
+       "ALREADY_ATOMICALLY_COMMITTED_LOCAL_ONLY",
+       "ALREADY_ATOMICALLY_COMMITTED_LOCAL_ONLY",
+       "ATOMIC_SOURCE_STRATEGY_COMMITTED_LOCAL_ONLY"]
+    if inspect(dsn,race["p_run_id"])!=(1,63,630,126,1):
+        raise AssertionError("Same-run concurrent retries produced duplicate evidence")
+    compare_baseline(dsn,race["p_run_id"],race)
+
     # Close client connection cannot be taken as monitoring evidence.
     with make_conn(dsn,DBNAME) as db:
         gated=db.execute("""SELECT count(*) FROM successor_shadow.atomic_stage_receipts
@@ -357,6 +394,8 @@ def verify():
             "negative_rollback_points":failed,
             "all_parent_child_observation_episode_receipt_rows_rollback":True,
             "ambiguous_http_retry_idempotent":True,
+            "true_pg_statement_cancellation_rolls_back_all_stages":timed_out,
+            "three_same_run_http_retries_have_one_receipt":True,
             "conflicting_retry_refused":True,"historic_parent_backfill_refused":True,
             "production_scan_monitored_positions":False,
             "paper_35m_continuity_verified":False,
