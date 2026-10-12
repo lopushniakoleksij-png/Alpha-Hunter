@@ -1,0 +1,57 @@
+name: P0 Successor Real PG16 TCP Review Only
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/successor_pg16_tcp_benchmark_v01.py'
+      - 'ops/reviews/successor_full_schema_set_based_candidate_v01.sql'
+      - 'tests/postgres/successor-full-production-schema-fixture.sql'
+      - '.github/workflows/successor-pg16-isolated-review-v01.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-real-pg16-shadow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-postgres-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bench
+          POSTGRES_PASSWORD: benchpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bench -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+    steps:
+      - name: Checkout draft only
+        uses: actions/checkout@v4
+      - name: Setup test-only Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated pinned PostgreSQL driver
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir 'psycopg[binary]==3.2.10'
+      - name: Exercise production trigger and full affected schema over local TCP, without trade credentials
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_tcp_benchmark_v01.py
