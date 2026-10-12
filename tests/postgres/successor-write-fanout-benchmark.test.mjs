@@ -103,7 +103,7 @@ INSERT INTO strategy_obs(
   signal_score,strategy_instance_id,strategy_payload,shadow_only,trade_permission,order_path
 )
 SELECT md5('strategy-observation-v0.1|'||c.run_id||'|'||c.symbol||'|'||
-           s.value->>'strategy_id'||'|'||c.observed_at_utc::text),
+           (s.value->>'strategy_id')||'|'||c.observed_at_utc::text),
        c.run_id,c.symbol,s.value->>'strategy_id',c.observed_at_utc,
        upper(s.value->>'direction'),coalesce(s.value->>'status','UNKNOWN'),
        coalesce(s.value->>'action','NO_SAFE_TRADE'),
@@ -124,7 +124,7 @@ INSERT INTO strategy_episode(
 SELECT s.value->'persistence'->>'strategy_instance_id',
        c.symbol,s.value->>'strategy_id',
        md5('strategy-observation-v0.1|'||c.run_id||'|'||c.symbol||'|'||
-           s.value->>'strategy_id'||'|'||c.observed_at_utc::text),
+           (s.value->>'strategy_id')||'|'||c.observed_at_utc::text),
        s.value,true,false,'NONE'
 FROM src_symbol c CROSS JOIN LATERAL
   jsonb_array_elements(c.payload->'multi_strategy_engine'->'strategies') s(value)
