@@ -35,7 +35,7 @@ def test_pressure_query_inspects_real_postgrest_write_path_and_trigger():
 def test_successor_contract_denies_shortcuts_and_preserves_frozen_evidence():
     txt = DESIGN.read_text(encoding="utf-8")
     for required in (
-        "READ_ONLY_DIAGNOSTIC",   # Never claim causal proof from a counter.
+        "historical/cumulative",   # Never claim causal proof from a counter.
         "P0",
         "35-minute",
         "12s",
