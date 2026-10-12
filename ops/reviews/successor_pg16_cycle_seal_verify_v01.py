@@ -107,15 +107,15 @@ def main() -> None:
 
         # Source child receipts require actual committed symbol rows; the
         # live production schema's composite (run_id,symbol) FK enforces this.
-        with cx.transaction():
-            try:
+        try:
+            with cx.transaction():
                 cx.execute("""INSERT INTO successor_shadow.committed_symbols(
                     run_id,symbol,source_row_id)
                     VALUES ('pg16-cycle-missing-attempt','FAKEUSDT','missing')""")
-            except psycopg.errors.ForeignKeyViolation:
-                cx.rollback()
-            else:
-                raise AssertionError("Missing real source child was incorrectly accepted")
+        except psycopg.errors.ForeignKeyViolation:
+            pass
+        else:
+            raise AssertionError("Missing real source child was incorrectly accepted")
 
         # An immutable final cycle cannot be modified. Keep the failed
         # transaction confined to its own SAVEPOINT rather than abort session.
