@@ -16,6 +16,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import math
+import sys
 import statistics
 import time
 from pathlib import Path
@@ -25,7 +26,7 @@ from urllib.request import Request, urlopen
 
 from successor_pg16_tcp_benchmark_v01 import (
     BASE_DB, NEW_DB, CANDIDATE, guard_dsn, make_conn,
-    synthetic_rows, do_ingest, exact_comparison, projection,
+    synthetic_rows, do_ingest, exact_comparison, extract as projection,
 )
 from successor_bounded_child_writer_v01 import child_manifest_sha256
 
@@ -278,4 +279,11 @@ def main():
     print("P2_HTTP_STRATEGY_PARITY_PASS_STILL_NOT_PRODUCTION_SAFE")
 
 if __name__=="__main__":
-    main()
+    if len(sys.argv)==2 and sys.argv[1]=="--prepare":
+        only_local_endpoints()
+        pg_candidates_for_local_ci(guard_dsn())
+        print("P2_LOCAL_DB_HTTP_ROLE_PREP_PASS")
+    elif len(sys.argv)==1:
+        main()
+    else:
+        raise SystemExit("Only --prepare or no arguments are permitted")
