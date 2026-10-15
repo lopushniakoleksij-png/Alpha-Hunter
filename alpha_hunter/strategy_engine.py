@@ -590,21 +590,24 @@ def _s5_compression(record: dict[str, Any], previous: dict[str, Any] | None, con
 
 def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, config: dict[str, Any]) -> dict[str, Any]:
     strategy_id, strategy_name = STRATEGY_CATALOG[5]
-    latest = _tf(record, "1H").get("latest_candle")
-    if not isinstance(latest, dict) or not previous:
+    # An in-progress 1H wick is not evidence of a confirmed reclaim. The
+    # collector exposes the last *fully closed* candle separately.
+    closed = _tf(record, "1H").get("last_closed_candle")
+    if not isinstance(closed, dict) or not previous:
         return _data_insufficient(
             strategy_id,
             strategy_name,
-            "Sweep/reclaim requires a current 1H candle plus the previous canonical snapshot levels",
+            "Sweep/reclaim requires a fully closed 1H candle plus previous canonical snapshot levels",
         )
     prev_support = _float(previous.get("support"))
     prev_resistance = _float(previous.get("resistance"))
-    low = _float(latest.get("low"))
-    high = _float(latest.get("high"))
-    close = _float(latest.get("close"))
+    low = _float(closed.get("low"))
+    high = _float(closed.get("high"))
+    close = _float(closed.get("close"))
     price = _float(record.get("last_price"))
     if None in (low, high, close, price):
-        return _data_insufficient(strategy_id, strategy_name, "Sweep/reclaim candle fields are incomplete")
+        return _data_insufficient(strategy_id, strategy_name, "Closed sweep/reclaim candle fields are incomplete")
+
     direction = None
     swept_level = None
     if prev_support is not None and low < prev_support < close:
@@ -613,12 +616,51 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
     elif prev_resistance is not None and high > prev_resistance > close:
         direction = "SHORT"
         swept_level = prev_resistance
-    volume_state = str(_indicators(record).get("volume_anomaly", {}).get("state") or "")
+
+    volume_anomaly = _indicators(record).get("volume_anomaly")
+    volume_state = str(
+        volume_anomaly.get("state") or ""
+        if isinstance(volume_anomaly, dict) else ""
+    )
     participation = volume_state in {"ELEVATED", "HIGH"}
     signal = bool(direction and participation)
-    score = (6.0 if direction else 0.0) + (4.0 if participation else 0.0)
     stop = low if direction == "LONG" else high if direction == "SHORT" else None
     target = _structural_target(record, direction or "", price)
+
+    # A closed countertrend sweep is useful WATCH evidence, not immediate
+    # execution permission. Preserve both sides; require a matching canonical
+    # 1H/4H (or 1H/15m) direction before S6 can become a shadow candidate.
+    parent_direction = _direction_from_trends(record)
+    direction_aligned = direction is not None and direction == parent_direction
+    timing = str(record.get("opportunity_timing") or "").upper()
+    timing_acceptable = timing in {"EARLY", "FAIR"}
+
+    # Bound the same gross geometry upstream of the existing independent
+    # paper-execution outlier safeguard. Never clip or fabricate the R:R.
+    geometry = _geometry(direction, price, stop, target)
+    maximum_rr = float(
+        config.get("candidate_quality", {}).get("maximum_action_reward_risk", 25.0)
+    )
+    rr_not_outlier = bool(
+        geometry["rr"] is not None and 0 < geometry["rr"] <= maximum_rr
+    )
+    confirmed = bool(signal and direction_aligned and timing_acceptable and rr_not_outlier)
+    # An unconfirmed reversal must not be advertised as a 10/10 setup.
+    score = (6.0 if direction is not None and confirmed else 2.0 if direction else 0.0) + (
+        4.0 if participation else 0.0
+    )
+
+    reasons = []
+    if not signal:
+        reasons.append("No participation-confirmed sweep/reclaim of a fully closed 1H candle")
+    else:
+        if not direction_aligned:
+            reasons.append("S6 reversal opposes or lacks confirmed canonical parent direction")
+        if not timing_acceptable:
+            reasons.append("S6 immediate intent requires EARLY or FAIR timing")
+        if not rr_not_outlier:
+            reasons.append("S6 reward/risk geometry exceeds the permitted action bound or is invalid")
+
     return _finish(
         record=record,
         config=config,
@@ -627,7 +669,7 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
         direction=direction,
         signal=signal,
         signal_score=score,
-        action="EXECUTE_NOW" if signal else "WAIT_FOR_TRIGGER",
+        action="EXECUTE_NOW" if confirmed else "WAIT_FOR_TRIGGER",
         entry=price,
         stop=stop,
         target=target,
@@ -637,11 +679,24 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
             "latest_low": low,
             "latest_high": high,
             "latest_close": close,
+            "closed_candle_timestamp": closed.get("timestamp"),
+            "candle_basis": "LAST_FULLY_CLOSED_1H",
             "swept_level": swept_level,
             "volume_state": volume_state,
+            "parent_direction": parent_direction,
+            "market_phase": record.get("market_phase"),
+            "opportunity_timing": timing,
+            "maximum_action_reward_risk": maximum_rr,
         },
-        reasons=[] if signal else ["No participation-confirmed sweep and reclaim of a previous canonical level"],
-        extra_checks={"sweep_reclaim": direction is not None, "participation": participation},
+        reasons=reasons,
+        extra_checks={
+            "sweep_reclaim": direction is not None,
+            "participation": participation,
+            "closed_candle_available": True,
+            "parent_direction_aligned": direction_aligned,
+            "timing_acceptable": timing_acceptable,
+            "rr_not_outlier": rr_not_outlier,
+        },
     )
 
 
