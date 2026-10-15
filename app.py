@@ -605,35 +605,73 @@ def dashboard_view_data() -> dict[str, Any]:
 
 
 def latest_test_engine_status() -> dict[str, Any]:
+    """Render R10 as successor and R9 as separately labeled historical science.
+
+    Never substitute a historical cohort for an unavailable current status.
+    This changes dashboard presentation only: no scientific DB rows or trading gates.
+    """
     engine: dict[str, Any] = {}
+    historical_r9: dict[str, Any] = {}
     successor_read_failed = False
+    historical_read_failed = False
+
+    try:
+        rows = supabase_get_rows(
+            "alpha_hunter_paper_profitability_status_v10",
+            {"select": "*", "limit": "1"},
+        )
+        if rows and isinstance(rows[0], dict):
+            candidate = rows[0]
+            if "V14R10" in str(candidate.get("spec_id") or ""):
+                engine = dict(candidate)
+            else:
+                successor_read_failed = True
+        else:
+            successor_read_failed = True
+    except (requests.RequestException, RuntimeError, ValueError):
+        successor_read_failed = True
+
     try:
         rows = supabase_get_rows(
             "alpha_hunter_paper_profitability_status_v09",
             {"select": "*", "limit": "1"},
         )
         if rows and isinstance(rows[0], dict):
-            engine = dict(rows[0])
+            candidate = rows[0]
+            if "V14R9" in str(candidate.get("spec_id") or ""):
+                historical_r9 = dict(candidate)
+            else:
+                historical_read_failed = True
+        else:
+            historical_read_failed = True
     except (requests.RequestException, RuntimeError, ValueError):
-        successor_read_failed = True
+        historical_read_failed = True
+
     if not engine:
-        try:
-            rows = supabase_get_rows(
-                "alpha_hunter_test_engine_latest_v01",
-                {"select": "*", "limit": "1"},
-            )
-            if rows and isinstance(rows[0], dict):
-                engine = dict(rows[0])
-        except (requests.RequestException, RuntimeError, ValueError):
-            return {}
-    if not engine:
-        return {}
+        # In particular, NEVER fall back to R9 or the legacy v01 status and
+        # present their scan/trade counters as if they came from current R10.
+        engine = {
+            "spec_id": "R10_STATUS_UNAVAILABLE",
+            "operational_status": "REVIEW_REQUIRED",
+            "verdict": "R10_STATUS_UNAVAILABLE",
+            "profitability_status": "R10_STATUS_UNAVAILABLE",
+            "blockers": ["SUCCESSOR_STATUS_UNAVAILABLE"],
+            "paper_only": True,
+            "trade_permission": False,
+            "production_promotion_permitted": False,
+            "live_money_claim_permitted": False,
+            "order_path": "NONE",
+        }
+
     blockers = list(engine.get("blockers") or [])
     if successor_read_failed:
         blockers.append("SUCCESSOR_STATUS_UNAVAILABLE")
+
     try:
-        rows = supabase_get_rows("alpha_hunter_paper_repair_status_v01",
-                                 {"select": "*", "limit": "1"})
+        rows = supabase_get_rows(
+            "alpha_hunter_paper_repair_status_v01",
+            {"select": "*", "limit": "1"},
+        )
         repair = rows[0] if rows and isinstance(rows[0], dict) else {}
     except (requests.RequestException, RuntimeError, ValueError):
         repair = {}
@@ -644,13 +682,19 @@ def latest_test_engine_status() -> dict[str, Any]:
             blockers.append("UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR")
         if repair.get("open_positions_over_24h", 0) > 0:
             blockers.append("OPEN_PAPER_POSITIONS_EXCEED_24H")
+
     engine["repair_status"] = repair
     engine["blockers"] = list(dict.fromkeys(blockers))
     engine["collection_status"] = engine.get("operational_status", "UNKNOWN")
-    # This is a display overlay. The immutable scientific evaluation is untouched.
+    engine["historical_r9"] = historical_r9
+    engine["historical_r9_read_failed"] = historical_read_failed
+    engine["cohort_role"] = "CURRENT_R10_SUCCESSOR"
+    # Read-only operator overlay; source verdict and scientific numbers are untouched.
     if any(b in blockers for b in (
-        "UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR", "OPEN_PAPER_POSITIONS_EXCEED_24H",
-        "REPAIR_DIAGNOSTICS_UNAVAILABLE", "SUCCESSOR_STATUS_UNAVAILABLE",
+        "UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR",
+        "OPEN_PAPER_POSITIONS_EXCEED_24H",
+        "REPAIR_DIAGNOSTICS_UNAVAILABLE",
+        "SUCCESSOR_STATUS_UNAVAILABLE",
     )):
         engine["operational_status"] = "REVIEW_REQUIRED"
     return engine
@@ -1780,26 +1824,39 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   </div>
 
   <div class="panel">
-    <h2 style="margin-top:0">Real-Time Profitability Test Engine</h2>
+    <h2 style="margin-top:0">Real-Time Profitability Test — R10 Successor (Current)</h2>
+    <div class="small" style="margin-bottom:10px">R10 is the current successor cohort. Its status and admission restrictions are taken directly from the R10 scientific view. Historical R9 is reported separately below and is never substituted for missing R10 evidence.</div>
     {% if data.test_engine %}
       <div class="action-grid">
         <div class="metric"><span class="label">System integrity</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
         <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
-        <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration','Unavailable') }}</b></div>
-        <div class="metric"><span class="label">Current cohort completions</span><b>{{ data.test_engine.get('completed_paper_trades','Unavailable') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
-        <div class="metric"><span class="label">Historical lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
-        <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
+        <div class="metric"><span class="label">R10 real scans</span><b>{{ data.test_engine.get('real_scans_since_registration', 'Unavailable') }}</b></div>
+        <div class="metric"><span class="label">R10 qualified completions</span><b>{% if data.test_engine.get('completed_paper_trades') is not none %}{{ data.test_engine.get('completed_paper_trades') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}{% else %}Unavailable{% endif %}</b></div>
+        <div class="metric"><span class="label">Historical lifecycle exits (all cohorts)</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
+        <div class="metric"><span class="label">R10 test days</span><b>{% if data.test_engine.get('test_days_elapsed') is not none %}{{ '%.2f'|format(data.test_engine.get('test_days_elapsed') or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}{% else %}Unavailable{% endif %}</b></div>
         <div class="metric"><span class="label">Separate 24H signal outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration','Unavailable') }}</b></div>
       </div>
       <div class="reason">
         <b>Real-time:</b> {{ data.test_engine.get('evaluated_at_utc') }}<br>
-        <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
+        <b>R10 successor identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
+        <b>R10 admission verdict:</b> {{ data.test_engine.get('verdict','Unavailable') }}<br>
         <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
         <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
         <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
         <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
         <span class="small">Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams and are never added together. Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
       </div>
+      {% if data.test_engine.get('historical_r9') %}
+      {% set h = data.test_engine.get('historical_r9') %}
+      <div class="metric" style="margin-top:12px" role="note">
+        <b>R9 Historical — superseded cohort, NOT current or mergeable with R10</b>
+        <div class="small">Identity: {{ h.get('spec_id','Unavailable') }}</div>
+        <div class="small">R9 scans: {{ h.get('real_scans_since_registration','Unavailable') }} · R9 qualified completions: {{ h.get('completed_paper_trades','Unavailable') }} · R9 test days: {{ h.get('test_days_elapsed','Unavailable') }} · identity-drift scans: {{ h.get('identity_drift_scans','Unavailable') }}</div>
+        <div class="small">R9 verdict: {{ h.get('profitability_status','Unavailable') }}. Historical counters must not be treated as current R10 scientific evidence.</div>
+      </div>
+      {% else %}
+      <div class="small" style="margin-top:12px" role="note">R9 historical status unavailable — no R9 counters have been substituted for current R10.</div>
+      {% endif %}
     {% else %}
       <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
     {% endif %}
