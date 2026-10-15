@@ -428,6 +428,38 @@ def verify():
     if inspect(dsn,timeout_payload["p_run_id"])!=(0,0,0,0,0):
         raise AssertionError("SQL cancellation retained a partial receipt or child write")
 
+    # Reproduce the exact PostgREST/Supabase SQL timeout response shape seen
+    # on the live missing-child scan: HTTP 500, PostgreSQL SQLSTATE 57014.
+    # The fault runs ONLY inside our disposable local PostgreSQL/PostgREST.
+    pg_cancel=make_payload(2,"synthetic-p2-atomic-http-57014")
+    pg_cancel["p_fault"]="TIMEOUT"
+    cancelled_reply,_=postgrest(pg_cancel)
+    if (cancelled_reply.get("error_http")!=500
+        or '"code":"57014"' not in cancelled_reply.get("body","").replace(" ","")
+        or "statement timeout" not in cancelled_reply.get("body","").lower()):
+        raise AssertionError("Expected actual PostgREST HTTP 500 / 57014, not "+str(cancelled_reply))
+    if inspect(dsn,pg_cancel["p_run_id"])!=(0,0,0,0,0):
+        raise AssertionError("57014 left a falsely completed parent, child, strategy or receipt")
+    # A request that timed out must be UNKNOWN until an independent readback.
+    # Retrying the same prospective payload after the injected fault is removed
+    # may commit once; further identical retries must never create duplicates.
+    pg_cancel["p_fault"]=None
+    recovered,_=postgrest(pg_cancel)
+    if (recovered.get("stage")!="ATOMIC_SOURCE_STRATEGY_COMMITTED_LOCAL_ONLY"
+        or inspect(dsn,pg_cancel["p_run_id"])!=(1,2,20,4,1)):
+        raise AssertionError("Prospective 57014 recovery failed exact durable reconciliation")
+    repeated,_=postgrest(pg_cancel)
+    if (repeated.get("stage")!="ALREADY_ATOMICALLY_COMMITTED_LOCAL_ONLY"
+        or inspect(dsn,pg_cancel["p_run_id"])!=(1,2,20,4,1)):
+        raise AssertionError("Retried 57014 success duplicated or changed evidence")
+    conflict=make_payload(2,pg_cancel["p_run_id"])
+    conflict["p_rows"][0]["payload"]["last_price"]="123456"
+    blocked,_=postgrest(conflict)
+    if blocked.get("error_http") not in (400,409):
+        raise AssertionError("Altered post-57014 replay overwrote committed source")
+    if inspect(dsn,pg_cancel["p_run_id"])!=(1,2,20,4,1):
+        raise AssertionError("Post-57014 conflicting retry changed durable counts")
+
     # Multiple exact HTTP retries racing on the SAME run may create precisely
     # ONE run + ONE sealed receipt. A mutated concurrent retry cannot replace
     # an already locked/committed run.
