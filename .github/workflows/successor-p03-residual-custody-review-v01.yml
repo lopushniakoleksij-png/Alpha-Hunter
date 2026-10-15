@@ -1,0 +1,70 @@
+name: P03 Isolated All-Residual 35m Alert Custody Review
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/successor_p03_residual_continuity_v01.py'
+      - 'ops/reviews/successor_p03_alert_journal_pg16_v01.py'
+      - 'tests/test_successor_p03_residual_continuity_v01.py'
+      - '.github/workflows/successor-p03-residual-custody-review-v01.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p03-isolated-residual-custody-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-receipts-and-failure-outbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+    services:
+      main:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bench
+          POSTGRES_PASSWORD: benchpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bench -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+      journal:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: journal
+          POSTGRES_PASSWORD: journalpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U journal -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+    steps:
+      - name: Checkout successor draft, not production main
+        uses: actions/checkout@v4
+      - name: Python for isolated tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated pinned PostgreSQL driver
+        run: python -m pip install --disable-pip-version-check --no-cache-dir 'psycopg[binary]==3.2.10'
+      - name: Verify 35-minute receipt boundary and independent durable alert outbox on two local PG16 hosts
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: python ops/reviews/successor_p03_alert_journal_pg16_v01.py
