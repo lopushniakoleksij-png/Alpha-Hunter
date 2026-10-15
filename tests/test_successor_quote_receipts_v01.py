@@ -166,3 +166,47 @@ def test_prototype_has_no_runtime_wiring_or_exchange_dependencies():
     for path in ("alpha_hunter/storage.py", "alpha_hunter/paper_execution.py", "alpha_hunter/paper_exit.py",
                  "alpha_hunter/paper_horizon.py", "run.py", "hourly.py"):
         assert "successor_quote_receipts_v01" not in (ROOT / path).read_text(encoding="utf-8")
+
+
+def test_no_trigger_without_individual_receipt_evidence_fails_closed():
+    cases = (
+        ("attempt_id", "EXIT_ATTEMPT_ID_MISSING"),
+        ("observed_at_utc", "EXIT_ATTEMPT_TIME_MISSING"),
+        ("blockers", "EXIT_ATTEMPT_BLOCKERS_PRESENT_OR_UNKNOWN"),
+        ("evidence", "EXIT_ATTEMPT_QUOTE_SOURCE_MISMATCH"),
+    )
+    for missing, expected in cases:
+        data = list(sample())
+        data[3][0].pop(missing)
+        result = assess(tuple(data))
+        assert result["run_status"] == "UNKNOWN_OR_INCOMPLETE"
+        assert expected in receipt(result, "QUSDT")["blockers"]
+        assert result["trade_permission"] is False
+
+
+def test_quote_and_attempt_must_match_book_source_and_capture_time():
+    cases = (
+        ("best_bid_size", "9999", "EXIT_ATTEMPT_QUOTE_BOOK_MISMATCH"),
+        ("best_ask", "1.5", "EXIT_ATTEMPT_QUOTE_BOOK_MISMATCH"),
+        ("observed_at_utc", "2026-10-12T10:00:45Z", "EXIT_ATTEMPT_QUOTE_TIME_MISMATCH"),
+    )
+    for field, value, expected in cases:
+        data = list(sample())
+        data[3][0][field] = value
+        result = assess(tuple(data))
+        assert result["run_status"] == "UNKNOWN_OR_INCOMPLETE"
+        assert expected in receipt(result, "QUSDT")["blockers"]
+    data = list(sample())
+    data[3][0]["evidence"]["quote_source"] = "CLAIMED_DIFFERENT_VENUE"
+    result = assess(tuple(data))
+    assert "EXIT_ATTEMPT_QUOTE_SOURCE_MISMATCH" in receipt(result, "QUSDT")["blockers"]
+
+
+def test_zero_symbol_parent_or_malformed_parent_never_claims_completed_monitoring():
+    data = list(sample())
+    data[0]["symbol_count"] = 0
+    assert "EXPECTED_CHILD_COUNT_INVALID" in assess(tuple(data))["run_blockers"]
+    data = list(sample())
+    data[0] = None
+    assert assess(tuple(data))["run_status"] == "UNKNOWN_OR_INCOMPLETE"
+    assert assess()["independently_authenticated_source"] is False
