@@ -104,3 +104,22 @@ def test_empty_supplied_inventory_cannot_claim_absence_of_live_positions():
     assert result["status"]=="EMPTY_SOURCE_INVENTORY_UNAUTHENTICATED_NO_LIVE_POSITION_CLAIM"
     assert not result["independently_authenticated_source"]
     assert not result["scientific_pass_permitted"]
+
+
+def test_missing_or_self_referential_prior_seal_fails_closed():
+    data = fixture()
+    data[4][0].pop("observed_at_utc")
+    result = score(data)
+    assert "PRIOR_SEALED_POSITION_TIME_MISSING" in blockers(result)
+    assert result["status"] == "FAIL_CLOSED_COVERAGE_OR_MONITORING_GAP"
+    assert result["scientific_pass_permitted"] is False
+
+    data = fixture()
+    data[4][0]["observed_at_utc"] = "invalid-clock"
+    assert "PRIOR_SEALED_POSITION_TIME_MISSING" in blockers(score(data))
+
+    data = fixture()
+    data[4][0]["previous_sealed_run_id"] = RUN
+    result = score(data)
+    assert "PRIOR_SEALED_POSITION_SELF_REFERENCE" in blockers(result)
+    assert not result["independently_authenticated_source"]
