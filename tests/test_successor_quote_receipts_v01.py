@@ -23,7 +23,13 @@ def sample():
                  {"entry_order_id": "p2", "symbol": "QUSDT", "direction": "LONG"},
                  {"entry_order_id": "p3", "symbol": "NMRUSDT", "direction": "SHORT"}]
     attempts = [{"entry_order_id": p["entry_order_id"], "source_run_id": "run-1",
-                 "symbol": p["symbol"], "direction": p["direction"], "outcome": "NO_TRIGGER"}
+                 "symbol": p["symbol"], "direction": p["direction"],
+                 "attempt_id": "synthetic-" + p["entry_order_id"],
+                 "outcome": "NO_TRIGGER", "blockers": [],
+                 "observed_at_utc": "2026-10-12T10:00:04Z",
+                 "best_bid": "1", "best_ask": "1.01",
+                 "best_bid_size": "10", "best_ask_size": "7",
+                 "evidence": {"quote_source": "BITGET_PUBLIC_ALL_TICKERS"}}
                 for p in positions]
     quotes = [{"source_run_id": "run-1", "symbol": x, "source": "BITGET_PUBLIC_ALL_TICKERS",
                "captured_at_utc": "2026-10-12T10:00:04Z",
