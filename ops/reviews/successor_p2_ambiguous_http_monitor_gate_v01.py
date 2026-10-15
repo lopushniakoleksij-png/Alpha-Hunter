@@ -23,7 +23,7 @@ from successor_pg16_atomic_http_cycle_v01 import (
   DBNAME, URL, make_payload, inspect as inspect_atomic, FINGERPRINT)
 from successor_pg16_tcp_benchmark_v01 import guard_dsn,make_conn
 from successor_dual_pg16_journal_fault_v01 import journal_dsn
-from successor_p03_residual_continuity_v01 import evaluate,sha,utc
+from successor_p03_residual_continuity_v01 import evaluate,sha,utc,MAX_GAP_SECONDS
 
 PROXY="http://127.0.0.1:3103/atomic"
 QUOTE_SOURCE="LOCAL_SYNTHETIC_BOOK_NOT_AUTHENTICATED_BITGET"
@@ -271,6 +271,53 @@ def verify():
                         if x["entry_order_id"]==second["entry_order_id"])["record_sha256"]
         insert_seal(journal,key,seal_fields(source["p_run_id"],second["entry_order_id"],second["symbol"],when,parent_sha,cap))
         assert classify(dsn,journal,key,source,inv)=="LOCAL_STRUCTURAL_RECEIPTS_VERIFIED_NOT_SCIENTIFIC_COMPLETE"
+        # Frozen 35-minute limit is per-position, measured against each
+        # preceding observation; a successful parent HTTP response cannot
+        # substitute for a missing/stale quote or suppress a critical alert.
+        # This tests the diagnostic alert CONTRACT, not actual dispatch.
+        assert MAX_GAP_SECONDS==2100
+        scan_time=utc(source["p_rows"][0]["collected_at_utc"])
+        for elapsed,breach in ((2100,False),(2101,True)):
+            earlier=(scan_time-timedelta(seconds=elapsed)).isoformat()
+            prior_test=[];attempt_test=[];quote_test=[]
+            for i,p in enumerate(inv["positions"]):
+                cap=sha({"source":"isolated-pg16-quote","symbol":p["symbol"]})
+                prior_test.append({"entry_order_id":p["entry_order_id"],
+                   "source_run_id":"synthetic-p2-atomic-prior-monitor",
+                   "captured_at_utc":earlier,"seal_verified":True})
+                quote_test.append({"source_run_id":source["p_run_id"],
+                   "symbol":p["symbol"],"source":QUOTE_SOURCE,
+                   "capture_manifest_sha256":cap,
+                   "captured_at_utc":scan_time.isoformat(),
+                   "bid_price":"1","ask_price":"1.01",
+                   "bid_size":"10","ask_size":"10"})
+                attempt_test.append({"source_run_id":source["p_run_id"],
+                   "entry_order_id":p["entry_order_id"],
+                   "symbol":p["symbol"],"direction":"LONG",
+                   "attempt_id":"synthetic-attempt-boundary-"+str(i),
+                   "observed_at_utc":scan_time.isoformat(),
+                   "outcome":"NO_TRIGGER","blockers":[],
+                   "best_bid":"1","best_ask":"1.01",
+                   "best_bid_size":"10","best_ask_size":"10",
+                   "evidence":{"quote_source":QUOTE_SOURCE,
+                     "capture_manifest_sha256":cap}})
+            qualified=evaluate(inv,{"run_id":source["p_run_id"],
+              "collected_at_utc":scan_time.isoformat()},
+              attempt_test,quote_test,prior_test,
+              approved_sources=frozenset({QUOTE_SOURCE}))
+            if breach:
+                if (qualified["locally_observable"]!=0
+                    or len(qualified["alerts"])!=len(inv["positions"])
+                    or any("FROZEN_35M_CONTINUITY_BREACH" not in alert["reasons"]
+                           or alert["severity"]!="CRITICAL"
+                           or alert["delivery_status"]!="NOT_DISPATCHED"
+                           for alert in qualified["alerts"])):
+                    raise AssertionError("35m+1s per-order CRITICAL alert contract bypassed")
+            elif qualified["locally_observable"]!=len(inv["positions"]) or qualified["alerts"]:
+                raise AssertionError("Exact frozen 35m boundary falsely rejected")
+            assert qualified["scientific_pass_permitted"] is False
+            assert qualified["actual_alert_delivery_verified"] is False
+
         try:
             sealed_rows(journal,b"wrong-key",source["p_run_id"])
         except AssertionError:pass
@@ -298,6 +345,8 @@ def verify():
       "wrong_key_rejected":True,"append_only_journal_rejected_mutation":True,
       "independent_journal_outage_fails_closed":True,
       "boundary_34m59s_research_only":True,
+       "35m_exact_allowed_35m_plus_1_second_critical_diagnostic_alert":True,
+       "critical_alert_actual_delivery_verified":False,
       "replay_creates_no_qualified_live_observation":True,
       "independent_live_inventory_authenticated":False,
       "independent_live_quote_authenticated":False,
