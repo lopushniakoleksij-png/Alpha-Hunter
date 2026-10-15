@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'ops/reviews/legacy_p1_pg16_behavioral_regression_20261015.py'
+      - 'ops/reviews/legacy_p1_partial_fill_regression_verdict_20261015.md'
       - 'ops/reviews/legacy_residual_coverage_readonly_20261012.sql'
       - 'ops/reviews/legacy_ledger_balance_readonly_20261012.sql'
       - 'tests/test_legacy_residual_review_readonly_v01.py'
