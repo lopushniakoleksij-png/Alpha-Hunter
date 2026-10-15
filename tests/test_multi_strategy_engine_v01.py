@@ -159,8 +159,8 @@ def test_s6_sweep_reclaim_uses_previous_canonical_levels():
     )
     previous = {"support": 100.0, "resistance": 112.0}
 
-    payload = apply_multi_strategy_engine(record, previous, config())
     _stamp_valid_s6_clock(record)
+    payload = apply_multi_strategy_engine(record, previous, config())
     s6 = by_id(payload, "S6")
 
     assert s6["direction"] == "LONG"
