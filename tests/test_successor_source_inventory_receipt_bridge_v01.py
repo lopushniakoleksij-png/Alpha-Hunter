@@ -34,7 +34,12 @@ def fixture():
     children=[{"run_id":run,"symbol":s} for s in symbols]
     attempts=[{"source_run_id":run,"entry_order_id":p["entry_order_id"],
                "symbol":p["symbol"],"direction":p["direction"],
-               "outcome":"NO_TRIGGER"} for p in expected]
+               "attempt_id":"synthetic-"+p["entry_order_id"],
+               "outcome":"NO_TRIGGER","blockers":[],"observed_at_utc":captured,
+               "best_bid":"1","best_ask":"1.01",
+               "best_bid_size":"10","best_ask_size":"9",
+               "evidence":{"quote_source":"BITGET_PUBLIC_ALL_TICKERS"}}
+              for p in expected]
     quotes=[{"source_run_id":run,"symbol":s,"source":"BITGET_PUBLIC_ALL_TICKERS",
              "captured_at_utc":captured,"bid_price":"1","ask_price":"1.01",
              "bid_size":"10","ask_size":"9"} for s in symbols]
