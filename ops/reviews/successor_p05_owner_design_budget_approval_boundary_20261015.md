@@ -2,6 +2,16 @@
 
 **Approval interpretation (updated 2026-10-15):** The owner approved the successor-monitoring architecture and expressly accepted the proposed **USD 25 per calendar month maximum budget ceiling** for planning, including storage and usage. The owner also explicitly instructed **DO NOT PAY YET**. This is a confirmed financial *limit*, **NOT consent to any payment, paid subscription, resource creation, billing activation, deployment, or production credential/database change**. Any actual spending and deployment still require a separate explicit owner authorisation after vendor/role/security review; spending exceeding the cap is not allowed without further explicit approval.
 
+## Revenue-first funding hold — owner instruction, 2026-10-15
+
+**Binding commercial priority: EARN FIRST, INVEST LATER.** The owner explicitly instructed that we must generate actual earned money before spending on Alpha Hunter infrastructure. Accordingly, **all new cash expenditure, paid services, billable trials, metered infrastructure, paid database/storage/notification plans and payment authorisations are ON HOLD until verifiable earned revenue exists, even if a USD 25/month ceiling was already approved for planning.** A budget ceiling is NOT a spending mandate or payment approval.
+
+**Release of the hold requires BOTH:** (1) demonstrated actual received funds from legitimate earned activity (not hypothetical funding, paper PnL, projected earnings, backtests or unsettled trade profits); AND (2) a fresh, explicit owner approval of the exact charge/provider and recurrent spending. The USD 25/month planning ceiling remains an upper limit if a future payment is separately approved; it is not an instruction to begin billing automatically. Never initiate trials that convert to paid subscriptions, attach a payment method, create a paid instance or make changes that incur charges while this hold is in force.
+
+**Permitted during the hold:** read-only audits, planning and synthetic/CI testing within already available no-additional-cost limits, maintaining unchanged Primary Hourly, paper position management and frozen R10 protections, and revenue-generation efforts outside the paper system. Even free experiments must not introduce production side effects, historical backfills, duplicate scans, excessive quota usage or any trading permissions. If a seemingly free step may create later charges, stop and request explicit owner review.
+
+**Paper trading is scientific evidence only and cannot be treated as spendable income.** The next funded service design remains a future option, not today's priority. Current financial authorisation: **USD 0 new spending**.
+
 ## Protected production boundary
 
 - Preserve Alpha Hunter Primary Hourly task enabled, hourly, non-expiring.
