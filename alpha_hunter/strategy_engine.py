@@ -666,10 +666,10 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
     # source-recorded decision price loses the swept level. Strict inequality
     # prevents equality at the level from passing either side.
     reclaim_accepted_now = bool(
-        swept_level is not None
-        and price > swept_level if direction == "LONG" else
-        swept_level is not None and price < swept_level if direction == "SHORT" else
-        False
+        swept_level is not None and (
+            (direction == "LONG" and price > swept_level)
+            or (direction == "SHORT" and price < swept_level)
+        )
     )
     stop = low if direction == "LONG" else high if direction == "SHORT" else None
     target = _structural_target(record, direction or "", price)
