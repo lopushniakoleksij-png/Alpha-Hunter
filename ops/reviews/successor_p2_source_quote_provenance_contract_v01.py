@@ -95,6 +95,9 @@ def source_manifest(signed,source_key,now):
     require(a<=b<=a+timedelta(seconds=MAX_SOURCE_CAPTURE_SECONDS) and
             a<=now<=a+timedelta(seconds=MAX_SOURCE_AGE_SECONDS),
             "SOURCE_CAPTURE_AGE_OR_ORDER_INVALID")
+    require(p.get("external_live_source_authenticated") in (None,False) and
+            p.get("operational_custody_verified") in (None,False),
+            "FALSE_SOURCE_AUTHENTICATION_CLAIM")
     require(p.get("fingerprint")==SCIENTIFIC_FINGERPRINT and
             isinstance(p.get("run_id"),str) and p["run_id"].startswith("synthetic-p2-"),
             "ISOLATED_R10_IDENTITY_OR_RUN_UNVERIFIED")
@@ -146,6 +149,10 @@ def verify_quote(e,key,run,asof,expected_symbol):
     require(p.get("run_id")==run and p.get("symbol")==expected_symbol,
             "QUOTE_WRONG_RUN_OR_SYMBOL")
     url=ENDPOINT+"?"+urlencode({"symbol":expected_symbol,"productType":"USDT-FUTURES"})
+    require(p.get("venue_price_signature_verified") in (None,False) and
+            p.get("bitget_signed_response") in (None,False) and
+            p.get("operational_custody_verified") in (None,False),
+            "FALSE_VENUE_AUTHENTICATION_CLAIM")
     require(p.get("url")==url and p.get("method")=="GET" and
             p.get("http_status")==200 and p.get("content_type")=="application/json" and
             p.get("tls_hostname_verified") is True and
