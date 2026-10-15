@@ -178,7 +178,7 @@ def test_source_read_self_attestation_not_trusted():
     replace_source(c,lambda p:p["db_read"].update(transaction_read_only=False))
     reject(c,"SOURCE_READ_TRANSACTION_UNVERIFIED")
     c=fixture()
-    replace_source(c,lambda p:p["external_live_source_authenticated"]=True)
+    replace_source(c,lambda p:p.update(external_live_source_authenticated=True))
     reject(c,"FALSE_SOURCE_AUTHENTICATION_CLAIM")
     c=fixture()
     replace_source(c,lambda p:p["dispositions"].pop())
