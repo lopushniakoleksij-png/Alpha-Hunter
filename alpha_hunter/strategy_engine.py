@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+from math import isfinite
 from typing import Any
 
 
@@ -599,6 +601,42 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
             strategy_name,
             "Sweep/reclaim requires a fully closed 1H candle plus previous canonical snapshot levels",
         )
+    # Prove the candle's CLOSED 1H interval from the same canonical record:
+    # [closed_open, latest_open) must end before the recorded collection
+    # instant, with latest_open belonging to that instant's 1H interval.
+    # Merely naming a dict "last_closed_candle" or copying its timestamp
+    # into evidence is not sufficient to make EXECUTE_NOW safe.
+    latest = _tf(record, "1H").get("latest_candle")
+    closed_open_ms = _float(closed.get("timestamp"))
+    latest_open_ms = (
+        _float(latest.get("timestamp")) if isinstance(latest, dict) else None
+    )
+    source_clock = record.get("collected_at_utc")
+    try:
+        source_time = (
+            datetime.fromisoformat(source_clock.replace("Z", "+00:00"))
+            if isinstance(source_clock, str) else None
+        )
+    except ValueError:
+        source_time = None
+    observed_ms = (
+        source_time.timestamp() * 1000
+        if source_time is not None and source_time.tzinfo is not None else None
+    )
+    candle_clock_valid = bool(
+        None not in (closed_open_ms, latest_open_ms, observed_ms)
+        and all(isfinite(value) for value in (closed_open_ms, latest_open_ms, observed_ms))
+        and closed_open_ms % 3_600_000 == 0
+        and latest_open_ms % 3_600_000 == 0
+        and latest_open_ms - closed_open_ms == 3_600_000
+        and latest_open_ms <= observed_ms < latest_open_ms + 3_600_000
+    )
+    if not candle_clock_valid:
+        return _data_insufficient(
+            strategy_id, strategy_name,
+            "Closed 1H candle is missing valid timestamp or canonical source-clock adjacency",
+        )
+
     prev_support = _float(previous.get("support"))
     prev_resistance = _float(previous.get("resistance"))
     low = _float(closed.get("low"))
@@ -624,6 +662,15 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
     )
     participation = volume_state in {"ELEVATED", "HIGH"}
     signal = bool(direction and participation)
+    # A completed historical reclaim stops being actionable as soon as the
+    # source-recorded decision price loses the swept level. Strict inequality
+    # prevents equality at the level from passing either side.
+    reclaim_accepted_now = bool(
+        swept_level is not None
+        and price > swept_level if direction == "LONG" else
+        swept_level is not None and price < swept_level if direction == "SHORT" else
+        False
+    )
     stop = low if direction == "LONG" else high if direction == "SHORT" else None
     target = _structural_target(record, direction or "", price)
 
@@ -644,7 +691,7 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
     rr_not_outlier = bool(
         geometry["rr"] is not None and 0 < geometry["rr"] <= maximum_rr
     )
-    confirmed = bool(signal and direction_aligned and timing_acceptable and rr_not_outlier)
+    confirmed = bool(signal and reclaim_accepted_now and direction_aligned and timing_acceptable and rr_not_outlier)
     # An unconfirmed reversal must not be advertised as a 10/10 setup.
     score = (6.0 if direction is not None and confirmed else 2.0 if direction else 0.0) + (
         4.0 if participation else 0.0
@@ -654,6 +701,8 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
     if not signal:
         reasons.append("No participation-confirmed sweep/reclaim of a fully closed 1H candle")
     else:
+        if not reclaim_accepted_now:
+            reasons.append("S6 decision price no longer accepts the closed sweep/reclaim level")
         if not direction_aligned:
             reasons.append("S6 reversal opposes or lacks confirmed canonical parent direction")
         if not timing_acceptable:
@@ -680,6 +729,9 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
             "latest_high": high,
             "latest_close": close,
             "closed_candle_timestamp": closed.get("timestamp"),
+            "current_candle_timestamp": latest.get("timestamp"),
+            "source_collected_at_utc": source_clock,
+            "decision_price": price,
             "candle_basis": "LAST_FULLY_CLOSED_1H",
             "swept_level": swept_level,
             "volume_state": volume_state,
@@ -693,6 +745,8 @@ def _s6_sweep_reclaim(record: dict[str, Any], previous: dict[str, Any] | None, c
             "sweep_reclaim": direction is not None,
             "participation": participation,
             "closed_candle_available": True,
+            "closed_candle_source_clock_valid": candle_clock_valid,
+            "reclaim_accepted_now": reclaim_accepted_now,
             "parent_direction_aligned": direction_aligned,
             "timing_acceptable": timing_acceptable,
             "rr_not_outlier": rr_not_outlier,
