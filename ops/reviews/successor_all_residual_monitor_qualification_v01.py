@@ -168,6 +168,10 @@ def score_monitoring_coverage(
                 previous=prev.get(oid)
                 if previous is not None:
                     prior_time=utc(previous.get("observed_at_utc"))
+                    if prior_time is None:
+                        failures.append("PRIOR_SEALED_POSITION_TIME_MISSING")
+                    if text(previous.get("previous_sealed_run_id"))==run:
+                        failures.append("PRIOR_SEALED_POSITION_SELF_REFERENCE")
                     if (text(previous.get("entry_order_id"))!=oid
                         or text(previous.get("symbol"))!=sym
                         or text(previous.get("direction"))!=side
