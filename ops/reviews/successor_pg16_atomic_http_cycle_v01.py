@@ -99,7 +99,7 @@ BEGIN
    OR p_fingerprint<>'50068b1333a66c70e5413eacf35dda053a0b97f81d7e9e892c9e9a583619c834'
  THEN RAISE EXCEPTION 'EPHEMERAL_TEST_ONLY'; END IF;
  IF p_fault IS NOT NULL AND p_fault NOT IN
-  ('AFTER_CHILDREN','AFTER_OBSERVATIONS','BEFORE_RECEIPT','TIMEOUT')
+  ('AFTER_CHILDREN','AFTER_OBSERVATIONS','BEFORE_RECEIPT','SQLSTATE_57014_INJECTION')
  THEN RAISE EXCEPTION 'INVALID_FAULT_MODE'; END IF;
  IF p_expected_symbols IS NULL OR p_expected_symbols NOT BETWEEN 1 AND 128
   OR jsonb_typeof(p_rows)<>'array'
@@ -165,9 +165,12 @@ BEGIN
  FROM pg_catalog.jsonb_to_recordset(p_rows)
  AS x(run_id text,symbol text,collected_at_utc timestamptz,payload jsonb);
  IF p_fault='AFTER_CHILDREN' THEN RAISE EXCEPTION 'INJECTED_FAULT_AFTER_CHILDREN'; END IF;
- IF p_fault='TIMEOUT' THEN
-    PERFORM pg_catalog.set_config('statement_timeout','40ms',true);
-    PERFORM pg_catalog.pg_sleep(0.18);
+ IF p_fault='SQLSTATE_57014_INJECTION' THEN
+    -- Synthetic SQLSTATE envelope: PostgREST maps a database 57014 to HTTP
+    -- 500. Real timer cancellation is proven separately via SET timeout on
+    -- an isolated PostgreSQL connection BEFORE the statement begins.
+    RAISE EXCEPTION 'canceling statement due to statement timeout'
+      USING ERRCODE='57014';
  END IF;
  """+observations+"""
  IF p_fault='AFTER_OBSERVATIONS' THEN
@@ -428,16 +431,17 @@ def verify():
     if inspect(dsn,timeout_payload["p_run_id"])!=(0,0,0,0,0):
         raise AssertionError("SQL cancellation retained a partial receipt or child write")
 
-    # Reproduce the exact PostgREST/Supabase SQL timeout response shape seen
-    # on the live missing-child scan: HTTP 500, PostgreSQL SQLSTATE 57014.
-    # The fault runs ONLY inside our disposable local PostgreSQL/PostgREST.
+    # Verify the observed live HTTP error envelope: 500/57014/statement
+    # timeout. This PostgREST case injects SQLSTATE *synthetically* after
+    # attempting child writes; a genuine timer-driven PostgreSQL cancellation
+    # is independently proven in the direct PG16 test immediately above.
     pg_cancel=make_payload(2,"synthetic-p2-atomic-http-57014")
-    pg_cancel["p_fault"]="TIMEOUT"
+    pg_cancel["p_fault"]="SQLSTATE_57014_INJECTION"
     cancelled_reply,_=postgrest(pg_cancel)
     if (cancelled_reply.get("error_http")!=500
         or '"code":"57014"' not in cancelled_reply.get("body","").replace(" ","")
         or "statement timeout" not in cancelled_reply.get("body","").lower()):
-        raise AssertionError("Expected actual PostgREST HTTP 500 / 57014, not "+str(cancelled_reply))
+        raise AssertionError("Expected injected PostgREST HTTP 500 / 57014, not "+str(cancelled_reply))
     if inspect(dsn,pg_cancel["p_run_id"])!=(0,0,0,0,0):
         raise AssertionError("57014 left a falsely completed parent, child, strategy or receipt")
     # A request that timed out must be UNKNOWN until an independent readback.
