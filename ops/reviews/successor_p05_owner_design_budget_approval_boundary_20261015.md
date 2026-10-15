@@ -1,6 +1,6 @@
 # P0.5 owner-approved design direction and CONDITIONAL budget plan — 2026-10-15
 
-**Approval interpretation:** Owner on 2026-10-15 expressly approved the architectural design and budget-planning step *before any new service is created*, while reiterating P0.4 DEPLOYMENT NO-GO pending a **separate explicit owner approval**. This records **design approval in principle**, **not** service/credential/billing/deployment approval. The owner did not supply a numeric monetary cap in that instruction; the USD 25/month cap below is a proposal requiring owner confirmation for any spend. Do not conflate approval to draft this plan with authority to incur charges.
+**Approval interpretation (updated 2026-10-15):** The owner approved the successor-monitoring architecture and expressly accepted the proposed **USD 25 per calendar month maximum budget ceiling** for planning, including storage and usage. The owner also explicitly instructed **DO NOT PAY YET**. This is a confirmed financial *limit*, **NOT consent to any payment, paid subscription, resource creation, billing activation, deployment, or production credential/database change**. Any actual spending and deployment still require a separate explicit owner authorisation after vendor/role/security review; spending exceeding the cap is not allowed without further explicit approval.
 
 ## Protected production boundary
 
@@ -22,7 +22,7 @@ Official price pages checked 2026-10-15:
 | Resend transactional failure-email channel | USD 0 **only within free allowance** | 3,000 emails/month and 100/day; separate verified sender domain and receiver; real delivery must be checked, no auto-claims |
 | Healthchecks.io independent dead-man monitor | USD 0 **only within free allowance** | 20 job checks, logs capped to 100 per job; independent alert test required, not durable scientific custody |
 | **Nominal recurring baseline** | **USD 13/month** | Excludes taxes, above-free usage, optional paid alerts, backup/key services, storage and bandwidth overruns |
-| **Recommended total monthly operating ceiling** | **USD 25/month, PROPOSED, NOT YET AUTHORISED** | USD 12 headroom, must obtain owner approval before spending; no automatic paid plan upgrades or overages |
+| **Approved financial planning ceiling — not spending permission** | **USD 25/month MAXIMUM** | Approved by owner 2026-10-15 for planning only. No payment, subscription, billed resource, upgrades or overruns are authorised. USD 12 nominal headroom against the USD 13 baseline |
 
 Sources: https://render.com/pricing ; https://render.com/docs/postgresql-backups ; https://developers.cloudflare.com/r2/pricing/ ; https://resend.com/pricing ; https://healthchecks.io/pricing/ .
 
@@ -48,10 +48,10 @@ A separate *owner-approved* persistent shadow service would attempt source + pos
 
 ## Separate owner authorisations needed before any implementation
 
-1. Confirm a fixed monthly spend ceiling **including taxes and all usage** (USD 25 proposed but not accepted as an executable payment authorisation).
+1. **COMPLETED — budget ceiling only:** Owner approved **USD 25/month maximum** on 2026-10-15 and explicitly withheld payment permission. All actual paid subscriptions, billing activation and charges remain subject to separate approval. If total fees, taxes, storage and usage cannot be held within USD 25, reject the proposal and request a revised ceiling; never exceed the approved cap.
 2. Confirm exact intended paid worker / paid database supplier and that user accepts recurring billing, plus R2 backup account, email sender/recipient, and external heartbeat delivery channel; review their access/privacy requirements.
 3. Approve the precise least-privilege source grants, secure secret-creation workflow and credential administrator, after source security review. Any database `CREATE ROLE`/GRANT is a production configuration change and needs its own explicit approval.
 4. Approve a pinned successor build SHA, off-main isolated Render service creation, independently managed custody account, forward start and bounded pilot period; no default merge or auto-deploy.
 5. Preserve original R10/Primary Hourly and separately check both after any later approved release and rollback; do not modify paper positions.
 
-**Current decision: DESIGN DIRECTION APPROVED IN PRINCIPLE; PROVISIONAL BUDGET PROPOSED; PAID RESOURCE CREATION/ROLE CREATION/DEPLOYMENT NO-GO.**
+**Current decision (2026-10-15): DESIGN DIRECTION APPROVED; USD 25/MONTH BUDGET CEILING APPROVED FOR PLANNING ONLY; PAYMENT/BILLING NOT AUTHORISED; PAID RESOURCE CREATION, SOURCE ROLE/GRANT, AND DEPLOYMENT NO-GO UNTIL A SEPARATE EXPLICIT OWNER APPROVAL.**
