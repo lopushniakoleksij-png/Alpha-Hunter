@@ -28,3 +28,20 @@ At **2026-10-12 14:51:53 UTC**, canonical `RENDER_CRON` parent `403a00517276c12e
 **Expected next gate, not silently considered done:** owner-reviewed prospective production source capture using one authenticated immutable as-of ledger watermark, direct per-order quote-source receipts (not unlabeled attempts), previous per-position sealed observations, independent failure delivery, and live-like 35-minute monitoring continuity under Supabase/PostgREST contention. Require proof for the **whole residual universe**, including quarantines/incidents, plus healthy database write path; frozen R10 admissions remain halted throughout.
 
 The local journal and scoring artifacts are never imported into active `storage.py`, `paper_exit.py` or the Render cron; PR remains **DRAFT**.
+
+
+## 15 October P0 hardening gate — research branch only
+
+Read-only live window 2026-10-14 05:50Z to 2026-10-15 05:50Z: 72 canonical parent scans; 71 child-complete; one parent-only; a separate 61/61 child-complete cycle had zero exit attempts. All ten managed paper positions had a 38.637-minute gap between recorded exit attempts, exceeding the unchanged 35-minute limit. Of 770 observed paper attempts, 352 lacked quote_source; 13 were more than 30 seconds from parent scan time (30s is a research fixture, not a frozen production threshold). A NO_TRIGGER label with numeric prices but missing source custody is not authenticated monitoring.
+
+The research-only receipt scorer now rejects missing attempt identity, time, or blocker list and mismatched quote book, source label or observed time. The all-residual scorer rejects missing prior sealed receipt time and self-referential previous run. These checks establish only caller-supplied local evidence consistency, never source authentication, scientific pass, trade authority or position protection.
+
+### Required future source authentication and monitoring acceptance
+
+- Authorized independent collector: verify genuine Bitget public HTTPS endpoint and TLS peer identity, exact requested symbol and request ID, exchange timestamp, positive uncrossed book and original response digest at transport acquisition. TLS authenticates a channel; it is not a Bitget-signed price receipt.
+- Independently durable append-only custody: trusted collector identity, capture clock, canonical run and fingerprint, consistently read all-cohort paper fill-minus-exit watermark, source book identity and per-position prior sealed observations. Supplied metadata, mutable downstream labels and local mock HTTP plus ephemeral HMAC are not independently authenticated venue evidence.
+- Per-position continuity: every managed residual position gets one qualified source-linked receipt within the existing 35-minute bound. No missing, stale, conflicted, mixed-run or retrospectively fabricated records may be labelled successful. Keep quarantined residuals and unprotected NMRUSDT 1.5 paper units visible as incidents, not closed trades.
+- Fault-injection: transport timeout, primary PostgREST timeout, secondary journal timeout, both destinations failing, interrupted transaction, idempotent retry and replay, restart/recovery, and missing quote provenance must produce explicit UNKNOWN/FAIL and durable independent alerting or visible missing-evidence audit.
+- Prospective proof: a separate owner-reviewed, load-representative forward window must meet zero unjustified 35-minute gaps, complete authentic source receipts and verified failure alert delivery before deployment permission. Isolated green CI does not prove live operations, executable exit capacity, slippage or profitability.
+
+Boundary unchanged: production main and Render hourly, R10 original fingerprint/thresholds/admission halt, all positions and historical records, 12s SQL / 15s HTTP / 35-minute gates and real-order authority. No merge, production writes, migration, deploy, backfill or test restart.
