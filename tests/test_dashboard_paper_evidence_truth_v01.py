@@ -27,7 +27,7 @@ def test_paper_lifecycle_truth_view_is_read_only_and_safe():
 def test_dashboard_separates_sealed_sample_from_execution_lifecycle():
     assert "def latest_paper_lifecycle_status()" in APP
     assert "alpha_hunter_paper_lifecycle_status_v05" in APP
-    assert "Current cohort completions" in APP
+    assert "R10 qualified completions" in APP
     assert "Historical lifecycle exits" in APP
     assert "Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams" in APP
     assert "valid_completed_trades" in APP
@@ -41,11 +41,11 @@ def test_dashboard_payload_keeps_lifecycle_optional_for_recovery_compatibility()
 
 def test_dashboard_surfaces_unresolved_entry_without_rewriting_scientific_verdict(monkeypatch):
     import app
-    original = {'operational_status':'PASS','verdict':'TEST_RUNNING','blockers':[], 'spec_id':'R8'}
+    original = {'operational_status':'PASS','verdict':'TEST_RUNNING','blockers':[], 'spec_id':'SEALED-ARCH-V14R10-EXEC-PAPER-24H-20261005'}
     def read(table, params):
         return {
+            'alpha_hunter_paper_profitability_status_v10':[original],
             'alpha_hunter_paper_profitability_status_v09':[],
-            'alpha_hunter_test_engine_latest_v01':[original],
             'alpha_hunter_paper_repair_status_v01':[{'unresolved_entry_orders':1,'open_positions_over_24h':0}],
         }[table]
     monkeypatch.setattr(app,'supabase_get_rows',read)
@@ -59,8 +59,8 @@ def test_dashboard_surfaces_unresolved_entry_without_rewriting_scientific_verdic
 def test_missing_diagnostics_never_displays_system_pass(monkeypatch):
     import app
     def read(table,params):
-        if table=='alpha_hunter_test_engine_latest_v01':
-            return [{'operational_status':'PASS'}]
+        if table=='alpha_hunter_paper_profitability_status_v10':
+            return [{'operational_status':'PASS', 'spec_id':'SEALED-ARCH-V14R10-EXEC-PAPER-24H-20261005'}]
         raise RuntimeError('unavailable')
     monkeypatch.setattr(app,'supabase_get_rows',read)
     status=app.latest_test_engine_status()
@@ -72,8 +72,17 @@ def test_successor_status_takes_priority_over_historical_engine(monkeypatch):
     import app
     def read(table,params):
         assert table!='alpha_hunter_test_engine_latest_v01'
+        if table=='alpha_hunter_paper_profitability_status_v10':
+            return [{'spec_id':'SEALED-ARCH-V14R10-EXEC-PAPER-24H-20261005',
+                     'completed_paper_trades':1,'operational_status':'BLOCKED',
+                     'verdict':'BLOCKED_ADMISSION_HALTED'}]
         if table=='alpha_hunter_paper_profitability_status_v09':
-            return [{'spec_id':'R9','completed_paper_trades':2,'operational_status':'EVIDENCE_COLLECTION'}]
+            return [{'spec_id':'SEALED-ARCH-V14R9-EXEC-PAPER-24H-20261004',
+                     'completed_paper_trades':2,'operational_status':'EVIDENCE_COLLECTION'}]
         return [{'unresolved_entry_orders':0,'open_positions_over_24h':0}]
     monkeypatch.setattr(app,'supabase_get_rows',read)
-    assert app.latest_test_engine_status()['spec_id']=='R9'
+    status=app.latest_test_engine_status()
+    assert status['spec_id']=='SEALED-ARCH-V14R10-EXEC-PAPER-24H-20261005'
+    assert status['completed_paper_trades']==1
+    assert status['historical_r9']['completed_paper_trades']==2
+    assert status['verdict']=='BLOCKED_ADMISSION_HALTED'
