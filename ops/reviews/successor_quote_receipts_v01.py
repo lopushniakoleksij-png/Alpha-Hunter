@@ -58,6 +58,7 @@ def build_monitoring_receipts(
     Never substitute the current open-position view for a historic inventory.
     Missing or malformed evidence is UNKNOWN, not safe or scientific PASS.
     """
+    parent = parent if isinstance(parent, dict) else {}
     run_id = _identifier(parent.get("run_id"))
     collected = _utc(parent.get("collected_at_utc"))
     identity = parent.get("validation_identity")
@@ -70,7 +71,7 @@ def build_monitoring_receipts(
         blockers.append("CANONICAL_RUN_IDENTITY_INVALID")
 
     expected_children = parent.get("symbol_count")
-    if type(expected_children) is not int or expected_children < 0:
+    if type(expected_children) is not int or expected_children <= 0:
         blockers.append("EXPECTED_CHILD_COUNT_INVALID")
     if any(type(source) is not list for source in (children, attempts, quotes, expected_positions)):
         blockers.append("INPUT_EVIDENCE_MISSING_OR_MALFORMED")
@@ -148,8 +149,16 @@ def build_monitoring_receipts(
                 failures.append("EXIT_ATTEMPT_MISSING")
             elif count != 1:
                 failures.append("EXIT_ATTEMPT_DUPLICATE")
-            elif _identifier(attempt_map[oid][0].get("outcome")) not in {"NO_TRIGGER", "STOP_TRIGGERED", "TARGET_TRIGGERED", "HORIZON_CLOSED"}:
-                failures.append("EXIT_ATTEMPT_OUTCOME_UNVERIFIED")
+            else:
+                attempt = attempt_map[oid][0]
+                if _identifier(attempt.get("outcome")) not in {"NO_TRIGGER", "STOP_TRIGGERED", "TARGET_TRIGGERED", "HORIZON_CLOSED"}:
+                    failures.append("EXIT_ATTEMPT_OUTCOME_UNVERIFIED")
+                if not _identifier(attempt.get("attempt_id")):
+                    failures.append("EXIT_ATTEMPT_ID_MISSING")
+                if attempt.get("blockers") != []:
+                    failures.append("EXIT_ATTEMPT_BLOCKERS_PRESENT_OR_UNKNOWN")
+                if _utc(attempt.get("observed_at_utc")) is None:
+                    failures.append("EXIT_ATTEMPT_TIME_MISSING")
 
         candidates = quote_map.get(sym, [])
         quote = candidates[0] if len(candidates) == 1 else None
