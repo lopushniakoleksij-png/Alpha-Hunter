@@ -1,0 +1,63 @@
+name: P1 Historical Partial-Fill Isolated PostgreSQL Review
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/legacy_p1_pg16_behavioral_regression_20261015.py'
+      - 'ops/reviews/legacy_residual_coverage_readonly_20261012.sql'
+      - 'ops/reviews/legacy_ledger_balance_readonly_20261012.sql'
+      - 'tests/test_legacy_residual_review_readonly_v01.py'
+      - '.github/workflows/legacy-p1-pg16-regression-review-20261015.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p1-legacy-partial-fill-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-historical-paper-ledger-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      DATABASE_URL: ''
+      AH_SHADOW_PG_DSN: ''
+      AH_SHADOW_JOURNAL_DSN: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+    services:
+      ephemeral_p1_postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: p1review
+          POSTGRES_PASSWORD: p1review
+        ports:
+          - 5441:5432
+        options: >-
+          --health-cmd "pg_isready -U p1review -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+    steps:
+      - name: Read-only pull request checkout
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated pinned database driver only
+        run: python -m pip install --disable-pip-version-check --no-cache-dir 'psycopg[binary]==3.2.10'
+      - name: Run exact historical coverage and balance SQL on disposable PostgreSQL 16
+        env:
+          AH_P1_ISOLATED_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_P1_ISOLATED_PG_DSN: postgresql://p1review:p1review@127.0.0.1:5441/postgres
+        run: |
+          python ops/reviews/legacy_p1_pg16_behavioral_regression_20261015.py
+      - name: Preserve static no-production-write guards
+        run: |
+          python -m unittest discover -s tests -p test_legacy_residual_review_readonly_v01.py -v
