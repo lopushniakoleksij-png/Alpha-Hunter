@@ -16,6 +16,7 @@ on:
       - 'ops/reviews/successor_pg16_bounded_child_fanout_v01.py'
       - 'ops/reviews/successor_pg16_postgrest_http_contention_v01.py'
       - 'ops/reviews/successor_pg16_atomic_http_cycle_v01.py'
+      - 'ops/reviews/successor_p2_ambiguous_http_monitor_gate_v01.py'
       - 'ops/reviews/successor_all_residual_monitor_qualification_v01.py'
       - 'ops/reviews/successor_dual_pg16_position_diagnostic_v01.py'
       - 'ops/reviews/successor_mock_http_transport_independent_custody_v01.py'
@@ -162,10 +163,13 @@ jobs:
         env:
           AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
         run: |
           set -euo pipefail
           # Third entirely disposable DB. Test RPC schema is NEVER exposed on Supabase.
-          python ops/reviews/successor_pg16_atomic_http_cycle_v01.py --prepare
+          python ops/reviews/successor_pg16_atomic_http_cycle_v01.py
+          python ops/reviews/successor_p2_ambiguous_http_monitor_gate_v01.py --prepare
           trap 'docker logs ah-p2-atomic --tail 20 2>/dev/null || true; docker rm -f ah-p2-atomic >/dev/null 2>&1 || true' EXIT
           docker run -d --rm --name ah-p2-atomic --network host \
             -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_p2_atomic_only_ephemeral" \
