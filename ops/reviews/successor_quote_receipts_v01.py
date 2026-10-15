@@ -189,6 +189,30 @@ def build_monitoring_receipts(
                 failures.append("QUOTE_TIME_UNVERIFIED")
             elif abs(Decimal(str((captured_at - collected).total_seconds()))) > max_offset:
                 failures.append("QUOTE_OUTSIDE_CAPTURE_WINDOW")
+        # A quote and a per-order attempt must agree; an outcome alone is
+        # insufficient for a local monitoring receipt. Not source authentication.
+        if quote is not None:
+            for oid in sorted(order_ids):
+                related = attempt_map.get(oid, [])
+                if len(related) != 1:
+                    continue
+                attempt = related[0]
+                evidence = attempt.get("evidence")
+                if (not isinstance(evidence, dict)
+                        or _identifier(evidence.get("quote_source")) != source):
+                    failures.append("EXIT_ATTEMPT_QUOTE_SOURCE_MISMATCH")
+                attempt_time = _utc(attempt.get("observed_at_utc"))
+                if attempt_time is not None and captured_at is not None and max_offset is not None:
+                    gap = abs(Decimal(str((attempt_time - captured_at).total_seconds())))
+                    if gap > max_offset:
+                        failures.append("EXIT_ATTEMPT_QUOTE_TIME_MISMATCH")
+                for field, observed_quote in (
+                    ("best_bid", bid), ("best_ask", ask),
+                    ("best_bid_size", bid_size), ("best_ask_size", ask_size)
+                ):
+                    if observed_quote is None or _positive(attempt.get(field)) != observed_quote:
+                        failures.append("EXIT_ATTEMPT_QUOTE_BOOK_MISMATCH")
+                        break
         if sym not in child_symbols:
             failures.append("SYMBOL_CHILD_MISSING")
         receipt_id = sha256(f"{VERSION}|{run_id}|{sym}|{direction}".encode("utf-8")).hexdigest()[:32]
@@ -232,5 +256,6 @@ def build_monitoring_receipts(
         "trade_permission": False,
         "exchange_authority": False,
         "production_promotion_permitted": False,
+        "independently_authenticated_source": False,
         "order_path": "NONE",
     }
