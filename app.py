@@ -17,6 +17,10 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 from alpha_hunter.services.statistics import StatisticsService
+from alpha_hunter.dashboard_observability import (
+    inspect_child_stage,
+    format_historical_research,
+)
 from performance_page import PERFORMANCE_PAGE
 
 
@@ -496,12 +500,13 @@ def _hydrate_dashboard_snapshot(
             "limit": "2000",
         },
     )
-    snapshot["symbols"] = [
-        child.get("payload")
-        for child in children
-        if isinstance(child, dict)
-        and isinstance(child.get("payload"), dict)
-    ]
+    integrity = inspect_child_stage(row, payload, children)
+    snapshot["_detail_integrity"] = integrity["status"]
+    snapshot["_detail_failure_reason"] = integrity["reason"]
+    snapshot["_detail_expected"] = integrity["expected"]
+    snapshot["_detail_persisted"] = integrity["persisted"]
+    # NEVER admit partially persisted symbol evidence to the live decision gate.
+    snapshot["symbols"] = integrity["symbols"]
     return snapshot
 
 
@@ -542,36 +547,131 @@ def latest_snapshot() -> dict[str, Any]:
     return _hydrate_dashboard_snapshot(row, payload)
 
 
+def latest_historical_research_snapshot(
+    current_run_id: str,
+    *,
+    search_limit: int = 8,
+) -> dict[str, Any] | None:
+    """Historical display ONLY, never fallback for latest executable actions.
+
+    Fetch bounded canonical parents and independently validate the full child
+    symbol manifest. Do not replace the current incomplete scan as current.
+    """
+    params = {
+        "select": "run_id,collected_at_utc,symbol_count,payload",
+        "order": "collected_at_utc.desc",
+        "limit": str(search_limit),
+    }
+    if CANONICAL_RUN_SOURCE:
+        params["payload->validation_identity->>run_source"] = (
+            f"eq.{CANONICAL_RUN_SOURCE}"
+        )
+    for row in supabase_get_rows(SNAPSHOT_TABLE, params):
+        if not isinstance(row, dict) or row.get("run_id") == current_run_id:
+            continue
+        payload = row.get("payload")
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("_storage_contract") != "snapshot-parent-v0.2":
+            continue
+        identity = payload.get("validation_identity")
+        if not isinstance(identity, dict) or (
+            str(identity.get("run_source") or "").upper() != CANONICAL_RUN_SOURCE
+        ):
+            continue
+        # Every row is checked for exact child identity. Never splice one run's
+        # parent counters with another run's detailed strategy evidence.
+        hydrated = _hydrate_dashboard_snapshot(row, payload)
+        if hydrated.get("_detail_integrity") == "COMPLETE_SYMBOL_ROWS_NOT_MONITORING_PROOF":
+            return hydrated
+    return None
+
+
+def dashboard_view_data() -> dict[str, Any]:
+    current = latest_snapshot()
+    history = None
+    if current.get("_detail_integrity") == "INCOMPLETE":
+        try:
+            history = latest_historical_research_snapshot(str(current.get("run_id") or ""))
+        except (requests.RequestException, RuntimeError, ValueError) as exc:
+            # A missing historical read must not fabricate a current trade.
+            app.logger.warning("Historical research-only fallback unavailable: %s", exc)
+    return dashboard_payload(
+        current,
+        latest_test_engine_status(),
+        latest_paper_lifecycle_status(),
+        historical_snapshot=history,
+    )
+
+
 def latest_test_engine_status() -> dict[str, Any]:
+    """Render R10 as successor and R9 as separately labeled historical science.
+
+    Never substitute a historical cohort for an unavailable current status.
+    This changes dashboard presentation only: no scientific DB rows or trading gates.
+    """
     engine: dict[str, Any] = {}
+    historical_r9: dict[str, Any] = {}
     successor_read_failed = False
+    historical_read_failed = False
+
+    try:
+        rows = supabase_get_rows(
+            "alpha_hunter_paper_profitability_status_v10",
+            {"select": "*", "limit": "1"},
+        )
+        if rows and isinstance(rows[0], dict):
+            candidate = rows[0]
+            if "V14R10" in str(candidate.get("spec_id") or ""):
+                engine = dict(candidate)
+            else:
+                successor_read_failed = True
+        else:
+            successor_read_failed = True
+    except (requests.RequestException, RuntimeError, ValueError):
+        successor_read_failed = True
+
     try:
         rows = supabase_get_rows(
             "alpha_hunter_paper_profitability_status_v09",
             {"select": "*", "limit": "1"},
         )
         if rows and isinstance(rows[0], dict):
-            engine = dict(rows[0])
+            candidate = rows[0]
+            if "V14R9" in str(candidate.get("spec_id") or ""):
+                historical_r9 = dict(candidate)
+            else:
+                historical_read_failed = True
+        else:
+            historical_read_failed = True
     except (requests.RequestException, RuntimeError, ValueError):
-        successor_read_failed = True
+        historical_read_failed = True
+
     if not engine:
-        try:
-            rows = supabase_get_rows(
-                "alpha_hunter_test_engine_latest_v01",
-                {"select": "*", "limit": "1"},
-            )
-            if rows and isinstance(rows[0], dict):
-                engine = dict(rows[0])
-        except (requests.RequestException, RuntimeError, ValueError):
-            return {}
-    if not engine:
-        return {}
+        # In particular, NEVER fall back to R9 or the legacy v01 status and
+        # present their scan/trade counters as if they came from current R10.
+        engine = {
+            "spec_id": "R10_STATUS_UNAVAILABLE",
+            "operational_status": "REVIEW_REQUIRED",
+            "verdict": "R10_STATUS_UNAVAILABLE",
+            "profitability_status": "R10_STATUS_UNAVAILABLE",
+            "blockers": ["SUCCESSOR_STATUS_UNAVAILABLE"],
+            "paper_only": True,
+            "trade_permission": False,
+            "production_promotion_permitted": False,
+            "live_money_claim_permitted": False,
+            "order_path": "NONE",
+        }
+
     blockers = list(engine.get("blockers") or [])
     if successor_read_failed:
         blockers.append("SUCCESSOR_STATUS_UNAVAILABLE")
+
     try:
-        rows = supabase_get_rows("alpha_hunter_paper_repair_status_v01",
-                                 {"select": "*", "limit": "1"})
+        rows = supabase_get_rows(
+            "alpha_hunter_paper_repair_status_v01",
+            {"select": "*", "limit": "1"},
+        )
         repair = rows[0] if rows and isinstance(rows[0], dict) else {}
     except (requests.RequestException, RuntimeError, ValueError):
         repair = {}
@@ -582,13 +682,19 @@ def latest_test_engine_status() -> dict[str, Any]:
             blockers.append("UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR")
         if repair.get("open_positions_over_24h", 0) > 0:
             blockers.append("OPEN_PAPER_POSITIONS_EXCEED_24H")
+
     engine["repair_status"] = repair
     engine["blockers"] = list(dict.fromkeys(blockers))
     engine["collection_status"] = engine.get("operational_status", "UNKNOWN")
-    # This is a display overlay. The immutable scientific evaluation is untouched.
+    engine["historical_r9"] = historical_r9
+    engine["historical_r9_read_failed"] = historical_read_failed
+    engine["cohort_role"] = "CURRENT_R10_SUCCESSOR"
+    # Read-only operator overlay; source verdict and scientific numbers are untouched.
     if any(b in blockers for b in (
-        "UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR", "OPEN_PAPER_POSITIONS_EXCEED_24H",
-        "REPAIR_DIAGNOSTICS_UNAVAILABLE", "SUCCESSOR_STATUS_UNAVAILABLE",
+        "UNRESOLVED_PAPER_ENTRY_REQUIRES_REPAIR",
+        "OPEN_PAPER_POSITIONS_EXCEED_24H",
+        "REPAIR_DIAGNOSTICS_UNAVAILABLE",
+        "SUCCESSOR_STATUS_UNAVAILABLE",
     )):
         engine["operational_status"] = "REVIEW_REQUIRED"
     return engine
@@ -1393,12 +1499,16 @@ def dashboard_payload(
     snapshot: dict[str, Any],
     test_engine: dict[str, Any] | None = None,
     paper_lifecycle: dict[str, Any] | None = None,
+    *,
+    historical_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    detail_integrity = snapshot.get("_detail_integrity", "LEGACY_OR_IN_MEMORY")
+    # Partial compact data is NEVER routed into strategy/paper action scoring.
     symbols = [
         dict(row)
         for row in snapshot.get("symbols", [])
-        if "error" not in row
-    ]
+        if isinstance(row, dict) and "error" not in row
+    ] if detail_integrity != "INCOMPLETE" else []
 
     for row in symbols:
         intel = row.get("intelligence", {})
@@ -1575,6 +1685,11 @@ def dashboard_payload(
 
     return {
         "snapshot": snapshot,
+        "detail_integrity": detail_integrity,
+        "detail_expected": snapshot.get("_detail_expected"),
+        "detail_persisted": snapshot.get("_detail_persisted"),
+        "detail_failure_reason": snapshot.get("_detail_failure_reason"),
+        "historical_research": format_historical_research(historical_snapshot),
         "best_action": best_action,
         "actionable": combined_actionable[:10],
         "blocked_actions": blocked_actions[:25],
@@ -1683,13 +1798,23 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V{{ data.build.version }}</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div><div class="small" style="margin-top:5px">Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · deployed {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start fallback){% endif %}</div></div>
-    <div><div class="toolbar"><a href="/execution-freeze" style="color:#24d18f;text-decoration:none;font-weight:800">Freeze Decision</a><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
+    <div><div class="toolbar"><a href="/execution-freeze" style="color:#24d18f;text-decoration:none;font-weight:800">Freeze Decision</a><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()" {% if data.detail_integrity == 'INCOMPLETE' %}disabled title="Database persistence incomplete; a manual scan is not a repair"{% endif %}>Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">{% if data.detail_integrity == 'INCOMPLETE' %}Canonical symbol persistence incomplete — waiting for database repair{% else %}Scanner ready{% endif %}</div></div>
   </div>
+
+  {% if data.detail_integrity == 'INCOMPLETE' %}
+  <div class="panel" style="border-color:#a84b44" role="alert">
+    <h2 class="warning" style="margin-top:0">SCAN INCOMPLETE — STRATEGY LISTS UNAVAILABLE</h2>
+    <div class="small">Latest canonical run {{ data.snapshot.run_id }} · {{ data.updated or 'unknown time' }}. Symbol records saved: <b>{{ data.detail_persisted }}</b> of <b>{{ data.detail_expected }}</b>.
+      Summary counters are from the parent scan only. This DOES NOT mean there were zero opportunities, zero safety blocks or no open positions.
+      Paper action decisions are unavailable; no stale research will be promoted to a live trade recommendation.
+      This is a database persistence incident, not a reason to start another manual scan.</div>
+  </div>
+  {% endif %}
 
   <div class="cards">
     <div class="card"><div class="label">Universe</div><div class="value">{{ data.universe.get('selected_count',0) }}</div><div class="small">deep-scanned</div></div>
-    <div class="card"><div class="label">Ready now</div><div class="value ready">{{ data.trade_ready|length }}</div><div class="small">strict execution</div></div>
-    <div class="card"><div class="label">Retest plans</div><div class="value warning">{{ data.retest_plans|length }}</div><div class="small">price must come to us</div></div>
+    <div class="card"><div class="label">Ready now</div><div class="value ready">{% if data.detail_integrity == 'INCOMPLETE' %}—{% else %}{{ data.trade_ready|length }}{% endif %}</div><div class="small">{% if data.detail_integrity == 'INCOMPLETE' %}unverified · persistence failed{% else %}strict execution{% endif %}</div></div>
+    <div class="card"><div class="label">Retest plans</div><div class="value warning">{% if data.detail_integrity == 'INCOMPLETE' %}—{% else %}{{ data.retest_plans|length }}{% endif %}</div><div class="small">{% if data.detail_integrity == 'INCOMPLETE' %}unverified · persistence failed{% else %}price must come to us{% endif %}</div></div>
     <div class="card"><div class="label">Minimum R:R</div><div class="value">{{ '%.1f'|format(data.minimum_execution_rr) }}R</div><div class="small">not relaxed</div></div>
     <div class="card"><div class="label">BTC 24H</div><div class="value {{ 'long' if data.btc_change_24h>0 else 'short' if data.btc_change_24h<0 else '' }}">{{ '%.2f'|format(data.btc_change_24h) }}%</div><div class="small">regime reference</div></div>
     <div class="card"><div class="label">Strategies</div><div class="value">{{ data.strategy_summary.get('configured_strategy_count',0) }}</div><div class="small">S1-S10 shadow · {{ data.strategy_summary.get('shadow_candidate_count',0) }} candidates</div></div>
@@ -1699,26 +1824,39 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   </div>
 
   <div class="panel">
-    <h2 style="margin-top:0">Real-Time Profitability Test Engine</h2>
+    <h2 style="margin-top:0">Real-Time Profitability Test — R10 Successor (Current)</h2>
+    <div class="small" style="margin-bottom:10px">R10 is the current successor cohort. Its status and admission restrictions are taken directly from the R10 scientific view. Historical R9 is reported separately below and is never substituted for missing R10 evidence.</div>
     {% if data.test_engine %}
       <div class="action-grid">
         <div class="metric"><span class="label">System integrity</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
         <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
-        <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration','Unavailable') }}</b></div>
-        <div class="metric"><span class="label">Current cohort completions</span><b>{{ data.test_engine.get('completed_paper_trades','Unavailable') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
-        <div class="metric"><span class="label">Historical lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
-        <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
+        <div class="metric"><span class="label">R10 real scans</span><b>{{ data.test_engine.get('real_scans_since_registration', 'Unavailable') }}</b></div>
+        <div class="metric"><span class="label">R10 qualified completions</span><b>{% if data.test_engine.get('completed_paper_trades') is not none %}{{ data.test_engine.get('completed_paper_trades') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}{% else %}Unavailable{% endif %}</b></div>
+        <div class="metric"><span class="label">Historical lifecycle exits (all cohorts)</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
+        <div class="metric"><span class="label">R10 test days</span><b>{% if data.test_engine.get('test_days_elapsed') is not none %}{{ '%.2f'|format(data.test_engine.get('test_days_elapsed') or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}{% else %}Unavailable{% endif %}</b></div>
         <div class="metric"><span class="label">Separate 24H signal outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration','Unavailable') }}</b></div>
       </div>
       <div class="reason">
         <b>Real-time:</b> {{ data.test_engine.get('evaluated_at_utc') }}<br>
-        <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
+        <b>R10 successor identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
+        <b>R10 admission verdict:</b> {{ data.test_engine.get('verdict','Unavailable') }}<br>
         <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
         <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
         <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
         <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
         <span class="small">Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams and are never added together. Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
       </div>
+      {% if data.test_engine.get('historical_r9') %}
+      {% set h = data.test_engine.get('historical_r9') %}
+      <div class="metric" style="margin-top:12px" role="note">
+        <b>R9 Historical — superseded cohort, NOT current or mergeable with R10</b>
+        <div class="small">Identity: {{ h.get('spec_id','Unavailable') }}</div>
+        <div class="small">R9 scans: {{ h.get('real_scans_since_registration','Unavailable') }} · R9 qualified completions: {{ h.get('completed_paper_trades','Unavailable') }} · R9 test days: {{ h.get('test_days_elapsed','Unavailable') }} · identity-drift scans: {{ h.get('identity_drift_scans','Unavailable') }}</div>
+        <div class="small">R9 verdict: {{ h.get('profitability_status','Unavailable') }}. Historical counters must not be treated as current R10 scientific evidence.</div>
+      </div>
+      {% else %}
+      <div class="small" style="margin-top:12px" role="note">R9 historical status unavailable — no R9 counters have been substituted for current R10.</div>
+      {% endif %}
     {% else %}
       <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
     {% endif %}
@@ -1743,8 +1881,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   {% else %}
     <div class="panel action-none">
       <div class="action-title">MONEY ACTION NOW</div>
-      <h2 style="margin:8px 0">NO VALID EXECUTION YET</h2>
-      <div class="reason">The app will not turn a discovery coin into a trade recommendation. Run a fresh scan or wait for the next scan; the first candidate that passes the execution contract will replace this block automatically.</div>
+      <h2 style="margin:8px 0">{% if data.detail_integrity == 'INCOMPLETE' %}EXECUTION DATA UNAVAILABLE{% else %}NO VALID EXECUTION YET{% endif %}</h2>
+      <div class="reason">{% if data.detail_integrity == 'INCOMPLETE' %}The latest canonical child-symbol persistence failed or is incomplete. There is no verified current candidate list. No historical candidates will be used for action.{% else %}The app will not turn a discovery coin into a trade recommendation. Only a new fully persisted canonical scan can replace this block.{% endif %}</div>
     </div>
   {% endif %}
 
@@ -1778,10 +1916,30 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     {% endfor %}
     </tbody></table>
     {% else %}
-      <div class="empty">No S1-S10 matrix in this snapshot yet. Run a fresh scan after this build is deployed.</div>
+      <div class="empty">{% if data.detail_integrity == 'INCOMPLETE' %}S1-S10 evidence unavailable: current scan has {{ data.detail_persisted }} / {{ data.detail_expected }} persisted symbol records. Parent counters cannot reconstruct these strategy rows.{% else %}No S1-S10 matrix in this snapshot.{% endif %}</div>
     {% endif %}
   </div>
 
+  {% if data.detail_integrity == 'INCOMPLETE' %}
+    <div class="panel">
+      <h2 style="margin-top:0">Previous complete scan — research only</h2>
+      {% if data.historical_research %}
+      <div class="warning small">Historical snapshot {{ data.historical_research.collected_at_utc }}. {{ data.historical_research.persisted_symbols }} validated symbol rows. This is NOT current market evidence and cannot generate paper or real orders.</div>
+      <h3>Previous S1–S10 strategy observations</h3>
+      <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status then</th><th>Direction then</th><th>Score then</th><th>Authority</th></tr></thead><tbody>
+      {% for s in data.historical_research.strategies %}
+      <tr><td><b>{{ s.symbol|symbol_label }}</b></td><td>{{ s.strategy_id }}</td><td>{{ s.status }}</td><td>{{ s.direction }}</td><td>{{ s.score }}</td><td>RESEARCH ONLY · STALE</td></tr>
+      {% endfor %}</tbody></table>
+      <h3>Previous discovery radar</h3>
+      <table><thead><tr><th>Symbol</th><th>Phase then</th><th>Timing then</th><th>State then</th><th>Action</th></tr></thead><tbody>
+      {% for s in data.historical_research.research %}
+      <tr><td><b>{{ s.symbol|symbol_label }}</b></td><td>{{ s.phase }}</td><td>{{ s.timing }}</td><td>{{ s.state }}</td><td>NOT EXECUTABLE</td></tr>
+      {% endfor %}</tbody></table>
+      {% else %}
+      <div class="warning small">No previously complete canonical scan could be independently verified. Historical research is unavailable; no results are inferred.</div>
+      {% endif %}
+    </div>
+  {% endif %}
   <div class="layout">
     <main>
       <div class="panel">
@@ -1792,7 +1950,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% for row in data.actionable %}{% set a=row._action %}
         <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
         {% endfor %}</tbody></table>
-        {% else %}<div class="empty">NO SAFE PAPER TRADE in the current canonical snapshot.</div>{% endif %}
+        {% else %}<div class="empty">{% if data.detail_integrity == 'INCOMPLETE' %}PAPER ACTION QUEUE UNAVAILABLE — latest canonical symbol persistence incomplete. No valid zero-trade conclusion can be drawn.{% else %}NO SAFE PAPER TRADE in the current canonical snapshot.{% endif %}</div>{% endif %}
       </div>
 
       <div class="panel">
@@ -1802,7 +1960,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% for row in data.blocked_actions %}{% set a=row._action %}
         <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction or '—' }}</td><td><span class="badge badge-research">BLOCKED</span></td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
         {% endfor %}</tbody></table>
-        {% else %}<div class="empty">No final action-gate blocks in this snapshot.</div>{% endif %}
+        {% else %}<div class="empty">{% if data.detail_integrity == 'INCOMPLETE' %}SAFETY BLOCKS UNKNOWN — child evidence missing. Do not interpret this as zero blockers.{% else %}No final action-gate blocks in this snapshot.{% endif %}</div>{% endif %}
       </div>
 
       <div class="panel">
@@ -1812,9 +1970,11 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% for row in data.research %}
         <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
         {% endfor %}</tbody></table>
+        {% if data.detail_integrity == 'INCOMPLETE' %}<div class="warning small">Current research radar unavailable because the canonical child rows were not saved. Historical research is displayed separately where available.</div>{% endif %}
       </div>
 
       <div class="panel"><h2 style="margin-top:0">Bitget Open Positions</h2>
+      {% if data.detail_integrity == 'INCOMPLETE' %}<div class="warning small">Observed in a canonical scan whose symbol persistence failed. Position/protection values are not freshly reverified here; verify directly in Bitget before changing any orders.</div>{% endif %}
       {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th><th>SL</th><th>TP</th><th>Protection</th></tr></thead><tbody>
       {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td><td>{{ p._stop_loss_display }}</td><td>{{ p._take_profit_display }}</td><td><span class="badge {{ 'badge-ready' if p._protection_state=='OBSERVED' else 'badge-research' }}">{{ p._protection_state }}</span>{% if p._protection_warning %}<div class="small warning">{{ p._protection_warning }}</div>{% endif %}<div class="small muted">observer={{ p._protection_observation_status }} · {{ p._protection_observed_at_utc or 'time unavailable' }}</div></td></tr>{% endfor %}
       </tbody></table>
@@ -1823,7 +1983,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     </main>
 
     <aside>
-      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
+      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% if data.detail_integrity == 'INCOMPLETE' %}<div class="warning small">Reference observations unavailable: the current scan is incomplete.</div>{% else %}{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}{% endif %}</div>
       <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>EXECUTE_NOW_PAPER and PLACE_LIMIT_PAPER require canonical freshness, one direction per symbol, valid bounded geometry, public fee/spread evidence and Bitget price precision.<br><br>WAIT_FOR_TRIGGER is monitoring only. BLOCKED rows retain their evidence and state the failed gate.<br><br>No screen grants real-order authority and no threshold is relaxed.</div></div>
     </aside>
   </div>
@@ -2300,11 +2460,7 @@ def dashboard():
     try:
         return render_template_string(
             PAGE,
-            data=dashboard_payload(
-                latest_snapshot(),
-                latest_test_engine_status(),
-                latest_paper_lifecycle_status(),
-            ),
+            data=dashboard_view_data(),
         )
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
@@ -2318,11 +2474,7 @@ def dashboard():
 def api_latest():
     try:
         return jsonify(
-            dashboard_payload(
-                latest_snapshot(),
-                latest_test_engine_status(),
-                latest_paper_lifecycle_status(),
-            )
+            dashboard_view_data()
         )
     except Exception:
         app.logger.exception("API latest live-data read failed")
