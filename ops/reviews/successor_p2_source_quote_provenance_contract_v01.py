@@ -165,6 +165,8 @@ def verify_quote(e,key,run,asof,expected_symbol):
         require(hashlib.sha256(raw).hexdigest()==p.get("raw_response_sha256"),
                 "RAW_QUOTE_BYTES_HASH_MISMATCH")
         data=json.loads(raw)
+    except EvidenceRejected:
+        raise  # Preserve precise digest/size failure rather than hiding it.
     except (TypeError,ValueError,UnicodeDecodeError) as exc:
         raise EvidenceRejected("RAW_QUOTE_BODY_INVALID") from exc
     require(isinstance(data,dict) and data.get("code")=="00000" and
