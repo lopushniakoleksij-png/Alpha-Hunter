@@ -5,6 +5,7 @@ on:
     paths:
       - 'ops/reviews/successor_pg16_tcp_benchmark_v01.py'
       - 'ops/reviews/successor_pg16_rls_reader_gate_v01.py'
+      - 'ops/reviews/successor_pg16_full_scope_reader_gate_v01.py'
       - 'ops/reviews/successor_full_schema_set_based_candidate_v01.sql'
       - 'tests/postgres/successor-full-production-schema-fixture.sql'
       - 'tests/postgres/successor-monitoring-cycle-seal-schema.sql'
@@ -85,6 +86,13 @@ jobs:
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
         run: |
           python ops/reviews/successor_pg16_rls_reader_gate_v01.py
+
+      - name: Verify all 12 paper-ledger sources and protection view RLS fail-closed in PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_full_scope_reader_gate_v01.py
 
       - name: Exercise production trigger and full affected schema over local TCP, without trade credentials
         env:
