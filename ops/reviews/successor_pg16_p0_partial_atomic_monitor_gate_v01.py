@@ -71,6 +71,9 @@ CREATE VIEW p0_shadow.all_positive_residuals AS
  LEFT JOIN exits ex ON ex.order_id=o.order_id
  WHERE coalesce(en.qty,0)-coalesce(ex.qty,0)>0;
 
+CREATE TABLE p0_shadow.source_symbols(
+ symbol text PRIMARY KEY CHECK(symbol LIKE '%USDT')
+);
 CREATE TABLE p0_shadow.parents(
  run_id text PRIMARY KEY CHECK(run_id LIKE 'synthetic-p0-%'),
  expected_symbols integer NOT NULL CHECK(expected_symbols>0)
@@ -130,6 +133,17 @@ BEGIN
  SELECT count(*) INTO n_managed FROM p0_shadow.all_positive_residuals
     WHERE disposition='MANAGED' AND protective_leg_count=2;
  IF n_residual=0 OR n_child<>p_expected_symbols
+    OR (SELECT count(*) FROM p0_shadow.source_symbols)<>p_expected_symbols
+    OR EXISTS(
+      SELECT 1 FROM p0_shadow.source_symbols source
+      LEFT JOIN p0_shadow.children saved
+        ON saved.symbol=source.symbol AND saved.run_id=p_run
+      WHERE saved.symbol IS NULL
+    ) OR EXISTS(
+      SELECT 1 FROM p0_shadow.children saved
+      LEFT JOIN p0_shadow.source_symbols source ON source.symbol=saved.symbol
+      WHERE saved.run_id=p_run AND source.symbol IS NULL
+    )
  THEN RAISE EXCEPTION 'P0_CHILD_OR_SOURCE_INCOMPLETE'; END IF;
  -- Even if SOME position IDs are monitored, compare full source ledger.
  -- NMR-like partially filled order absent from the managed-only view must
@@ -193,6 +207,7 @@ def verify():
     dbinfo=make_conninfo(dsn,dbname=DB)
     with psycopg.connect(dbinfo,autocommit=True) as db:
         db.execute(SCHEMA)
+        db.execute("INSERT INTO p0_shadow.source_symbols VALUES ('BTCUSDT'),('ETHUSDT'),('NMRUSDT')")
         db.execute("ALTER DATABASE "+DB+" SET statement_timeout = '12s'")
         for i in range(10):
             oid=f"synthetic-managed-{i}"
@@ -230,6 +245,9 @@ def verify():
                      "P0_PARTIAL_OR_MONITOR_MANIFEST_INCOMPLETE")
     expected_failure(dsn,"synthetic-p0-missing-child",children[:2],managed_ids,
                      "P0_CHILD_OR_SOURCE_INCOMPLETE")
+    expected_failure(dsn,"synthetic-p0-wrong-child",
+                     ["BTCUSDT","ETHUSDT","FAKEUSDT"],managed_ids,
+                     "P0_CHILD_OR_SOURCE_INCOMPLETE")
     # Prove true SQLSTATE 57014 by a 100ms INSERT trigger and 35ms SQL budget
     # on an ephemeral connection. This is NOT an increase of the frozen 12s
     # production statement ceiling.
@@ -263,6 +281,9 @@ def verify():
             db.execute("INSERT INTO p0_shadow.orders VALUES(%s,1,true,false)",(oid,))
             db.execute("INSERT INTO p0_shadow.entry_fills VALUES(%s,%s,1)",(oid+"-f",oid))
             db.execute("INSERT INTO p0_shadow.protective_orders VALUES(%s,'STOP'),(%s,'TP')",(oid,oid))
+        expected_failure(dsn,"synthetic-p0-clean-missing-position",children,
+                         ["synthetic-clean-managed-0"],
+                         "P0_PARTIAL_OR_MONITOR_MANIFEST_INCOMPLETE")
         with db.transaction():
             verdict=invoke(db,"synthetic-p0-clean-pass",children,[
                 "synthetic-clean-managed-0","synthetic-clean-managed-1"])
@@ -287,6 +308,8 @@ def verify():
       "nmr_unprotected_false_attempt_rejected":True,
       "parent_child_monitor_same_transaction_required":True,
       "incomplete_child_rolls_back_parent":True,
+      "same_count_wrong_child_identity_rejected":True,
+      "missing_clean_position_observation_rolls_back":True,
       "real_postgresql_statement_timeout_sqlstate":"57014",
       "timeout_rolls_back_parent_child_attempt_seal":True,
       "parent_only_not_sealed":True,
