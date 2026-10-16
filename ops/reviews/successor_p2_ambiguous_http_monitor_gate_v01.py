@@ -295,6 +295,13 @@ def verify():
                         if x["entry_order_id"]==second["entry_order_id"])["record_sha256"]
         insert_seal(journal,key,seal_fields(source["p_run_id"],second["entry_order_id"],second["symbol"],when,parent_sha,cap))
         assert classify(dsn,journal,key,source,inv)=="LOCAL_STRUCTURAL_RECEIPTS_VERIFIED_NOT_SCIENTIFIC_COMPLETE"
+        # A submitted array with the same two child rows but different
+        # order has the same child count, symbols, payloads and timestamps.
+        # Only the independent immutable digest binds the actual manifest
+        # bytes. It must NOT be read back as the committed source.
+        reordered_source=dict(source,p_rows=list(reversed(source["p_rows"])))
+        assert structural_readback(dsn,source["p_run_id"],reordered_source) is False
+        assert classify(dsn,journal,key,reordered_source,inv)=="INCOMPLETE_OR_AMBIGUOUS_PARENT_CHILD_OR_STRATEGY"
         # Negative regression: a complete journal cannot authenticate a
         # missing, duplicated, altered or false-protection source manifest.
         bad_manifest=dict(inv,manifest_sha256="0"*64)
