@@ -196,8 +196,6 @@ def apply_synthetic_exit(
     custody before any possible future real-world implementation.
     """
     p = position
-    if p.integrity_state != "PROTECTED":
-        raise RejectedTransition("INTEGRITY_HALT_STAYS_HALTED")
     if not p.paper_only or p.trade_permission or p.exchange_authority or p.production_promotion_permitted:
         raise RejectedTransition("NO_AUTHORITY_CONTRACT_VIOLATION")
     if not fill.event_id or not digest(fill.receipt_sha256) or not fill.quote_id:
@@ -205,11 +203,15 @@ def apply_synthetic_exit(
     existing = {x.event_id: x for x in p.fills}
     if fill.event_id in existing:
         if existing[fill.event_id] == fill:
+            # Retry-safe even for the final CLOSED fill, and even if the
+            # caller submits its historical expected revision.
             return _result("DUPLICATE_NOOP", p)
         # A contradictory event ID makes book-state custody untrustworthy.
         halted = replace(p, integrity_state="HALTED_UNRESOLVED",
                          incident="CONFLICTING_EVENT_ID")
         return _result("HALTED_UNRESOLVED", halted)
+    if p.integrity_state != "PROTECTED":
+        raise RejectedTransition("INTEGRITY_HALT_STAYS_HALTED")
     if any(x.receipt_sha256 == fill.receipt_sha256 for x in p.fills):
         # Same original synthetic receipt under another ID is a custody
         # conflict, not a second distinct execution event.
