@@ -1,0 +1,58 @@
+name: P0 S6 Live Final Gate Verification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/p0-s6-live-final-gate-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  live-s6:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check production dashboard and canonical shadow permission gates
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, urllib.error, urllib.request, time
+          base="https://alpha-hunter-j5i3.onrender.com"
+          def get(path, timeout=35):
+              request=urllib.request.Request(base+path, headers={"User-Agent":"AlphaHunter-P0-S6-readonly-smoke/1.0","Cache-Control":"no-store"})
+              start=time.monotonic()
+              try:
+                  with urllib.request.urlopen(request,timeout=timeout) as r:
+                      body=r.read(8_000_000)
+                      status=r.status
+              except urllib.error.HTTPError as error:
+                  body=error.read(100_000)
+                  status=error.code
+              print(path, "HTTP",status,"duration",round(time.monotonic()-start,2),flush=True)
+              return status,body
+          status,body=get("/api/build")
+          assert status==200
+          build=json.loads(body)
+          assert build.get("git_commit","").startswith("8b8037f"),build
+          print("PASS deployment",build["git_commit"][:7],flush=True)
+          status,html=get("/")
+          assert status==200, "Dashboard still unavailable: %s" % status
+          assert b"Raw shadow intent (not executable)" in html
+          assert b"Final paper gate" in html
+          print("PASS web S6 warning labels",flush=True)
+          status,body=get("/api/latest")
+          assert status==200
+          payload=json.loads(body)
+          assert payload["test_engine"]["trade_permission"] is False
+          assert payload["test_engine"]["production_promotion_permitted"] is False
+          assert payload["test_engine"]["paper_only"] is True
+          matrix=payload["strategy_shadow"]
+          assert matrix
+          assert all(row.get("_display_gate_action") not in ("EXECUTE_NOW","PLACE_LIMIT") for row in matrix)
+          relevant=[row for row in matrix if row.get("strategy_id")=="S6" and row.get("symbol") in ("REDUSDT","WCTUSDT")]
+          for row in relevant:
+              if row.get("status")=="SHADOW_CANDIDATE" and float(row.get("rr") or 0)>25:
+                  assert row["_display_gate_action"]=="BLOCKED",row
+                  assert "EXECUTION_RR_OUTLIER" in row.get("_display_warning",""),row
+                  assert row.get("_display_setup_intent")=="SHADOW_EXECUTE_NOW"
+          print("PASS final safety gate",len(matrix),"shadow rows",len(relevant),"target S6 observed",flush=True)
+          print("PASS live evidence: no raw EXECUTE_NOW as final Gate action, trade authority disabled",flush=True)
+          PY
