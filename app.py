@@ -1542,9 +1542,19 @@ def dashboard_payload(
         item["_symbol_direction_conflict"] = (
             len(strategy_directions_by_symbol.get(symbol, set())) > 1
         )
-        item["_display_gate_action"] = action
-        item["_display_setup_intent"] = proposed
-        item["_display_warning"] = ""
+        # Only the final canonicalized action queue may supply the gate verdict.
+        # An S1-S10 raw EXECUTE_NOW is uncalibrated SHADOW intent, not permission.
+        item["_display_gate_action"] = "NOT_APPROVED"
+        item["_display_setup_intent"] = (
+            f"SHADOW_{proposed}"
+            if proposed in {"EXECUTE_NOW", "PLACE_LIMIT"}
+            else proposed
+        )
+        item["_display_warning"] = (
+            "Shadow setup intent only; await the final canonical safety verdict."
+            if proposed in {"EXECUTE_NOW", "PLACE_LIMIT"}
+            else ""
+        )
         if item["_symbol_direction_conflict"]:
             item["_display_gate_action"] = "BLOCKED_CONFLICT"
             item["_display_setup_intent"] = "NO_ACTION"
@@ -1603,6 +1613,41 @@ def dashboard_payload(
         actionable + strategy_ready,
         snapshot,
     )
+
+    # Reflect the same final paper-action gate in the S1-S10 diagnostic matrix.
+    # Match by the original strategy dictionary reference, not merely by symbol:
+    # opposing or parallel strategies for one symbol have different verdicts.
+    # Never alter source strategy action/status, paper positions or test evidence.
+    for gate_rows, visible_status in (
+        (blocked_actions, "BLOCKED"),
+        (suppressed_actions, "SUPPRESSED"),
+        (combined_actionable, "PAPER_SIGNAL_ONLY"),
+    ):
+        for gated_row in gate_rows:
+            strategy_item = gated_row.get("_strategy_payload")
+            if not isinstance(strategy_item, dict):
+                continue
+            decision = gated_row.get("_action") or {}
+            if not isinstance(decision, dict):
+                continue
+            gate_status = str(decision.get("status") or "")
+            strategy_item["_display_gate_action"] = (
+                "WAIT_FOR_TRIGGER"
+                if visible_status == "PAPER_SIGNAL_ONLY"
+                and gate_status == "WAIT_FOR_TRIGGER"
+                else visible_status
+            )
+            reason = str(decision.get("reason") or "")
+            if visible_status in {"BLOCKED", "SUPPRESSED"}:
+                strategy_item["_display_warning"] = (
+                    reason
+                    or "Blocked by the final canonical paper execution gate."
+                )
+            else:
+                strategy_item["_display_warning"] = (
+                    "Canonical paper decision support only. No exchange order "
+                    "authority; scientific admissions remain independently gated."
+                )
     trade_ready = [
         row for row in combined_actionable
         if row["_action"]["status"] == "EXECUTE_NOW_PAPER"
@@ -1815,19 +1860,19 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   <div class="panel">
     <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
-    <div class="small" style="margin-bottom:10px">S1-S10 candidates can now feed the Money Action decision-support queue when they pass their strategy gates, valid geometry and the configured 5R minimum. They still cannot grant exchange/order authority. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
+    <div class="small" style="margin-bottom:10px">S1-S10 scores and setup intents are uncalibrated shadow evidence, never exchange instructions. The Gate action column reflects the FINAL canonical paper safety gate, not the raw strategy intent. Candidate status and 10/10 scores do not override blocks. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
     <div class="toolbar" style="margin-bottom:12px">
       {% for row in data.strategy_coverage %}
       <span class="badge badge-research">{{ row.strategy_id }}: {{ row.evaluations }} eval / {{ row.candidates }} cand</span>
       {% endfor %}
     </div>
     {% if data.strategy_shadow %}
-    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Gate action</th><th>Setup intent</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
+    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Final paper gate</th><th>Raw shadow intent (not executable)</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
     {% for s in data.strategy_shadow %}
       <tr>
         <td><b>{{ s.symbol|symbol_label }}</b></td>
         <td><b>{{ s.strategy_id }}</b> {{ s.strategy_name }}</td>
-        <td><span class="badge {{ 'badge-ready' if s.status=='SHADOW_CANDIDATE' else 'badge-retest' if s.status=='WATCH' else 'badge-research' }}">{{ s.status }}</span></td>
+        <td><span class="badge {{ 'badge-retest' if s.status in ('SHADOW_CANDIDATE','WATCH') else 'badge-research' }}">{{ s.status }}</span></td>
         <td>{{ s._persistence_state }}</td>
         <td>{{ s._consecutive_scans }}</td>
         <td class="{{ 'long' if s.direction=='LONG' else 'short' if s.direction=='SHORT' else '' }}">{{ s.direction or '—' }}</td>
