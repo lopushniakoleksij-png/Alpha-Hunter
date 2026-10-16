@@ -31,7 +31,7 @@ def test_full_source_coverage_includes_partials_and_all_quarantines():
         assert f"public.{table}" in BODY
     assert "coalesce(e.entered_qty,0::numeric)-coalesce(x.exited_qty,0::numeric)" in BODY
     assert "from all_order_residuals where residual_qty<0" in BODY
-    assert "from all_order_residuals where residual_qty>0" not in BODY  # use residuals CTE
+    assert "from all_order_residuals where residual_qty>0" in BODY  # positive exposure is retained
     assert "else 'unexplained_unmanaged'" in BODY
 
 
