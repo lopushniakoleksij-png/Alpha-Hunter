@@ -98,7 +98,10 @@ def verify():
         assert cx.execute("SELECT current_user").fetchone()[0]=="bench"
         cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIG)))
         cx.execute(sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(OWNER),sql.Identifier(MIG)))
-        assert members(cx)==[],members(cx)
+        # Revoking the temporary SET edge retains automatic ADMIN-only
+        # membership with SET FALSE, INHERIT FALSE.
+        assert members(cx)==[(MIG,True,False,False)],members(cx)
+        assert cx.execute("SELECT pg_has_role(current_user,%s,'SET')",(OWNER,)).fetchone()[0] is False
         cx.execute("RESET ROLE")
         # Simulate reader (NOLOGIN) in synthetic *privilege context* only.
         cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(READER)))
@@ -142,14 +145,19 @@ def verify():
         cx.execute("RESET ROLE")
         cx.execute(sql.SQL("REVOKE {} FROM {}").format(sql.Identifier(OWNER),sql.Identifier(MIG)))
         cx.execute("RESET ROLE")
-        assert members(cx)==[]
+        assert members(cx)==[(MIG,True,False,False)],members(cx)
         assert cx.execute("SELECT to_regnamespace(%s)",(SCHEMA,)).fetchone()[0] is None
         before=cx.execute("SELECT count(*) FROM public.synthetic_snapshots").fetchone()[0]
         assert before==2
         cx.execute(sql.SQL("DROP POLICY synthetic_projection_read ON public.synthetic_snapshots"))
         cx.execute(sql.SQL("REVOKE SELECT (id,payload) ON public.synthetic_snapshots FROM {}").format(sql.Identifier(OWNER)))
         cx.execute(sql.SQL("REVOKE USAGE ON SCHEMA public FROM {}").format(sql.Identifier(OWNER)))
+        # The original automatic ADMIN grant permits role teardown
+        # by the non-superuser CREATEROLE migrator.
+        cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIG)))
         cx.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(OWNER)))
+        cx.execute("RESET ROLE")
+        assert members(cx)==[]
         assert cx.execute("SELECT count(*) FROM public.synthetic_snapshots").fetchone()[0]==2
     print("R1_ISOLATED_PG16_TEMPORARY_SETROLE_FORWARD_ROLLBACK_PASS "+json.dumps({
       "non_superuser_migration":True,
@@ -158,7 +166,8 @@ def verify():
       "reader_raw_payload_rejected":True,
       "missing_identity_kept_null":True,
       "source_rows_unchanged":2,
-      "migration_owner_membership_after_rollback":0,
+      "automatic_admin_membership_during_restricted_operation":"ADMIN_TRUE_SET_FALSE_INHERIT_FALSE",
+      "view_owner_dropped_by_non_superuser_migrator":True,
       "unprivileged_migrator_can_regrant_after_revocation":can_regrant,
       "exact_V2_or_V3_production_SQL_executed":False,
       "postgres_server":"ephemeral GitHub Action PG16 only",
