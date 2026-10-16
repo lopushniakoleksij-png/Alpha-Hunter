@@ -55,6 +55,29 @@ The live source view and physical ledger are not changed by the query.
   Also, an interrupted 35m chain is not retroactively repaired by
   subsequent successful scans or by synthetic CI fixtures.
 
+**Independent canonical runtime logs corroborate every missing-child scan:**
+Read-only Render app logs were inspected in the exact corresponding time
+windows. In every case the same canonical parent is visible but the
+symbol-snapshot write reports `Supabase: FAILED: Supabase upsert failed for
+alpha_hunter_symbol_snapshots: HTTP 500` with PostgreSQL error
+`57014 / canceling statement due to statement timeout`:
+
+| Failed parent UTC | Supabase failure logged UTC | Child rows / declared symbols | Exit-attempt rows |
+|---|---|---|---|
+| 2026-10-15 17:23:31 | 17:24:30 | 0 / 61 | 0 |
+| 2026-10-16 04:23:20 | 04:24:24 | 0 / 61 | 0 |
+| 2026-10-16 05:23:27 | 05:24:25 | 0 / 61 | 0 |
+| 2026-10-16 06:05:06 | 06:06:11 | 0 / 61 | 0 |
+
+The **immediate failure stage** is now verified: source parent persisted
+without completed child write and associated exit-attempt evidence. This
+is strong evidence of **statement-timeout cancellation on the child upsert**.
+It does **not** independently identify the deepest cause of excessive query
+duration (e.g. a particular trigger, lock contention, source workload or
+network/retry interaction), nor demonstrate transaction atomicity or
+per-position monitoring safety. Do not declare persistence fixed by
+the next successful scan. Preserve original 12s DB and 15s HTTP ceilings.
+
 **SQL verdict:** `FAIL_CLOSED_RESIDUAL_OR_SCAN_EVIDENCE_INCOMPLETE`,
 `all_cohort_continuous_monitoring_proven=false`,
 `scientific_pass_or_admissions_permitted=false`.
