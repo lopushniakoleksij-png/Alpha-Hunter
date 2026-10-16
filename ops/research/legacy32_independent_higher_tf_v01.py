@@ -25,7 +25,7 @@ def get_series(symbol,gran,entry_ms,folder,tag):
     span,fast,slow=TIMEFRAMES[gran]
     weekly=gran=="1Wutc"
     # 12H 37d, 1D 75d, weekly <90d; no later candle can be used.
-    size=12 if weekly else 62
+    size=11 if weekly else 62  # <= 84 days under V2 maximum 90-day range
     a=entry_ms-(size+1)*span
     b=entry_ms
     params=(dict(symbol=symbol,productType="USDT-FUTURES",
@@ -147,8 +147,15 @@ def main():
         if i%args.shards!=args.shard:continue
         row=one(t,base/t["exit_fill_id"])
         results.append(row)
-        print("P1_CONTEXT",json.dumps({k:v for k,v in row.items() if k!="sources"},
-                                       sort_keys=True),flush=True)
+        debug={k:v for k,v in row.items() if k!="sources"}
+        debug["missing"]= [
+            {"asset":sym,"timeframe":tf,"reason":source.get("reason"),
+             "closed_bars":source.get("closed_bars")}
+            for sym,panels in row["sources"].items()
+            for tf,source in panels.items()
+            if source["status"]!="RETROSPECTIVE_CLOSED_BAR_CONTEXT"
+        ]
+        print("P1_CONTEXT",json.dumps(debug,sort_keys=True),flush=True)
     (base/"p1_summary.json").write_text(json.dumps(
        {"shard":args.shard,"results":results,
         "context_only_not_proof_of_original_signal":True},indent=2,sort_keys=True))
