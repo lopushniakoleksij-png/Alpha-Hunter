@@ -519,12 +519,49 @@ def _hydrate_dashboard_snapshot(
             "limit": "2000",
         },
     )
-    snapshot["symbols"] = [
-        child.get("payload")
-        for child in children
-        if isinstance(child, dict)
-        and isinstance(child.get("payload"), dict)
-    ]
+    # A committed compact parent is not evidence that its child writes committed.
+    # Never replace the parent stubs with an empty or partial child set and
+    # silently classify that canonical scan as complete.
+    expected_count = row.get("symbol_count")
+    parent_stubs = snapshot.get("symbols")
+    if expected_count is None and isinstance(parent_stubs, list):
+        expected_count = len(parent_stubs)
+    if (
+        not isinstance(expected_count, int)
+        or isinstance(expected_count, bool)
+        or not (1 <= expected_count <= 2000)
+    ):
+        raise RuntimeError("Compact canonical parent symbol_count is invalid")
+    if len(children) != expected_count:
+        raise RuntimeError("Incomplete compact canonical snapshot child evidence")
+
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for child in children:
+        if not isinstance(child, dict):
+            raise RuntimeError("Invalid compact canonical snapshot child row")
+        symbol = child.get("symbol")
+        detail = child.get("payload")
+        if (
+            not isinstance(symbol, str)
+            or not symbol
+            or not isinstance(detail, dict)
+            or detail.get("symbol") != symbol
+            or symbol in by_symbol
+        ):
+            raise RuntimeError("Invalid or duplicate compact child symbol evidence")
+        by_symbol[symbol] = detail
+    if isinstance(parent_stubs, list):
+        parent_symbols = [
+            stub.get("symbol") if isinstance(stub, dict) else None
+            for stub in parent_stubs
+        ]
+        if (
+            len(parent_symbols) != expected_count
+            or any(not isinstance(symbol, str) for symbol in parent_symbols)
+            or set(parent_symbols) != set(by_symbol)
+        ):
+            raise RuntimeError("Compact canonical parent and child symbol mismatch")
+    snapshot["symbols"] = [by_symbol[symbol] for symbol in sorted(by_symbol)]
     return snapshot
 
 
