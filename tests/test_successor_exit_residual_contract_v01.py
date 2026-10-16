@@ -163,6 +163,25 @@ def test_deduplicated_event_is_noop_even_with_old_expected_revision():
     assert_no_authority(again)
 
 
+
+def test_terminal_closed_position_replays_last_fill_idempotently():
+    p=position()
+    f=fill(q="362",size="362")
+    final=apply_synthetic_exit(p,f,next_guard=guard("0",1,
+        "2026-10-02T23:03:33Z",status="CANCELLED"),expected_revision=0)
+    assert final.status=="SIMULATED_CLOSED"
+    duplicate=apply_synthetic_exit(final.position,f,next_guard=None,expected_revision=0)
+    assert duplicate.status=="DUPLICATE_NOOP"
+    assert duplicate.position==final.position
+    assert duplicate.position.integrity_state=="CLOSED"
+    assert duplicate.net_realized_ex_funding==final.net_realized_ex_funding
+    assert_no_authority(duplicate)
+    with pytest.raises(RejectedTransition,match="INTEGRITY_HALT_STAYS_HALTED"):
+        apply_synthetic_exit(final.position,fill(2,q="1"),
+            next_guard=None,expected_revision=1)
+
+
+
 def test_same_event_id_with_new_content_halts_custody():
     r=apply_synthetic_exit(position(),fill(),next_guard=guard("262",1,
            "2026-10-02T23:03:33Z"),expected_revision=0)
