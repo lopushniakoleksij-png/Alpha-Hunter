@@ -85,7 +85,7 @@ def verify():
             sql.Identifier(SCHEMA),sql.Identifier(READER)))
         cx.execute(sql.SQL("""CREATE VIEW {}.parent_v WITH
             (security_barrier=true,security_invoker=false) AS
-            SELECT id,payload #>> '{validation_identity,run_source}' AS run_source
+            SELECT id,payload #>> '{{validation_identity,run_source}}' AS run_source
             FROM public.synthetic_snapshots""").format(sql.Identifier(SCHEMA)))
         cx.execute(sql.SQL("REVOKE ALL ON {}.parent_v FROM PUBLIC").format(sql.Identifier(SCHEMA)))
         cx.execute(sql.SQL("GRANT SELECT ON {}.parent_v TO {}").format(
