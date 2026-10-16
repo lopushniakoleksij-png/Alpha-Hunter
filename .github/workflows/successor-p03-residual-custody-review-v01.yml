@@ -6,6 +6,8 @@ on:
       - 'ops/reviews/successor_p03_residual_continuity_v01.py'
       - 'ops/reviews/successor_p03_alert_journal_pg16_v01.py'
       - 'ops/reviews/successor_p2_offline_alert_delivery_gate_v01.py'
+      - 'ops/reviews/successor_p2_incident_delivery_lineage_v01.py'
+      - 'tests/test_successor_p2_incident_delivery_lineage_v01.py'
       - 'tests/test_successor_p2_offline_alert_delivery_gate_v01.py'
       - 'tests/test_successor_p03_residual_continuity_v01.py'
       - '.github/workflows/successor-p03-residual-custody-review-v01.yml'
@@ -67,6 +69,7 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check 'pytest==8.4.2'
           python -m pytest -q tests/test_successor_p2_offline_alert_delivery_gate_v01.py
+          python -m pytest -q tests/test_successor_p2_incident_delivery_lineage_v01.py
 
       - name: Verify 35-minute receipt boundary and independent durable alert outbox on two local PG16 hosts
         env:
