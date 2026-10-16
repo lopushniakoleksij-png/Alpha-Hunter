@@ -1,0 +1,53 @@
+name: P0 Canonical Dashboard Read-only Proof
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/p0-canonical-restore-http-proof-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  read-only-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect production root and API without any writes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, time, urllib.request, urllib.error, urllib.parse
+          base = "https://alpha-hunter-j5i3.onrender.com"
+          def check(path, timeout=28):
+              req=urllib.request.Request(base+path,headers={"User-Agent":"AH-P0-restore-readonly/1.0","Cache-Control":"no-cache"})
+              start=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=timeout) as f:
+                      data=f.read(200000)
+                      status=f.status
+              except urllib.error.HTTPError as e:
+                  status=e.code
+                  data=e.read(200000)
+              except Exception as e:
+                  print(path,"TRANSPORT_ERROR",type(e).__name__,str(e)[:130],flush=True)
+                  raise
+              elapsed=round(time.monotonic()-start,2)
+              print("ENDPOINT",path,"STATUS",status,"SECONDS",elapsed,"BODY_PREFIX",data[:150].decode("utf-8","replace").replace("\\n"," "),flush=True)
+              assert status in (200,503), (path,status)
+              return status,data
+          status,raw=check("/api/build")
+          assert status==200
+          print("BUILD",json.loads(raw).get("git_commit_short"))
+          status,raw=check("/")
+          if status==200:
+              txt=raw.decode("utf-8","replace")
+              print("LIVE_DASHBOARD_HTTP_200")
+              assert "Alpha Hunter" in txt
+          else:
+              assert b"LIVE DATA TEMPORARILY UNAVAILABLE" in raw
+              print("RECOVERY_503_NOT_HEALTHY")
+          status,raw=check("/api/latest")
+          if status==200:
+              payload=json.loads(raw)
+              print("API_LATEST_HTTP_200","KEYS",list(payload)[:18],flush=True)
+          else:
+              print("API_LATEST_503_NO_DASHBOARD_PROMOTION")
+          PY
