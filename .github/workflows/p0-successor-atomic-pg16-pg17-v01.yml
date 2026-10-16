@@ -1,0 +1,67 @@
+name: P0 Successor Synthetic Atomic PG16-PG17 (Unmerged Research)
+on:
+  pull_request:
+    paths:
+      - 'ops/research/successor_atomic_reconciliation_pg16_pg17_v01.sql'
+      - 'tests/isolated_successor_postgres_atomic_v01.py'
+      - '.github/workflows/p0-successor-atomic-pg16-pg17-v01.yml'
+permissions:
+  contents: read
+jobs:
+  synthetic-db-isolation:
+    name: "isolated-postgres-${{ matrix.pg }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: isolated_research_only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      SUCCESSOR_LAB_TEST_DSN: "host=localhost port=5432 dbname=postgres user=postgres password=isolated_research_only"
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: postgres
+      PGUSER: postgres
+      PGPASSWORD: isolated_research_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.10'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+      - name: Assert ephemeral database is NOT production
+        shell: bash
+        run: |
+          test "$PGHOST" = localhost
+          test "$PGDATABASE" = postgres
+          test "$PGUSER" = postgres
+          ! env | grep -E '^SUPABASE|^BITGET_|^DATABASE_URL='
+      - name: Execute isolated SQL schema and functions in a single transaction
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f ops/research/successor_atomic_reconciliation_pg16_pg17_v01.sql
+      - name: Run atomic / idempotent / ambiguous-write regression suite
+        run: |
+          python -m unittest discover -s tests -p 'isolated_successor_postgres_atomic_v01.py' -v
+      - name: Ensure only isolated successor_lab schema exists
+        shell: bash
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -Atc "SELECT CASE WHEN EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name='successor_lab') THEN 'yes' ELSE 'no' END" | grep -qx yes
+          psql -X -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='successor_lab'" | grep -qx 4
+          psql -X -v ON_ERROR_STOP=1 -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" | grep -qx 0
+      - name: Explicitly terminate synthetic database session
+        if: always()
+        run: echo "Ephemeral GitHub postgres service destroyed at job end. No production writes."
