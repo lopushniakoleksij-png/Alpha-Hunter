@@ -145,9 +145,10 @@ def evaluate(alert,receipts,*,journal_available=True,now_second=None):
                 reasons.append("PROVIDER_ACCEPTANCE_UNVERIFIED");fatal=True;break
             accepted_id=msg
         elif kind=="PROVIDER_REPORTED_DELIVERED":
-            if (accepted_id is None or evidence.get("provider_message_id")!=accepted_id
-                or provider_delivered_count):
-                reasons.append("PROVIDER_REPORT_UNBOUND_OR_DUPLICATE");fatal=True;break
+            if accepted_id is None or evidence.get("provider_message_id")!=accepted_id:
+                reasons.append("PROVIDER_REPORT_UNBOUND");fatal=True;break
+            if provider_delivered_count:
+                reasons.append("PROVIDER_REPORT_DUPLICATE");fatal=True;break
             provider_delivered_count+=1
             provider_claim=True  # insufficient for independent receipt
         elif kind=="RECIPIENT_CONFIRMED":
@@ -155,15 +156,18 @@ def evaluate(alert,receipts,*,journal_available=True,now_second=None):
             # One provider message cannot acquire multiple supposedly distinct
             # recipient-confirmation claims for the same immutable alert.
             if (accepted_id is None or evidence.get("provider_message_id")!=accepted_id
-                or recipient_confirm_count or
-                not isinstance(evidence.get("inbox_receipt_id"),str) or
+                or not isinstance(evidence.get("inbox_receipt_id"),str) or
                 not evidence["inbox_receipt_id"].startswith("mock-inbox-")):
-                reasons.append("RECIPIENT_CONFIRMATION_UNBOUND_OR_DUPLICATE");fatal=True;break
+                reasons.append("RECIPIENT_CONFIRMATION_UNBOUND");fatal=True;break
+            if recipient_confirm_count:
+                reasons.append("RECIPIENT_CONFIRMATION_DUPLICATE");fatal=True;break
             recipient_confirm_count+=1
             inbox=True
         elif kind=="HUMAN_ACKNOWLEDGED":
-            if not inbox or human_ack_count:
-                reasons.append("HUMAN_ACK_BEFORE_INBOX_OR_DUPLICATE");fatal=True;break
+            if not inbox:
+                reasons.append("HUMAN_ACK_BEFORE_INBOX");fatal=True;break
+            if human_ack_count:
+                reasons.append("HUMAN_ACK_DUPLICATE");fatal=True;break
             human_ack_count+=1
             human=True
         elif kind=="DISPATCH_FAILED":
