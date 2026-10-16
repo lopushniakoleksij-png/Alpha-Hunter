@@ -73,7 +73,13 @@ def verify():
         cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIG)))
         cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(OWNER)))
         assert cx.execute("SELECT current_user").fetchone()[0]==OWNER
-        cx.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(SCHEMA)))
+        # No CREATE-on-DATABASE grant to the NOLOGIN owner: migrator has
+        # CREATE DATABASE permission and verified temporary SET permission.
+        cx.execute("RESET ROLE")
+        cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIG)))
+        cx.execute(sql.SQL("CREATE SCHEMA {} AUTHORIZATION {}").format(
+            sql.Identifier(SCHEMA),sql.Identifier(OWNER)))
+        cx.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(OWNER)))
         cx.execute(sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(sql.Identifier(SCHEMA)))
         cx.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
             sql.Identifier(SCHEMA),sql.Identifier(READER)))
