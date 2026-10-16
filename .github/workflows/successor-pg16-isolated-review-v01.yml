@@ -18,6 +18,7 @@ on:
       - 'ops/reviews/successor_pg16_bounded_child_fanout_v01.py'
       - 'ops/reviews/successor_pg16_postgrest_http_contention_v01.py'
       - 'ops/reviews/successor_pg16_atomic_http_cycle_v01.py'
+      - 'ops/reviews/successor_pg16_p0_partial_atomic_monitor_gate_v01.py'
       - 'ops/reviews/successor_p2_ambiguous_http_monitor_gate_v01.py'
       - 'ops/reviews/successor_all_residual_monitor_qualification_v01.py'
       - 'ops/reviews/successor_dual_pg16_position_diagnostic_v01.py'
@@ -80,6 +81,13 @@ jobs:
       - name: Install isolated pinned PostgreSQL driver
         run: |
           python -m pip install --disable-pip-version-check --no-cache-dir 'psycopg[binary]==3.2.10'
+      - name: P0 true 57014 rollback and all-residual atomic child-position seal gate in disposable PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_p0_partial_atomic_monitor_gate_v01.py
+
       - name: Verify least-privilege reader role and row-level security in disposable PG16
         env:
           AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
