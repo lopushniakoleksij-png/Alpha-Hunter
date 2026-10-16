@@ -76,6 +76,31 @@ Alpha Hunter's verified execution-cost calibration; no realistic net-R
 computed. The original WLDUSDT iOS venue order is *not* the separate
 frozen R10 PAPER integrity failure and must not relabel or repair it.
 
+
+## Frozen limit versus later MARKET fill price: NON-CAUSAL price difference
+Third reproducible SELECT-only report
+`ops/reviews/p3_unique_limit_vs_market_price_deviation_readonly_20261016.sql`
+compares the historical frozen planned LIMIT price to the later recorded
+human-UI MARKET fill. It signs direction so positive bps means higher than
+planned entry for a LONG or lower than planned entry for a SHORT.
+
+| Unique method-conflict pair | Frozen LIMIT | Later MARKET fill | Directional price deviation |
+|---|---:|---:|---:|
+| MYXUSDT LONG | 0.06939 | 0.06991 | **+74.94 bps** |
+| WLDUSDT SHORT | 0.5395 | 0.5388 | **+12.97 bps** |
+| ZROUSDT LONG | 1.9919 | 2.0951 | **+518.10 bps** |
+
+**These are not measured slippage or confirmed Alpha Hunter execution costs.**
+Elapsed freeze→manual order was 17.457, 19.593 and 21.143 minutes,
+respectively. No contemporaneous independently qualified quote or
+countefactual resting-LIMIT fill proof exists here. A previously recommended
+LIMIT might never have filled, and an independently executed MARKET order is
+not a system-generated execution of the frozen LIMIT. No size-dependent net
+P&L, stop probability, funding, post-fill markout, trading strategy efficacy
+or user intent can be inferred from this directional descriptive difference.
+The 518.10 bps ZRO observation is worth explicitly retaining as a
+**method/price divergence warning**, not proof of a 5.18% executed strategy loss.
+
 ## Research-only anti-attribution and safety tests
 New pure, **synthetic-only** `ops/reviews/p3_historical_candidate_causality_guard_v01.py`
 and negative regression `tests/test_p3_historical_candidate_causality_guard_v01.py`
