@@ -69,6 +69,7 @@ CREATE VIEW p0_shadow.all_positive_residuals AS
  FROM p0_shadow.orders o
  LEFT JOIN entries en ON en.order_id=o.order_id
  LEFT JOIN exits ex ON ex.order_id=o.order_id
+ LEFT JOIN p0_shadow.quarantine q ON q.order_id=o.order_id
  WHERE coalesce(en.qty,0)-coalesce(ex.qty,0)>0;
 
 CREATE TABLE p0_shadow.source_symbols(
