@@ -33,7 +33,9 @@ def classify_candidate(row):
     ambiguous=row["candidate_status"]=="AMBIGUOUS_EVIDENCE_COMPLETE_MATCH"
     status=("HEURISTIC_AMBIGUOUS_NOT_CAUSAL" if ambiguous else
             "LIMIT_INTENT_MARKET_METHOD_CONFLICT_NOT_CAUSAL" if conflict else
-            "UNIQUE_METHOD_COMPATIBLE_CAUSALITY_NOT_PROVED")
+            "EXECUTE_NOW_LIMIT_METHOD_UNVERIFIED_NOT_CAUSAL"
+            if row["action"]=="EXECUTE_NOW" and row["order_type"]=="LIMIT"
+            else "UNIQUE_METHOD_COMPATIBLE_CAUSALITY_NOT_PROVED")
     return {
         "verdict":status,
         "method_conflict":conflict,
