@@ -2354,7 +2354,63 @@ DASHBOARD_RECOVERY_PAGE = """
       <p class="muted">This page retries automatically every 10 seconds.</p>
       <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
     </div>
+    <div class="card" aria-label="Bitget public reference market">
+      <h2 style="margin:0 0 10px;font-size:21px">Bitget public market prices</h2>
+      <p class="muted" style="margin-top:0">Independent USDT-futures reference quotes. Not Alpha Hunter verified signals, not paper-test evidence, and not trading authorization.</p>
+      <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
+      <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
+      <p id="public-market-time" class="muted" style="font-size:13px"></p>
+    </div>
   </div>
+  <script>
+  (async function () {
+    const state = document.getElementById("public-market-state");
+    const list = document.getElementById("public-market-list");
+    const timeElement = document.getElementById("public-market-time");
+    try {
+      const abort = new AbortController();
+      const timeout = setTimeout(() => abort.abort(), 6000);
+      let response;
+      try {
+        response = await fetch("/api/public-market", {cache:"no-store", signal:abort.signal});
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!response.ok) throw new Error("Public quote feed unavailable");
+      const data = await response.json();
+      if (!Array.isArray(data.quotes) || data.quotes.length !== 4
+          || data.canonical_evidence !== false || data.trade_permission !== false) {
+        throw new Error("Public quote feed not verified");
+      }
+      for (const item of data.quotes) {
+        const age = Date.now() - Number(item.timestamp_ms);
+        if (!Number.isFinite(age) || age < -5000 || age > 90000) {
+          throw new Error("Exchange quote is stale");
+        }
+      }
+      state.textContent = "Public exchange quotes — recent, independently sourced";
+      for (const item of data.quotes) {
+        const tile = document.createElement("div");
+        tile.style.cssText = "padding:12px;border:1px solid #254153;border-radius:10px;background:#0a1520";
+        const symbol = document.createElement("div");
+        symbol.textContent = item.symbol;
+        symbol.style.cssText = "color:#91a3b1;font-size:13px;margin-bottom:6px";
+        const price = document.createElement("div");
+        price.textContent = item.last_price + " USDT";
+        price.style.cssText = "font-weight:700;font-size:18px;overflow-wrap:anywhere";
+        tile.append(symbol, price);
+        list.append(tile);
+      }
+      const oldestMs = Math.min(...data.quotes.map(x => Number(x.timestamp_ms)));
+      timeElement.textContent = "Exchange quote timestamp: " + new Date(oldestMs).toLocaleString()
+        + " (your local time). Public market prices only; do not trade from this screen.";
+    } catch (_) {
+      list.replaceChildren();
+      state.textContent = "Public exchange quotes unavailable. No price is shown without a fresh source.";
+      timeElement.textContent = "";
+    }
+  }());
+  </script>
 </body>
 </html>
 """
@@ -2441,6 +2497,102 @@ def api_latest():
     response.headers["Retry-After"] = "10"
     return response
 
+
+
+# Public Bitget reference quotes are deliberately separate from the sealed
+# canonical Supabase and paper-execution evidence pipeline.
+PUBLIC_MARKET_URL = "https://api.bitget.com/api/v3/market/tickers"
+PUBLIC_MARKET_SYMBOLS = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
+PUBLIC_MARKET_CACHE_SECONDS = 15.0
+PUBLIC_MARKET_MAX_QUOTE_AGE_MS = 90_000
+_PUBLIC_MARKET_CACHE_LOCK = threading.Lock()
+_PUBLIC_MARKET_CACHE_UNTIL = 0.0
+_PUBLIC_MARKET_CACHE: dict[str, Any] | None = None
+
+def public_market_reference() -> dict[str, Any]:
+    """Independently sourced read-only exchange quotes, NEVER strategy evidence."""
+    global _PUBLIC_MARKET_CACHE, _PUBLIC_MARKET_CACHE_UNTIL
+    with _PUBLIC_MARKET_CACHE_LOCK:
+        now = time.monotonic()
+        if now < _PUBLIC_MARKET_CACHE_UNTIL:
+            if _PUBLIC_MARKET_CACHE is None:
+                raise RuntimeError("Public market feed temporarily unavailable")
+            return dict(_PUBLIC_MARKET_CACHE)
+        # Bound the upstream query to protect the web service under failure.
+        _PUBLIC_MARKET_CACHE_UNTIL = now + PUBLIC_MARKET_CACHE_SECONDS
+        _PUBLIC_MARKET_CACHE = None
+        try:
+            response = requests.get(
+                PUBLIC_MARKET_URL,
+                params={"category": "USDT-FUTURES"},
+                timeout=(1.5, 3.0),
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("code") != "00000":
+                raise RuntimeError("Bitget public feed did not confirm success")
+            source_rows = payload.get("data")
+            if not isinstance(source_rows, list):
+                raise RuntimeError("Bitget public feed has no ticker list")
+            server_ms = int(time.time() * 1000)
+            validated: dict[str, dict[str, Any]] = {}
+            for item in source_rows:
+                if not isinstance(item, dict):
+                    continue
+                symbol = item.get("symbol")
+                if symbol not in PUBLIC_MARKET_SYMBOLS or symbol in validated:
+                    continue
+                if item.get("category") not in (None, "USDT-FUTURES"):
+                    continue
+                try:
+                    quote_ms = int(item.get("ts"))
+                    last = Decimal(str(item.get("lastPrice")))
+                except (TypeError, ValueError, InvalidOperation):
+                    continue
+                if (
+                    not last.is_finite() or last <= 0
+                    or quote_ms <= 0
+                    or not (-5_000 <= server_ms - quote_ms <= PUBLIC_MARKET_MAX_QUOTE_AGE_MS)
+                ):
+                    continue
+                validated[symbol] = {
+                    "symbol": symbol,
+                    "last_price": str(last),
+                    "timestamp_ms": quote_ms,
+                }
+            if len(validated) != len(PUBLIC_MARKET_SYMBOLS):
+                raise RuntimeError("Incomplete or stale public market quote set")
+            result = {
+                "source": "Bitget public USDT-FUTURES v3 tickers",
+                "market_status": "PUBLIC_QUOTES_ONLY",
+                "canonical_evidence": False,
+                "paper_test_evidence": False,
+                "trade_permission": False,
+                "quotes": [validated[symbol] for symbol in PUBLIC_MARKET_SYMBOLS],
+                "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+            }
+            _PUBLIC_MARKET_CACHE = result
+            _PUBLIC_MARKET_CACHE_UNTIL = time.monotonic() + PUBLIC_MARKET_CACHE_SECONDS
+            return dict(result)
+        except (requests.RequestException, RuntimeError, ValueError, TypeError):
+            _PUBLIC_MARKET_CACHE_UNTIL = time.monotonic() + PUBLIC_MARKET_CACHE_SECONDS
+            raise RuntimeError("Public market feed temporarily unavailable") from None
+
+
+@app.get("/api/public-market")
+def api_public_market():
+    try:
+        response = jsonify(public_market_reference())
+    except Exception:
+        response = jsonify({
+            "error": "public_market_unavailable",
+            "canonical_evidence": False,
+            "paper_test_evidence": False,
+            "trade_permission": False,
+        })
+        response.status_code = 503
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 @app.get("/api/build")
 def api_build():
