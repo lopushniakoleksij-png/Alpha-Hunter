@@ -75,6 +75,8 @@ def review_fixture(rows, *, now_utc, descriptive_benchmark_count=0):
     accepted = []
     seen_decisions = set()
     seen_fills = set()
+    seen_all_venue_trade_ids = set()
+    seen_component_receipt_ids = set()
     now = clock(now_utc)
     if now is None:
         blockers.add("REVIEW_CLOCK_INVALID")
@@ -105,6 +107,15 @@ def review_fixture(rows, *, now_utc, descriptive_benchmark_count=0):
             reasons.append("DUPLICATE_DECISION_OR_FILL")
         seen_decisions.add(did)
         seen_fills.add(vid)
+        # An entry or exit venue trade ID must not fund multiple supposedly
+        # independent decisions. A venue order may legitimately have many
+        # partial fills; the trade identity, not order ID, is unique.
+        for trade_id in (vid, e.get("exit_venue_trade_id")):
+            if not isinstance(trade_id, str) or not trade_id:
+                continue
+            if trade_id in seen_all_venue_trade_ids:
+                reasons.append("DUPLICATE_ENTRY_OR_EXIT_VENUE_TRADE_ACROSS_ROWS")
+            seen_all_venue_trade_ids.add(trade_id)
         if not all(
             str(x).startswith("synthetic-") for x in
             (did, vid, d.get("source_run_id"), d.get("intended_order_id"),
@@ -154,6 +165,13 @@ def review_fixture(rows, *, now_utc, descriptive_benchmark_count=0):
                         or cst.get("currency") != "USDT"):
                     reasons.append("COMPONENT_SOURCE_OR_CURRENCY_UNVERIFIED:" + key)
                 seen_ref.add(receipt)
+                # Component receipts must be unique across the entire
+                # candidate sample, not merely inside a single row. A copied
+                # fee/funding/quote receipt cannot falsely raise a segment count.
+                if isinstance(receipt, str) and receipt:
+                    if receipt in seen_component_receipt_ids:
+                        reasons.append("DUPLICATE_COMPONENT_RECEIPT_ACROSS_ROWS")
+                    seen_component_receipt_ids.add(receipt)
                 if number(cst.get("amount"), allow_negative=key in SIGNED_COMPONENTS) is None:
                     reasons.append("COMPONENT_NUMERIC_INVALID_OR_MISSING:" + key)
         if not isinstance(d.get("arrival_quote_id"), str) or not d["arrival_quote_id"].startswith("synthetic-"):
