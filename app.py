@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import hmac
 import json
 import math
@@ -43,6 +44,13 @@ SUPABASE_READ_ATTEMPTS = 3
 SUPABASE_READ_TIMEOUT_SECONDS = 12
 SUPABASE_RETRY_BACKOFF_SECONDS = 0.75
 SUPABASE_TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
+
+# Keep dashboard requests below Gunicorn's 30-second default worker timeout.
+# This scope never alters cron ingestion or operator write paths.
+DASHBOARD_READ_BUDGET_SECONDS = 18.0
+_DASHBOARD_READ_DEADLINE = contextvars.ContextVar(
+    "alpha_hunter_dashboard_read_deadline", default=None,
+)
 
 REFERENCE_SYMBOLS = {"BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"}
 
@@ -133,25 +141,40 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise RuntimeError("Supabase environment variables are not configured")
 
+    deadline = _DASHBOARD_READ_DEADLINE.get()
+
+    def bounded_backoff(attempt: int) -> None:
+        delay = SUPABASE_RETRY_BACKOFF_SECONDS * attempt
+        if deadline is not None and time.monotonic() + delay >= deadline:
+            raise RuntimeError("Dashboard Supabase read budget exhausted")
+        time.sleep(delay)
+
     for attempt in range(1, SUPABASE_READ_ATTEMPTS + 1):
+        remaining = deadline - time.monotonic() if deadline is not None else None
+        if remaining is not None and remaining <= 0:
+            raise RuntimeError("Dashboard Supabase read budget exhausted")
+        request_timeout = (
+            min(SUPABASE_READ_TIMEOUT_SECONDS, remaining)
+            if remaining is not None else SUPABASE_READ_TIMEOUT_SECONDS
+        )
         try:
             response = requests.get(
                 f"{SUPABASE_URL}/rest/v1/{table}",
                 params=params,
                 headers=supabase_headers(),
-                timeout=SUPABASE_READ_TIMEOUT_SECONDS,
+                timeout=request_timeout,
             )
         except requests.RequestException:
             if attempt >= SUPABASE_READ_ATTEMPTS:
                 raise
-            time.sleep(SUPABASE_RETRY_BACKOFF_SECONDS * attempt)
+            bounded_backoff(attempt)
             continue
 
         if (
             response.status_code in SUPABASE_TRANSIENT_STATUSES
             and attempt < SUPABASE_READ_ATTEMPTS
         ):
-            time.sleep(SUPABASE_RETRY_BACKOFF_SECONDS * attempt)
+            bounded_backoff(attempt)
             continue
 
         response.raise_for_status()
@@ -496,12 +519,49 @@ def _hydrate_dashboard_snapshot(
             "limit": "2000",
         },
     )
-    snapshot["symbols"] = [
-        child.get("payload")
-        for child in children
-        if isinstance(child, dict)
-        and isinstance(child.get("payload"), dict)
-    ]
+    # A committed compact parent is not evidence that its child writes committed.
+    # Never replace the parent stubs with an empty or partial child set and
+    # silently classify that canonical scan as complete.
+    expected_count = row.get("symbol_count")
+    parent_stubs = snapshot.get("symbols")
+    if expected_count is None and isinstance(parent_stubs, list):
+        expected_count = len(parent_stubs)
+    if (
+        not isinstance(expected_count, int)
+        or isinstance(expected_count, bool)
+        or not (1 <= expected_count <= 2000)
+    ):
+        raise RuntimeError("Compact canonical parent symbol_count is invalid")
+    if len(children) != expected_count:
+        raise RuntimeError("Incomplete compact canonical snapshot child evidence")
+
+    by_symbol: dict[str, dict[str, Any]] = {}
+    for child in children:
+        if not isinstance(child, dict):
+            raise RuntimeError("Invalid compact canonical snapshot child row")
+        symbol = child.get("symbol")
+        detail = child.get("payload")
+        if (
+            not isinstance(symbol, str)
+            or not symbol
+            or not isinstance(detail, dict)
+            or detail.get("symbol") != symbol
+            or symbol in by_symbol
+        ):
+            raise RuntimeError("Invalid or duplicate compact child symbol evidence")
+        by_symbol[symbol] = detail
+    if isinstance(parent_stubs, list):
+        parent_symbols = [
+            stub.get("symbol") if isinstance(stub, dict) else None
+            for stub in parent_stubs
+        ]
+        if (
+            len(parent_symbols) != expected_count
+            or any(not isinstance(symbol, str) for symbol in parent_symbols)
+            or set(parent_symbols) != set(by_symbol)
+        ):
+            raise RuntimeError("Compact canonical parent and child symbol mismatch")
+    snapshot["symbols"] = [by_symbol[symbol] for symbol in sorted(by_symbol)]
     return snapshot
 
 
@@ -2295,16 +2355,30 @@ DASHBOARD_RECOVERY_PAGE = """
 """
 
 
+def bounded_dashboard_payload() -> dict[str, Any]:
+    """Fail closed before Gunicorn can kill a stalled dashboard worker."""
+    token = _DASHBOARD_READ_DEADLINE.set(
+        time.monotonic() + DASHBOARD_READ_BUDGET_SECONDS
+    )
+    try:
+        snapshot = latest_snapshot()
+        test_status = latest_test_engine_status()
+        lifecycle_status = latest_paper_lifecycle_status()
+        if not test_status:
+            raise RuntimeError("Paper execution status unavailable")
+        if time.monotonic() >= _DASHBOARD_READ_DEADLINE.get():
+            raise RuntimeError("Dashboard Supabase read budget exhausted")
+        return dashboard_payload(snapshot, test_status, lifecycle_status)
+    finally:
+        _DASHBOARD_READ_DEADLINE.reset(token)
+
+
 @app.get("/")
 def dashboard():
     try:
         return render_template_string(
             PAGE,
-            data=dashboard_payload(
-                latest_snapshot(),
-                latest_test_engine_status(),
-                latest_paper_lifecycle_status(),
-            ),
+            data=bounded_dashboard_payload(),
         )
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
@@ -2317,13 +2391,7 @@ def dashboard():
 @app.get("/api/latest")
 def api_latest():
     try:
-        return jsonify(
-            dashboard_payload(
-                latest_snapshot(),
-                latest_test_engine_status(),
-                latest_paper_lifecycle_status(),
-            )
-        )
+        return jsonify(bounded_dashboard_payload())
     except Exception:
         app.logger.exception("API latest live-data read failed")
         return jsonify({
