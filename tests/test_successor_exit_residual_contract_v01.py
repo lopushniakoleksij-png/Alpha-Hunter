@@ -48,7 +48,8 @@ def fill(n=1,q="100",bid="0.8053",ask="0.8078",
         quote_id=quote_id or f"synthetic-quote-{n}",
         time_utc=when,quantity=D(q),exit_price=D(price),
         best_bid=D(bid),best_ask=D(ask),visible_exit_size=D(size),
-        fee_bps=D(fee),
+        fee_bps=D(fee),trigger_type="TAKE_PROFIT",
+        trigger_guard_id=f"target-{n-1}",
     )
 
 
@@ -232,13 +233,14 @@ def test_short_side_prices_buy_at_ask_and_profit_formula():
         target=".8",entry_fee=".02",initial_guard=g,
         opened_at_utc="2026-10-02T01:00:00Z")
     f=Fill("f1","a"*64,"q1","2026-10-02T01:01:00Z",q,
-           D(".9005"),D(".899"),D(".9"),D("30"),D("6"))
+           D(".7995"),D(".798"),D(".799"),D("30"),D("6"),
+           "TAKE_PROFIT","t0")
     end=Guard(D(0),D("1.1"),D(".8"),"s1","t1","oco",
              "sa1","ta1",1,"2026-10-02T01:01:01Z","CANCELLED")
     out=apply_synthetic_exit(p,f,next_guard=end,expected_revision=0)
     assert out.status=="SIMULATED_CLOSED"
-    assert out.gross_realized==(D("1")-D(".9005"))*q
-    assert out.net_realized_ex_funding==out.gross_realized-D(".02")-D(".9005")*q*D(6)/D(10000)
+    assert out.gross_realized==(D("1")-D(".7995"))*q
+    assert out.net_realized_ex_funding==out.gross_realized-D(".02")-D(".7995")*q*D(6)/D(10000)
     assert_no_authority(out)
 
 
@@ -280,6 +282,50 @@ def test_terminal_cancellation_ack_must_be_new_for_each_oco_leg():
     assert halted.status=="HALTED_UNRESOLVED"
     assert halted.position.incident=="BOTH_PROTECTIVE_LEGS_NOT_REACKNOWLEDGED"
     assert_no_authority(halted)
+
+
+
+def test_trigger_must_be_linked_to_current_active_protection():
+    with pytest.raises(RejectedTransition,match="TRIGGER_NOT_LINKED"):
+        apply_synthetic_exit(position(),
+          replace(fill(),trigger_guard_id="target-archived"),
+          next_guard=None,expected_revision=0)
+
+
+def test_take_profit_cannot_fill_before_exit_side_quote_reaches_target():
+    p=position()
+    with pytest.raises(RejectedTransition,match="PROTECTIVE_TRIGGER_NOT_OBSERVED"):
+        apply_synthetic_exit(p,fill(bid=".780",ask=".782",
+                                   price=".7797",size="100"),
+                             next_guard=None,expected_revision=0)
+    assert p.remaining==D(362)
+
+
+def test_stop_cannot_derive_from_target_price_quote():
+    p=position()
+    with pytest.raises(RejectedTransition,match="PROTECTIVE_TRIGGER_NOT_OBSERVED"):
+        apply_synthetic_exit(p,replace(fill(),trigger_type="STOP_LOSS",
+                                trigger_guard_id="stop-0"),
+            next_guard=None,expected_revision=0)
+
+
+def test_trigger_type_must_be_current_known_protective_leg():
+    with pytest.raises(RejectedTransition,match="PROTECTIVE_TRIGGER_TYPE_NOT_SUPPORTED"):
+        apply_synthetic_exit(position(),replace(fill(),trigger_type="HORIZON_24H"),
+            next_guard=None,expected_revision=0)
+
+
+def test_stop_side_synthetic_fill_still_requires_residual_guard():
+    p=position()
+    f=fill(bid=".6878",ask=".6887",price=".6877",size="107")
+    f=replace(f,trigger_type="STOP_LOSS",trigger_guard_id="stop-0")
+    r=apply_synthetic_exit(p,f,next_guard=guard("262",1,
+        "2026-10-02T23:03:33Z"),expected_revision=0)
+    assert r.status=="SIMULATED_PARTIAL_PROTECTED"
+    assert r.position.remaining==D("262")
+    assert r.net_realized_ex_funding<0
+    assert_no_authority(r)
+
 
 
 def test_research_contract_has_no_authorsity_and_has_explicit_risk_signoff_gap():
