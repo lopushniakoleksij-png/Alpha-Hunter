@@ -48,6 +48,11 @@ SUPABASE_TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
 # Keep dashboard requests below Gunicorn's 30-second default worker timeout.
 # This scope never alters cron ingestion or operator write paths.
 DASHBOARD_READ_BUDGET_SECONDS = 18.0
+# During a confirmed outage, return the safe recovery page promptly instead
+# of allowing every mobile refresh to open another expensive database query.
+DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS = 75.0
+_DASHBOARD_READ_FAILURE_LOCK = threading.Lock()
+_DASHBOARD_READ_UNAVAILABLE_UNTIL = 0.0
 _DASHBOARD_READ_DEADLINE = contextvars.ContextVar(
     "alpha_hunter_dashboard_read_deadline", default=None,
 )
@@ -2355,8 +2360,28 @@ DASHBOARD_RECOVERY_PAGE = """
 """
 
 
+def dashboard_read_circuit_open() -> bool:
+    """Production-only fast failure for repeated browser refreshes during an outage."""
+    if not os.getenv("RENDER_SERVICE_ID"):
+        return False
+    with _DASHBOARD_READ_FAILURE_LOCK:
+        return time.monotonic() < _DASHBOARD_READ_UNAVAILABLE_UNTIL
+
+
+def _record_dashboard_read_failure() -> None:
+    if not os.getenv("RENDER_SERVICE_ID"):
+        return
+    global _DASHBOARD_READ_UNAVAILABLE_UNTIL
+    with _DASHBOARD_READ_FAILURE_LOCK:
+        _DASHBOARD_READ_UNAVAILABLE_UNTIL = (
+            time.monotonic() + DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS
+        )
+
+
 def bounded_dashboard_payload() -> dict[str, Any]:
     """Fail closed before Gunicorn can kill a stalled dashboard worker."""
+    if dashboard_read_circuit_open():
+        raise RuntimeError("Dashboard read recovery cooldown is active")
     token = _DASHBOARD_READ_DEADLINE.set(
         time.monotonic() + DASHBOARD_READ_BUDGET_SECONDS
     )
@@ -2369,12 +2394,26 @@ def bounded_dashboard_payload() -> dict[str, Any]:
         if time.monotonic() >= _DASHBOARD_READ_DEADLINE.get():
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         return dashboard_payload(snapshot, test_status, lifecycle_status)
+    except Exception:
+        _record_dashboard_read_failure()
+        raise
     finally:
         _DASHBOARD_READ_DEADLINE.reset(token)
 
 
+def _dashboard_recovery_response():
+    response = app.make_response((render_template_string(
+        DASHBOARD_RECOVERY_PAGE, build=build_identity(),
+    ), 503))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "10"
+    return response
+
+
 @app.get("/")
 def dashboard():
+    if dashboard_read_circuit_open():
+        return _dashboard_recovery_response()
     try:
         return render_template_string(
             PAGE,
@@ -2382,23 +2421,25 @@ def dashboard():
         )
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
-        return render_template_string(
-            DASHBOARD_RECOVERY_PAGE,
-            build=build_identity(),
-        ), 503
+        return _dashboard_recovery_response()
 
 
 @app.get("/api/latest")
 def api_latest():
-    try:
-        return jsonify(bounded_dashboard_payload())
-    except Exception:
-        app.logger.exception("API latest live-data read failed")
-        return jsonify({
-            "error": "live_data_unavailable",
-            "retry_after_seconds": 10,
-            "build": build_identity(),
-        }), 503
+    if not dashboard_read_circuit_open():
+        try:
+            return jsonify(bounded_dashboard_payload())
+        except Exception:
+            app.logger.exception("API latest live-data read failed")
+    response = jsonify({
+        "error": "live_data_unavailable",
+        "retry_after_seconds": 10,
+        "build": build_identity(),
+    })
+    response.status_code = 503
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "10"
+    return response
 
 
 @app.get("/api/build")
