@@ -176,7 +176,7 @@ DECLARE
  p successor_lab.positions%ROWTYPE;
  prev successor_lab.guards%ROWTYPE;
  oldev successor_lab.synthetic_exit_events%ROWTYPE;
- event_id text := payload->>'event_id';
+ v_event_id text := payload->>'event_id';
  receipt text := payload->>'receipt_sha256';
  quote text := payload->>'quote_id';
  evt_at timestamptz;
@@ -192,13 +192,13 @@ BEGIN
  IF NOT FOUND THEN RAISE EXCEPTION 'POSITION_NOT_FOUND'; END IF;
  IF coalesce(payload->>'evidence_kind','') <> 'ISOLATED_SYNTHETIC_RECEIPT'
    THEN RAISE EXCEPTION 'ONLY_SYNTHETIC_TEST_RECEIPTS_ALLOWED'; END IF;
- IF event_id IS NULL OR length(event_id)=0 OR receipt !~ '^[0-9a-f]{64}$'
+ IF v_event_id IS NULL OR length(v_event_id)=0 OR receipt !~ '^[0-9a-f]{64}$'
    OR quote IS NULL OR quote='' THEN RAISE EXCEPTION 'MISSING_RECEIPT_IDENTITY'; END IF;
  SELECT * INTO oldev FROM successor_lab.synthetic_exit_events
-   WHERE position_id=p_id AND event_id=event_id;
+   WHERE position_id=p_id AND event_id=v_event_id;
  IF FOUND THEN
    IF oldev.receipt_sha256<>receipt THEN RAISE EXCEPTION 'CONFLICTING_EVENT_ID'; END IF;
-   status := successor_lab.verify_event(p_id,event_id,receipt);
+   status := successor_lab.verify_event(p_id,v_event_id,receipt);
    IF status <> 'VERIFIED_SYNTHETIC_COMMIT_NOT_A_PROVIDER_FILL'
      THEN RAISE EXCEPTION 'REPLAY_NOT_PROVEN: %',status; END IF;
    RETURN 'DUPLICATE_VERIFIED_NOOP';
@@ -272,7 +272,7 @@ BEGIN
  INSERT INTO successor_lab.synthetic_exit_events
  (position_id,event_id,revision,receipt_sha256,quote_id,event_time,
   trigger_type,active_trigger_id,quantity,price,fee,allocated_entry_fee,gross_pnl)
- VALUES (p_id,event_id,p.revision+1,receipt,quote,evt_at,trg,gid,q,px,fee,alloc,gross);
+ VALUES (p_id,v_event_id,p.revision+1,receipt,quote,evt_at,trg,gid,q,px,fee,alloc,gross);
  IF payload->>'inject_fault'='AFTER_FILL'
  THEN RAISE EXCEPTION 'INJECTED_FAILURE_AFTER_FILL'; END IF;
  INSERT INTO successor_lab.guards
@@ -286,7 +286,7 @@ BEGIN
  INSERT INTO successor_lab.custody_ledger
  (position_id,revision,event_id,receipt_sha256,guard_revision,
  remaining_before,remaining_after,recorded_at)
- VALUES(p_id,p.revision+1,event_id,receipt,p.revision+1,p.remaining_qty,rem_qty,evt_at);
+ VALUES(p_id,p.revision+1,v_event_id,receipt,p.revision+1,p.remaining_qty,rem_qty,evt_at);
  IF payload->>'inject_fault'='AFTER_LEDGER'
  THEN RAISE EXCEPTION 'INJECTED_FAILURE_AFTER_LEDGER'; END IF;
  UPDATE successor_lab.positions SET
@@ -299,7 +299,7 @@ BEGIN
    last_event_at=evt_at,
    state=CASE WHEN rem_qty=0 THEN 'CLOSED' ELSE 'PROTECTED' END
  WHERE position_id=p_id;
- status := successor_lab.verify_event(p_id,event_id,receipt);
+ status := successor_lab.verify_event(p_id,v_event_id,receipt);
  IF status<>'VERIFIED_SYNTHETIC_COMMIT_NOT_A_PROVIDER_FILL'
  THEN RAISE EXCEPTION 'SELF_VERIFICATION_FAILED: %',status; END IF;
  RETURN 'ATOMIC_SYNTHETIC_COMMIT_NOT_A_PROVIDER_FILL';
