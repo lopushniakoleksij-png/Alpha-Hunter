@@ -99,7 +99,8 @@ def test_untrusted_or_non_synthetic_historical_data_fails_closed():
 def test_both_historical_audits_are_one_select_and_no_private_ids_in_output():
     paths=[
         REVIEWS/"p3_all_existing_candidate_base_crosscheck_readonly_20261016.sql",
-        REVIEWS/"p3_unique_candidate_method_audit_readonly_20261016.sql"
+        REVIEWS/"p3_unique_candidate_method_audit_readonly_20261016.sql",
+        REVIEWS/"p3_unique_limit_vs_market_price_deviation_readonly_20261016.sql"
     ]
     for path in paths:
         sql=path.read_text()
@@ -122,6 +123,11 @@ def test_both_historical_audits_are_one_select_and_no_private_ids_in_output():
     assert "left join public.alpha_hunter_execution_fill_bindings_v01" in summary
     assert "distinct_venue_orders" in summary
     assert "permission_to_bind_or_restate_r10_execution" in detailed
+    deviation=paths[2].read_text().lower()
+    assert "directional_price_difference_bps_not_execution_slippage" in deviation
+    assert "limit_fill_counterfactual_proven" in deviation
+    assert "false as alpha_hunter_verified_trade_or_cost_evidence" in deviation
+    assert "nullif(planned_entry_price,0)" in deviation
     for private_selection in (
         "c.order_id,", "f.trade_id,", "c.fill_evidence_id,", "o.client_oid_sha256,"
     ):
