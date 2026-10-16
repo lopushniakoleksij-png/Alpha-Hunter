@@ -1544,7 +1544,12 @@ def dashboard_payload(
         )
         # Only the final canonicalized action queue may supply the gate verdict.
         # An S1-S10 raw EXECUTE_NOW is uncalibrated SHADOW intent, not permission.
-        item["_display_gate_action"] = "NOT_APPROVED"
+        item["_display_gate_action"] = (
+            action
+            if status != "SHADOW_CANDIDATE"
+            and action not in {"EXECUTE_NOW", "PLACE_LIMIT"}
+            else "NOT_APPROVED"
+        )
         item["_display_setup_intent"] = (
             f"SHADOW_{proposed}"
             if proposed in {"EXECUTE_NOW", "PLACE_LIMIT"}
@@ -1632,7 +1637,10 @@ def dashboard_payload(
                 continue
             gate_status = str(decision.get("status") or "")
             strategy_item["_display_gate_action"] = (
-                "WAIT_FOR_TRIGGER"
+                "BLOCKED_CONFLICT"
+                if strategy_item.get("_symbol_direction_conflict")
+                and visible_status == "BLOCKED"
+                else "WAIT_FOR_TRIGGER"
                 if visible_status == "PAPER_SIGNAL_ONLY"
                 and gate_status == "WAIT_FOR_TRIGGER"
                 else visible_status
