@@ -21,7 +21,7 @@ jobs:
               start=time.monotonic()
               try:
                   with urllib.request.urlopen(req,timeout=timeout) as f:
-                      data=f.read(200000)
+                      data=f.read(5000000)
                       status=f.status
               except urllib.error.HTTPError as e:
                   status=e.code
@@ -47,7 +47,12 @@ jobs:
           status,raw=check("/api/latest")
           if status==200:
               payload=json.loads(raw)
-              print("API_LATEST_HTTP_200","KEYS",list(payload)[:18],flush=True)
+              snapshot=payload.get("snapshot") or {}
+              engine=payload.get("test_engine") or {}
+              assert (snapshot.get("validation_identity") or {}).get("run_source")=="RENDER_CRON", "noncanonical dashboard source"
+              assert engine.get("paper_only") is True and engine.get("trade_permission") is False, "paper-only blocked status lost"
+              assert engine.get("production_promotion_permitted") is False
+              print("API_LATEST_HTTP_200", "RUN_ID",snapshot.get("run_id"),"COLLECTED",snapshot.get("collected_at_utc"), "ENGINE",engine.get("operational_status"),"TRADE_PERMISSION",engine.get("trade_permission"), flush=True)
           else:
               print("API_LATEST_503_NO_DASHBOARD_PROMOTION")
           PY
