@@ -20,6 +20,7 @@ on:
       - 'ops/reviews/successor_pg16_atomic_http_cycle_v01.py'
       - 'ops/reviews/successor_pg16_p0_partial_atomic_monitor_gate_v01.py'
       - 'ops/reviews/successor_pg16_r1_non_superuser_owner_gate_v01.py'
+      - 'ops/reviews/successor_pg16_r1_temporary_setrole_lifecycle_v01.py'
       - 'ops/reviews/successor_p2_ambiguous_http_monitor_gate_v01.py'
       - 'ops/reviews/successor_all_residual_monitor_qualification_v01.py'
       - 'ops/reviews/successor_dual_pg16_position_diagnostic_v01.py'
@@ -95,6 +96,13 @@ jobs:
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
         run: |
           python ops/reviews/successor_pg16_r1_non_superuser_owner_gate_v01.py
+
+      - name: R1 temporary SET ROLE and forward rollback lifecycle on disposable PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_r1_temporary_setrole_lifecycle_v01.py
 
       - name: Verify least-privilege reader role and row-level security in disposable PG16
         env:
