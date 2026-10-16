@@ -58,7 +58,10 @@ def verify():
             sql.Identifier(OWNER),sql.Identifier(MIG)))
         assert cx.execute("SELECT pg_has_role(current_user,%s,'SET')",(OWNER,)).fetchone()[0]
         elevated=members(cx)
-        assert elevated[0][2] is True and elevated[0][3] is False,elevated
+        # PG16 can record multiple role grants with different grantors:
+        # auto ADMIN SET FALSE and a separate explicit SET TRUE edge.
+        assert len(elevated)>=2 and any(x[1] and not x[2] for x in elevated) \
+            and any(x[2] and not x[3] for x in elevated),elevated
         cx.execute(sql.SQL("RESET ROLE"))
         # Superuser owned base source grants use administrative operator.
         cx.execute(sql.SQL("GRANT SELECT (id,payload) ON public.synthetic_snapshots TO {}").format(
