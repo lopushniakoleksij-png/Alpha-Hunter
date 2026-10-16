@@ -1,0 +1,45 @@
+name: P0 Live Web Recovery Smoke (Isolated)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/p0-live-web-recovery-smoke-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  outage-web-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate production web recovers promptly and does not expose trading controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          base='https://alpha-hunter-j5i3.onrender.com'
+          first="$(mktemp)"
+          second="$(mktemp)"
+          build="$(mktemp)"
+          trap 'rm -f "$first" "$second" "$build"' EXIT
+
+          build_code="$(curl --connect-timeout 8 --max-time 20 -sS -o "$build" -w '%{http_code}' "$base/api/build" || true)"
+          echo "Read-only build endpoint HTTP: $build_code"
+          test "$build_code" = 200
+          python -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d.get("git_branch")=="main"; print("Verified build identity")' "$build"
+
+          start=$SECONDS
+          first_code="$(curl --connect-timeout 8 --max-time 30 -sS -o "$first" -w '%{http_code}' "$base/" || true)"
+          elapsed=$((SECONDS-start))
+          echo "First homepage HTTP $first_code in ${elapsed}s"
+          test "$elapsed" -le 29
+          test "$first_code" = 503
+          grep -q "LIVE DATA TEMPORARILY UNAVAILABLE" "$first"
+          grep -q "Trading actions are intentionally hidden" "$first"
+
+          start=$SECONDS
+          second_code="$(curl --connect-timeout 8 --max-time 10 -sS -o "$second" -w '%{http_code}' "$base/" || true)"
+          elapsed=$((SECONDS-start))
+          echo "Second homepage HTTP $second_code in ${elapsed}s"
+          test "$elapsed" -le 6
+          test "$second_code" = 503
+          grep -q "LIVE DATA TEMPORARILY UNAVAILABLE" "$second"
+
+          echo 'PASS: live web responds with bounded, fail-closed recovery page; no stale trading data.'
