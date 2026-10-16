@@ -164,3 +164,41 @@ def test_offline_review_has_no_service_side_effects():
     assert "requests." not in text and "psycopg." not in text
     assert "place_order(" not in text and "cancel_order(" not in text
     assert "realistic_net_r" in text and "FROZEN_SCIENTIFIC_SPEC" in text
+
+
+def test_exit_venue_trade_id_cannot_be_reused_across_distinct_decisions():
+    rows=[one(0),one(1)]
+    rows[1]["exit_fill"]["exit_venue_trade_id"]=rows[0]["exit_fill"]["exit_venue_trade_id"]
+    out=check(rows)
+    assert "DUPLICATE_ENTRY_OR_EXIT_VENUE_TRADE_ACROSS_ROWS" in out["blockers"]
+    assert out["synthetic_structurally_complete_rows"]==1
+    assert out["production_promotion_permitted"] is False
+
+
+def test_cross_sample_entry_and_exit_trade_identity_cannot_collide():
+    rows=[one(0),one(1)]
+    old=rows[0]["entry_fill"]["venue_trade_id"]
+    rows[1]["exit_fill"]["exit_venue_trade_id"]=old
+    out=check(rows)
+    assert "DUPLICATE_ENTRY_OR_EXIT_VENUE_TRADE_ACROSS_ROWS" in out["blockers"]
+
+
+def test_cross_sample_component_receipt_reuse_cannot_inflate_calibration_counts():
+    rows=[one(i,role=("TAKER" if i<20 else "MAKER"),
+              side=("SHORT" if i<5 else "LONG")) for i in range(30)]
+    shared=rows[0]["components"]["realized_entry_fee_usdt"]["receipt_id"]
+    rows[1]["components"]["realized_entry_fee_usdt"]["receipt_id"]=shared
+    out=check(rows)
+    assert "DUPLICATE_COMPONENT_RECEIPT_ACROSS_ROWS" in out["blockers"]
+    assert out["synthetic_structurally_complete_rows"]==29
+    assert out["synthetic_segment_floors_met"] is False
+    assert out["validated_model"] is False
+    assert out["realistic_net_r"] is None
+
+
+def test_different_cost_components_across_rows_cannot_reuse_same_receipt():
+    rows=[one(0),one(1)]
+    rows[1]["components"]["realized_funding_usdt"]["receipt_id"]=(
+        rows[0]["components"]["signed_exit_slippage_usdt"]["receipt_id"])
+    out=check(rows)
+    assert "DUPLICATE_COMPONENT_RECEIPT_ACROSS_ROWS" in out["blockers"]
