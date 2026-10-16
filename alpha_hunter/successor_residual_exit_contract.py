@@ -208,6 +208,12 @@ def apply_synthetic_exit(
         halted = replace(p, integrity_state="HALTED_UNRESOLVED",
                          incident="CONFLICTING_EVENT_ID")
         return _result("HALTED_UNRESOLVED", halted)
+    if any(x.receipt_sha256 == fill.receipt_sha256 for x in p.fills):
+        # Same original synthetic receipt under another ID is a custody
+        # conflict, not a second distinct execution event.
+        halted = replace(p, integrity_state="HALTED_UNRESOLVED",
+                         incident="REUSED_FILL_RECEIPT_DIGEST")
+        return _result("HALTED_UNRESOLVED", halted)
     if expected_revision != p.revision:
         raise RejectedTransition("STALE_EXPECTED_REVISION")
     if any(x.quote_id == fill.quote_id for x in p.fills):
@@ -247,9 +253,11 @@ def apply_synthetic_exit(
                         expected_revision=p.revision+1,after=fill.time_utc)
         if next_guard.oco_group != p.guard.oco_group:
             raise RejectedTransition("OCO_GROUP_CHANGED_WITHOUT_APPROVAL")
-        if new_remaining and (next_guard.stop_id == p.guard.stop_id and
-                              next_guard.stop_ack == p.guard.stop_ack):
-            raise RejectedTransition("RESIDUAL_PROTECTION_NOT_REACKNOWLEDGED")
+        # Both stop and target acknowledgements must be fresh after each
+        # change, including cancellation when residual reaches zero.
+        if (next_guard.stop_ack == p.guard.stop_ack or
+                next_guard.target_ack == p.guard.target_ack):
+            raise RejectedTransition("BOTH_PROTECTIVE_LEGS_NOT_REACKNOWLEDGED")
     except RejectedTransition as exc:
         halted = replace(p,integrity_state="HALTED_UNRESOLVED",
                          incident=str(exc))
