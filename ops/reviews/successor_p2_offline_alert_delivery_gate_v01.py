@@ -71,7 +71,10 @@ class SyntheticJournal:
               if p["body"]["kind"]==kind
               and p["body"]["evidence"].get("id")==evidence.get("id")]
         if same:
-            if same[0]["body"]["evidence"]==evidence:
+            # Same event/kind/ID with a different clock is a conflicting
+            # custody record, NOT a harmless exact replay.
+            if (same[0]["body"]["evidence"]==evidence
+                and same[0]["body"]["at_second"]==at_second):
                 return False
             raise ValueError("CONFLICTING_DELIVERY_RECEIPT_REPLAY")
         self.receipts.append(row)
@@ -94,6 +97,9 @@ def evaluate(alert,receipts,*,journal_available=True,now_second=None):
     accepted_id=None
     inbox=False
     provider_claim=False
+    provider_delivered_count=0
+    recipient_confirm_count=0
+    human_ack_count=0
     human=False
     enqueued=False
     fatal=False
@@ -139,19 +145,26 @@ def evaluate(alert,receipts,*,journal_available=True,now_second=None):
                 reasons.append("PROVIDER_ACCEPTANCE_UNVERIFIED");fatal=True;break
             accepted_id=msg
         elif kind=="PROVIDER_REPORTED_DELIVERED":
-            if accepted_id is None or evidence.get("provider_message_id")!=accepted_id:
-                reasons.append("PROVIDER_REPORT_UNBOUND");fatal=True;break
+            if (accepted_id is None or evidence.get("provider_message_id")!=accepted_id
+                or provider_delivered_count):
+                reasons.append("PROVIDER_REPORT_UNBOUND_OR_DUPLICATE");fatal=True;break
+            provider_delivered_count+=1
             provider_claim=True  # insufficient for independent receipt
         elif kind=="RECIPIENT_CONFIRMED":
             # The independent inbox, not the provider's webhook, signs proof.
-            if accepted_id is None or evidence.get("provider_message_id")!=accepted_id or (
+            # One provider message cannot acquire multiple supposedly distinct
+            # recipient-confirmation claims for the same immutable alert.
+            if (accepted_id is None or evidence.get("provider_message_id")!=accepted_id
+                or recipient_confirm_count or
                 not isinstance(evidence.get("inbox_receipt_id"),str) or
                 not evidence["inbox_receipt_id"].startswith("mock-inbox-")):
-                reasons.append("RECIPIENT_CONFIRMATION_UNBOUND");fatal=True;break
+                reasons.append("RECIPIENT_CONFIRMATION_UNBOUND_OR_DUPLICATE");fatal=True;break
+            recipient_confirm_count+=1
             inbox=True
         elif kind=="HUMAN_ACKNOWLEDGED":
-            if not inbox:
-                reasons.append("HUMAN_ACK_BEFORE_INBOX");fatal=True;break
+            if not inbox or human_ack_count:
+                reasons.append("HUMAN_ACK_BEFORE_INBOX_OR_DUPLICATE");fatal=True;break
+            human_ack_count+=1
             human=True
         elif kind=="DISPATCH_FAILED":
             reasons.append("DISPATCH_FAILED")
