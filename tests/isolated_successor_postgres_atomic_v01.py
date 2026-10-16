@@ -145,10 +145,10 @@ class IsolatedAtomicReconciliationTests(unittest.TestCase):
         self.assertEqual((eq,remaining,realized,rev,state),(D("362"),D(0),D("362"),3,"CLOSED"))
         self.assertEqual(counts(self.id),[3,4,3])
         self.assertEqual(entry_fees,D(".25"))
-        expected_gross=sum((D(px)-D(".6992"))*q for px,q in [
+        expected_gross=sum((D(px)-D(".6992"))*D(q) for px,q in [
                             (".805","100"),(".832","200"),(".8234","62")])
         self.assertEqual(gross,expected_gross)
-        expected_exit_fees=sum((D(px)*q*D(6)/D(10000)) for px,q in [
+        expected_exit_fees=sum((D(px)*D(q)*D(6)/D(10000)) for px,q in [
                                (".805","100"),(".832","200"),(".8234","62")])
         self.assertEqual(exit_fees,expected_exit_fees)
         self.assertGreater(gross-entry_fees-exit_fees,D(0))
