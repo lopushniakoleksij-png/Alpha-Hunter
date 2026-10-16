@@ -67,3 +67,30 @@ def test_fail_closed_and_no_live_or_scientific_promotion():
     ):
         assert marker in BODY
     assert "2101" not in BODY or "completed_scan_gap_seconds>2100" in BODY
+
+
+def test_overexits_and_any_nonpaper_paper_ledger_row_block_a_structural_pass():
+    # These two counters were previously informational only. Both must be
+    # present in the branch that chooses a failed structural verdict.
+    fail_branch=BODY.split("when (select count(*) from all_order_residuals where residual_qty<0)>0",1)
+    assert len(fail_branch)==2
+    guarded=fail_branch[1].split("then 'fail_closed_residual_or_scan_evidence_incomplete'",1)
+    assert len(guarded)==2
+    assert "where paper_only is distinct from true)>0" in guarded[0]
+    assert "(select unidentified_count from unknown_parent_identity)>0" in guarded[0]
+    assert "(select count(*) from all_order_residuals where residual_qty<0)" in BODY
+    assert "as anomalous_paper_only_flag" in BODY
+
+
+def test_unattributed_parent_sources_cannot_be_silently_filtered_out():
+    # This does NOT classify unauthenticated parents as RENDER_CRON; it
+    # blocks positive safety claims until their source can be attributed.
+    assert "unknown_parent_identity as (" in BODY
+    assert "from public.alpha_hunter_snapshots p" in BODY
+    assert "jsonb_typeof(p.payload->'validation_identity') is distinct from 'object'" in BODY
+    assert "nullif(btrim(p.payload->'validation_identity'->>'run_source'),'') is null" in BODY
+    assert "last_24h_unidentified_parent_sources" in BODY
+    assert "payload->'validation_identity'->>'run_source'='render_cron'" in BODY
+    # Live source identity and quote receipt proof never inferred from this SQL.
+    assert "false as all_cohort_continuous_monitoring_proven" in BODY
+    assert "false as scientific_pass_or_admissions_permitted" in BODY
