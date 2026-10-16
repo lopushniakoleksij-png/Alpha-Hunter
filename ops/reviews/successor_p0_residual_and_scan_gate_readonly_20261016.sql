@@ -40,6 +40,12 @@ WITH entry_totals AS (
     ELSE 'UNEXPLAINED_UNMANAGED'
  END AS incident_disposition
  FROM all_order_residuals WHERE residual_qty>0
+), unknown_parent_identity AS (
+ SELECT count(*) AS unidentified_count
+ FROM public.alpha_hunter_snapshots p
+ WHERE p.collected_at_utc>=now()-interval '24 hours'
+   AND (jsonb_typeof(p.payload->'validation_identity') IS DISTINCT FROM 'object'
+    OR NULLIF(btrim(p.payload->'validation_identity'->>'run_source'),'') IS NULL)
 ), parent AS (
  SELECT run_id,collected_at_utc,symbol_count
  FROM public.alpha_hunter_snapshots
@@ -74,7 +80,8 @@ SELECT now() AS read_at_utc,
   (SELECT count(*) FROM residuals WHERE incident_disposition='QUARANTINED_UNRESOLVED') AS quarantined,
   (SELECT count(*) FROM residuals WHERE incident_disposition='UNEXPLAINED_UNMANAGED') AS unexplained_unmanaged,
   (SELECT count(*) FROM residuals WHERE managed AND NOT two_recorded_legs) AS managed_without_two_recorded_legs,
-  (SELECT count(*) FROM residuals WHERE NOT paper_only) AS anomalous_paper_only_flag,
+  (SELECT count(*) FROM all_order_residuals WHERE paper_only IS DISTINCT FROM true)
+       AS anomalous_paper_only_flag,
   (SELECT jsonb_agg(jsonb_build_object('symbol',symbol,'direction',direction,
                   'order_quantity',order_qty,'entry_quantity',entry_qty,
                   'exit_quantity',exit_qty,'residual_quantity',residual_qty,
@@ -84,6 +91,8 @@ SELECT now() AS read_at_utc,
              ORDER BY submitted_at_utc)
    FROM residuals WHERE incident_disposition='UNEXPLAINED_UNMANAGED') AS unresolved_position_details,
   (SELECT count(*) FROM cycles) AS last_24h_canonical_parents,
+  (SELECT unidentified_count FROM unknown_parent_identity)
+       AS last_24h_unidentified_parent_sources,
   (SELECT count(*) FROM cycles WHERE child_complete) AS last_24h_child_complete,
   (SELECT count(*) FROM cycles WHERE NOT child_complete) AS last_24h_child_incomplete,
   (SELECT count(*) FROM cycles WHERE exit_attempt_rows=0) AS last_24h_without_exit_attempts,
@@ -95,7 +104,11 @@ SELECT now() AS read_at_utc,
    (SELECT count(*) FROM all_order_residuals)=0
    OR (SELECT count(*) FROM cycles)=0
      THEN 'UNKNOWN_SOURCE_OR_PARENT_EMPTY_FAIL_CLOSED'
-   WHEN (SELECT count(*) FROM residuals WHERE incident_disposition='UNEXPLAINED_UNMANAGED')>0
+   WHEN (SELECT count(*) FROM all_order_residuals WHERE residual_qty<0)>0
+   OR (SELECT count(*) FROM all_order_residuals
+        WHERE paper_only IS DISTINCT FROM true)>0
+   OR (SELECT unidentified_count FROM unknown_parent_identity)>0
+   OR (SELECT count(*) FROM residuals WHERE incident_disposition='UNEXPLAINED_UNMANAGED')>0
    OR (SELECT count(*) FROM residuals WHERE managed AND NOT two_recorded_legs)>0
    OR (SELECT count(*) FROM cycles WHERE NOT child_complete)>0
    OR (SELECT count(*) FROM cycles WHERE exit_attempt_rows=0)>0
