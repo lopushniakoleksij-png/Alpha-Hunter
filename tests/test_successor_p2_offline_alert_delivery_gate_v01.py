@@ -179,3 +179,50 @@ def test_no_plaintext_recipient_or_live_promotion_possible():
     assert v["frozen_monitor_maximum_seconds"]==2100
     assert v["independent_long_term_durability_verified"] is False
     assert v["external_deadman_operational"] is False
+
+
+def test_conflicting_receipt_timestamp_is_not_idempotent_replay():
+    a,j=accepted(*setup())
+    # Identical event/type/ID/evidence, but a conflicting timestamp must not
+    # be swallowed as an exact replay by the append-only custody journal.
+    with pytest.raises(ValueError, match="CONFLICTING_DELIVERY_RECEIPT_REPLAY"):
+        j.add("PROVIDER_ACCEPTED",19,{
+            "id":"provider-a","provider_message_id":"mock-msg-001"})
+    assert len(j.receipts)==2
+    assert evaluate(a,j.receipts,now_second=20)["status"]=="FAIL_CLOSED_DELIVERY_UNKNOWN"
+    # The exact original timestamp remains idempotent with zero extra rows.
+    assert j.add("PROVIDER_ACCEPTED",11,{
+        "id":"provider-a","provider_message_id":"mock-msg-001"}) is False
+    assert len(j.receipts)==2
+
+
+def test_multiple_distinct_signed_inbox_confirmations_fail_closed():
+    a,j=inbox(*accepted(*setup()))
+    j.add("RECIPIENT_CONFIRMED",13,{
+        "id":"inbox-second","provider_message_id":"mock-msg-001",
+        "inbox_receipt_id":"mock-inbox-second"})
+    verdict=evaluate(a,j.receipts,now_second=20)
+    assert "RECIPIENT_CONFIRMATION_DUPLICATE" in verdict["blockers"]
+    assert verdict["status"]=="FAIL_CLOSED_DELIVERY_UNKNOWN"
+    assert verdict["offline_independent_recipient_fixture_verified"] is False
+    assert verdict["real_inbox_delivery_verified"] is False
+
+
+def test_duplicate_provider_delivery_claim_cannot_satisfy_independent_recipient():
+    a,j=accepted(*setup())
+    j.add("PROVIDER_REPORTED_DELIVERED",12,{
+        "id":"provider-report-a","provider_message_id":"mock-msg-001"})
+    j.add("PROVIDER_REPORTED_DELIVERED",13,{
+        "id":"provider-report-b","provider_message_id":"mock-msg-001"})
+    verdict=evaluate(a,j.receipts,now_second=20)
+    assert "PROVIDER_REPORT_DUPLICATE" in verdict["blockers"]
+    assert verdict["actual_alert_delivery_verified"] is False
+
+
+def test_multiple_signed_human_acknowledgements_fail_closed():
+    a,j=inbox(*accepted(*setup()))
+    j.add("HUMAN_ACKNOWLEDGED",13,{"id":"mock-human-ack-1"})
+    j.add("HUMAN_ACKNOWLEDGED",14,{"id":"mock-human-ack-2"})
+    verdict=evaluate(a,j.receipts,now_second=20)
+    assert "HUMAN_ACK_DUPLICATE" in verdict["blockers"]
+    assert verdict["actual_alert_delivery_verified"] is False
