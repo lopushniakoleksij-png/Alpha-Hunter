@@ -103,7 +103,7 @@ def test_unapproved_watch_intent_stays_watch_only():
     strategy["status"] = "WATCH"
     result = app.dashboard_payload(build_snapshot([row]))
     item = result["strategy_shadow"][0]
-    assert item["_display_gate_action"] == "WAIT_FOR_TRIGGER"
+    assert item["_display_gate_action"] == "NOT_APPROVED"
     assert item["_display_setup_intent"] == "WATCH_ONLY"
     assert item["trade_permission"] is False
     assert result["trade_ready"] == []
