@@ -81,6 +81,8 @@ class Fill:
     best_ask: Decimal
     visible_exit_size: Decimal
     fee_bps: Decimal
+    trigger_type: str
+    trigger_guard_id: str
     # Only isolated synthetic receipts accepted by this test state machine.
     evidence_kind: str = "ISOLATED_SYNTHETIC_RECEIPT"
     receipt_status: str = "SIMULATED_CONFIRMED"
@@ -220,6 +222,12 @@ def apply_synthetic_exit(
         raise RejectedTransition("REUSED_MARKET_OBSERVATION_NOT_EXECUTION_CUSTODY")
     if fill.evidence_kind != "ISOLATED_SYNTHETIC_RECEIPT" or fill.receipt_status != "SIMULATED_CONFIRMED":
         raise RejectedTransition("PROVIDER_FILL_EVIDENCE_NOT_SUPPORTED_BY_RESEARCH")
+    if fill.trigger_type not in ("STOP_LOSS", "TAKE_PROFIT"):
+        raise RejectedTransition("PROTECTIVE_TRIGGER_TYPE_NOT_SUPPORTED")
+    valid_guard_id = (p.guard.stop_id if fill.trigger_type=="STOP_LOSS"
+                      else p.guard.target_id)
+    if fill.trigger_guard_id != valid_guard_id:
+        raise RejectedTransition("TRIGGER_NOT_LINKED_TO_ACTIVE_PROTECTIVE_LEG")
     if utc(fill.time_utc) <= utc(p.last_event_at_utc):
         raise RejectedTransition("NONMONOTONE_OR_PRE_ENTRY_EVENT")
     q, price, bid, ask, visible, fee_bps = map(
@@ -235,6 +243,14 @@ def apply_synthetic_exit(
     if not (0 <= fee_bps <= MAX_RESEARCH_TAKER_FEE_BPS):
         raise RejectedTransition("UNAPPROVED_FEE_BOUND")
     exit_side_cross = bid if p.direction=="LONG" else ask
+    stop_hit = (bid <= p.stop_price if p.direction=="LONG"
+                else ask >= p.stop_price)
+    target_hit = (bid >= p.target_price if p.direction=="LONG"
+                  else ask <= p.target_price)
+    if stop_hit and target_hit:
+        raise RejectedTransition("SIMULTANEOUS_TRIGGER_UNORDERED")
+    if not (stop_hit if fill.trigger_type=="STOP_LOSS" else target_hit):
+        raise RejectedTransition("PROTECTIVE_TRIGGER_NOT_OBSERVED")
     # No bonus from optimistic market-price improvement in this model.
     adverse_bps = (
         (exit_side_cross - price) / exit_side_cross
