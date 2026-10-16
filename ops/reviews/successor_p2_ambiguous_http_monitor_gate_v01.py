@@ -121,6 +121,12 @@ def structural_readback(dsn,run,submitted):
                  expected_observations,actual_observations,expected_episodes,
                  actual_episodes,immutable_child_digest,scientific_pass_permitted
                  FROM successor_shadow.atomic_stage_receipts WHERE run_id=%s""",(run,)).fetchall()
+            # Calculate independently from the submitted manifest under the
+            # same PG JSONB serialization as the atomic writer. Row counts,
+            # a successful HTTP response and a supplied digest are not proof.
+            expected_digest=c.execute("""SELECT pg_catalog.encode(
+              pg_catalog.sha256(pg_catalog.convert_to(%s::jsonb::text,'UTF8')),'hex')""",
+              (json.dumps(submitted["p_rows"]),)).fetchone()[0]
             parents=c.execute("""SELECT count(*) FROM public.alpha_hunter_snapshots
                                  WHERE run_id=%s""",(run,)).fetchone()[0]
             children=c.execute("""SELECT symbol,collected_at_utc,payload,trade_permission
@@ -139,6 +145,8 @@ def structural_readback(dsn,run,submitted):
         return False
     submitted_rows=sorted(submitted["p_rows"],key=lambda r:r["symbol"])
     expected_time=utc(submitted_rows[0]["collected_at_utc"])
+    if t[0]!=expected_time or t[7]!=expected_digest:
+        return False
     for actual,source in zip(children,submitted_rows):
         if (actual[0]!=source["symbol"] or actual[1]!=expected_time or
            actual[2]!=source["payload"] or actual[3] is not False):
@@ -186,6 +194,22 @@ def classify(dsn,journal,key,source,inventory,*,allow_journal=True):
         return "INCOMPLETE_OR_AMBIGUOUS_PARENT_CHILD_OR_STRATEGY"
     if not allow_journal:
         return "INDEPENDENT_JOURNAL_UNKNOWN"
+    # This is a supplied SYNTHETIC inventory, not a verified production
+    # source. Even local-only qualification requires an exact content-bound,
+    # unique and protected per-order expected manifest. It never allows
+    # actual live-monitoring or scientific completeness.
+    positions=inventory.get("positions")
+    if (inventory.get("status")!="SUPPLIED_SOURCE_ROWS_RECONCILED_NOT_INDEPENDENT_ATTESTATION"
+        or not isinstance(positions,list)
+        or not positions
+        or inventory.get("manifest_sha256")!=sha(positions)
+        or len({p.get("entry_order_id") for p in positions})!=len(positions)
+        or any(p.get("disposition")!="MANAGED_PROTECTED"
+          or p.get("two_records") is not True
+          or p.get("residual_qty")!="1.5"
+          or p.get("symbol") not in {r["symbol"] for r in source["p_rows"]}
+          for p in positions)):
+        return "POSITION_SOURCE_MANIFEST_INCOMPLETE"
     rows=sealed_rows(journal,key,run)
     if len(rows)!=len(inventory["positions"]):
         return "MANAGED_RECEIPTS_MISSING"
@@ -270,6 +294,37 @@ def verify():
         parent_sha=next(x for x in sealed_rows(journal,key,"synthetic-p2-atomic-prior-monitor")
                         if x["entry_order_id"]==second["entry_order_id"])["record_sha256"]
         insert_seal(journal,key,seal_fields(source["p_run_id"],second["entry_order_id"],second["symbol"],when,parent_sha,cap))
+        assert classify(dsn,journal,key,source,inv)=="LOCAL_STRUCTURAL_RECEIPTS_VERIFIED_NOT_SCIENTIFIC_COMPLETE"
+        # Negative regression: a complete journal cannot authenticate a
+        # missing, duplicated, altered or false-protection source manifest.
+        bad_manifest=dict(inv,manifest_sha256="0"*64)
+        assert classify(dsn,journal,key,source,bad_manifest)=="POSITION_SOURCE_MANIFEST_INCOMPLETE"
+        missing_inventory=dict(inv,positions=inv["positions"][:1],
+                               manifest_sha256=sha(inv["positions"][:1]))
+        assert classify(dsn,journal,key,source,missing_inventory)=="MANAGED_RECEIPTS_MISSING"
+        duplicate_positions=inv["positions"][:1]*2
+        assert classify(dsn,journal,key,source,dict(inv,positions=duplicate_positions,
+                  manifest_sha256=sha(duplicate_positions)))=="POSITION_SOURCE_MANIFEST_INCOMPLETE"
+        unprotected_positions=[dict(p) for p in inv["positions"]]
+        unprotected_positions[0]["two_records"]=False
+        assert classify(dsn,journal,key,source,dict(inv,positions=unprotected_positions,
+                  manifest_sha256=sha(unprotected_positions)))=="POSITION_SOURCE_MANIFEST_INCOMPLETE"
+        # Simulate post-commit child tampering with SAME child count. Parent,
+        # strategy and journal counts remain correct but the content readback
+        # must reject the run, even though the server had originally committed.
+        corrupted_symbol=source["p_rows"][0]["symbol"]
+        with make_conn(dsn,DBNAME) as tamper:
+            tamper.execute("""UPDATE public.alpha_hunter_symbol_snapshots
+              SET payload=pg_catalog.jsonb_set(payload,'{last_price}','"999999"'::jsonb,true)
+              WHERE run_id=%s AND symbol=%s""",(source["p_run_id"],corrupted_symbol))
+        assert inspect_atomic(dsn,source["p_run_id"])==(1,2,20,4,1)
+        assert classify(dsn,journal,key,source,inv)=="INCOMPLETE_OR_AMBIGUOUS_PARENT_CHILD_OR_STRATEGY"
+        # Restore only synthetic data to leave subsequent boundary tests
+        # independent; live historical source rows are never touched.
+        with make_conn(dsn,DBNAME) as restore:
+            restore.execute("""UPDATE public.alpha_hunter_symbol_snapshots
+              SET payload=%s::jsonb WHERE run_id=%s AND symbol=%s""",
+              (json.dumps(source["p_rows"][0]["payload"]),source["p_run_id"],corrupted_symbol))
         assert classify(dsn,journal,key,source,inv)=="LOCAL_STRUCTURAL_RECEIPTS_VERIFIED_NOT_SCIENTIFIC_COMPLETE"
         # Frozen 35-minute limit is per-position, measured against each
         # preceding observation; a successful parent HTTP response cannot
