@@ -242,6 +242,46 @@ def test_short_side_prices_buy_at_ask_and_profit_formula():
     assert_no_authority(out)
 
 
+
+def test_reused_synthetic_receipt_digest_under_new_event_id_halts():
+    r=apply_synthetic_exit(position(),fill(),next_guard=guard("262",1,
+        "2026-10-02T23:03:33Z"),expected_revision=0)
+    second=fill(2,q="30",bid="0.8327",ask="0.8353",price=".832",
+                size="300")
+    duplicated=replace(second,receipt_sha256=fill().receipt_sha256)
+    halted=apply_synthetic_exit(r.position,duplicated,next_guard=None,
+                                expected_revision=1)
+    assert halted.status=="HALTED_UNRESOLVED"
+    assert halted.position.incident=="REUSED_FILL_RECEIPT_DIGEST"
+    assert halted.position.remaining==D(262)
+    assert halted.position.integrity_state=="HALTED_UNRESOLVED"
+    assert_no_authority(halted)
+
+
+@pytest.mark.parametrize("old_ack",["stop","target"])
+def test_each_residual_oco_leg_requires_fresh_acknowledgement(old_ack):
+    original=position()
+    g=guard("262",1,"2026-10-02T23:03:33Z",
+            stop_ack="stop-ack-0" if old_ack=="stop" else "stop-ack-1",
+            target_ack="target-ack-0" if old_ack=="target" else "target-ack-1")
+    failed=apply_synthetic_exit(original,fill(),next_guard=g,expected_revision=0)
+    assert failed.status=="HALTED_UNRESOLVED"
+    assert failed.position.incident=="BOTH_PROTECTIVE_LEGS_NOT_REACKNOWLEDGED"
+    assert failed.position.remaining==D(362)
+    assert_no_authority(failed)
+
+
+def test_terminal_cancellation_ack_must_be_new_for_each_oco_leg():
+    original=position()
+    stopped=guard("0",1,"2026-10-02T23:03:33Z",status="CANCELLED",
+                  target_ack="target-ack-0")
+    f=fill(q="362",size="362")
+    halted=apply_synthetic_exit(original,f,next_guard=stopped,expected_revision=0)
+    assert halted.status=="HALTED_UNRESOLVED"
+    assert halted.position.incident=="BOTH_PROTECTIVE_LEGS_NOT_REACKNOWLEDGED"
+    assert_no_authority(halted)
+
+
 def test_research_contract_has_no_authorsity_and_has_explicit_risk_signoff_gap():
     src=Path("alpha_hunter/successor_residual_exit_contract.py").read_text()
     for bad in ("import requests","urllib","psycopg","sqlalchemy","supabase",
