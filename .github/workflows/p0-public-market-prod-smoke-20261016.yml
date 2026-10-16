@@ -1,0 +1,56 @@
+name: P0 Production Public Market Smoke (Isolated)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/p0-public-market-prod-smoke-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  public-market-prod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate live web build and fresh quote isolation
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,time,urllib.request,urllib.error
+          base="https://alpha-hunter-j5i3.onrender.com"
+          def get(path,timeout=27):
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(base+path,headers={"User-Agent":"AlphaHunter-public-live-test/1.0"}),timeout=timeout) as r:
+                      return r.status,r.read().decode("utf-8")
+              except urllib.error.HTTPError as e:
+                  return e.code,e.read().decode("utf-8")
+          code,body=get("/api/build")
+          assert code==200,(code,body[:300])
+          build=json.loads(body)
+          assert build.get("git_commit","").startswith("b7a49f3"),build
+          print("PASS: live web build",build["git_commit"][:7])
+          code,body=get("/api/public-market")
+          assert code==200,(code,body[:400])
+          payload=json.loads(body)
+          assert payload.get("canonical_evidence") is False
+          assert payload.get("paper_test_evidence") is False
+          assert payload.get("trade_permission") is False
+          assert payload.get("market_status")=="PUBLIC_QUOTES_ONLY"
+          quotes=payload.get("quotes")
+          assert isinstance(quotes,list) and len(quotes)==4
+          assert {q["symbol"] for q in quotes}=={"BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"}
+          now=int(time.time()*1000)
+          for q in quotes:
+              assert float(q["last_price"])>0
+              age=now-int(q["timestamp_ms"])
+              assert -5000<=age<=90000,(q["symbol"],age)
+              print("PASS",q["symbol"],"quote_age_ms",age)
+          code,body=get("/",timeout=30)
+          assert code in (200,503),code
+          if code==503:
+              assert "LIVE DATA TEMPORARILY UNAVAILABLE" in body
+              assert "Bitget public market prices" in body
+              assert "Trading actions are intentionally hidden" in body
+              print("PASS: fail-closed outage page shows independent quote panel")
+          else:
+              print("LIVE DASHBOARD HTTP 200 - further scientific evidence check needed")
+          print("PASS: public market feed isolated from canonical scan/trade authority")
+          PY
