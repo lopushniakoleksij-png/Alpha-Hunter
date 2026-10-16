@@ -1,0 +1,54 @@
+name: P0-P1 Read Only Legacy32 Public Evidence Reconstruction
+on:
+  pull_request:
+    paths:
+      - 'ops/research/legacy32_canonical_manifest_readonly_20261017.json'
+      - 'ops/research/legacy32_public_first_touch_v01.py'
+      - 'ops/research/legacy32_independent_higher_tf_v01.py'
+      - '.github/workflows/p0-p1-legacy32-public-replay-20261017.yml'
+permissions:
+  contents: read
+jobs:
+  public-forensic:
+    name: "legacy32-${{ matrix.mode }}-shard-${{ matrix.shard }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: ["p0","p1"]
+        shard: [0,1,2,3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: No production credentials or writes
+        shell: bash
+        run: |
+          ! env | grep -E '^SUPABASE|^BITGET_|^DATABASE_URL='
+          python - <<'PY'
+          import json,hashlib,pathlib
+          p=pathlib.Path("ops/research/legacy32_canonical_manifest_readonly_20261017.json")
+          data=json.loads(p.read_bytes())
+          assert len(data["trades"])==32 and data["historical_only"]
+          assert len(set(x["exit_fill_id"] for x in data["trades"]))==32
+          print("FROZEN_MANIFEST_32",hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+      - name: Public source only retrospective reconstruction
+        shell: bash
+        run: |
+          if [ "${{ matrix.mode }}" = p0 ]; then
+            python ops/research/legacy32_public_first_touch_v01.py \
+              --shard ${{ matrix.shard }} --shards 4
+          else
+            python ops/research/legacy32_independent_higher_tf_v01.py \
+              --shard ${{ matrix.shard }} --shards 4
+          fi
+      - name: Preserve original public responses with custody digests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "legacy32-${{ matrix.mode }}-${{ matrix.shard }}-evidence"
+          path: |
+            p0-public-research/
+            p1-public-regime/
+          retention-days: 14
+          if-no-files-found: warn
