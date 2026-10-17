@@ -79,9 +79,9 @@ def setup_writer(monkeypatch, child_mode="complete", parent_mode="complete",
 
 def _parent_states(calls):
     return [
-        rows[0]["payload"].get("_canonical_publication_state")
-        for action, table, rows in calls
-        if action == "write" and table == "alpha_hunter_snapshots"
+        call[2][0]["payload"].get("_canonical_publication_state")
+        for call in calls
+        if call[0] == "write" and call[1] == "alpha_hunter_snapshots"
     ]
 
 
