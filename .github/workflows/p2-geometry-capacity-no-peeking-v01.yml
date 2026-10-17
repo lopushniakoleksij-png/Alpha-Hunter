@@ -1,0 +1,29 @@
+name: P2 Geometry Capacity and No-Peeking Research
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/geometry_preunseal_capacity_gate_v01.py'
+      - 'ops/research/p2_geometry_due_capacity_readonly_v01.sql'
+      - 'ops/research/P2_GEOMETRY_CAPACITY_NO_PEEKING_DECISION_20261017.md'
+      - 'tests/test_geometry_preunseal_capacity_gate_v01.py'
+      - '.github/workflows/p2-geometry-capacity-no-peeking-v01.yml'
+permissions:
+  contents: read
+jobs:
+  pure-capacity-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install only static test dependencies
+        run: python -m pip install --disable-pip-version-check 'pytest>=8,<9' 'pglast>=6,<8'
+      - name: Fail closed on arithmetic, authority or outcome leaks
+        run: python -m pytest -q tests/test_geometry_preunseal_capacity_gate_v01.py
+      - name: No live endpoint or secrets
+        shell: bash
+        run: |
+          ! env | grep -E '^SUPABASE|^BITGET_|^DATABASE_URL='
+          echo 'Static capacity test complete; no cron update, DB mutation or sealed outcome read.'
