@@ -1,0 +1,29 @@
+name: P2 Read Only Pre-Unseal Censoring Integrity Audit
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/geometry_preunseal_operational_gate_v01.py'
+      - 'ops/research/p2_geometry_preunseal_censoring_audit_v01.sql'
+      - 'ops/research/P2_PREUNSEAL_CENSORING_INDEPENDENCE_REVIEW_20261017.md'
+      - 'tests/test_geometry_preunseal_operational_gate_v01.py'
+      - '.github/workflows/p2-preunseal-censoring-v01.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-preunseal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install AST parser and test runner
+        run: python -m pip install --disable-pip-version-check pytest pglast
+      - name: Verify no seal read, numeric gating and source independence
+        run: python -m pytest -q tests/test_geometry_preunseal_operational_gate_v01.py
+      - name: Assert zero production/exchange credentials
+        shell: bash
+        run: |
+          ! env | grep -E '^SUPABASE|^BITGET_|^DATABASE_URL='
+          echo 'No production database, secret, exchange order, primary outcome or scientific result used.'
