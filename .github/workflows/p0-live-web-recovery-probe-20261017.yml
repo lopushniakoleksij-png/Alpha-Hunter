@@ -65,6 +65,23 @@ jobs:
                   print("dashboard_evidence=returned")
                   print("snapshot_updated=", str(payload.get("updated") or "unavailable"))
                   print("no_false_503=true")
+                  # One browser-equivalent GET verifies the HTML page, not
+                  # merely its underlying JSON API. No order or DB writes.
+                  page_req = urllib.request.Request(
+                      base + "/",
+                      headers={
+                          "Accept": "text/html",
+                          "Cache-Control": "no-cache",
+                          "User-Agent": "AlphaHunter-ReadOnly-GHA-Recovery-Probe",
+                      },
+                      method="GET",
+                  )
+                  with urllib.request.urlopen(page_req, timeout=35) as page:
+                      html_status = page.status
+                      html_sample = page.read(400000).decode("utf-8", "replace")
+                  print("dashboard_html_status=", html_status)
+                  if html_status != 200 or "Alpha Hunter Dashboard" not in html_sample:
+                      raise RuntimeError("Dashboard HTML is not serving correctly")
               elif latest_status == 503:
                   if payload.get("error") != "live_data_unavailable":
                       raise RuntimeError("503 response lacks fail-closed contract")
