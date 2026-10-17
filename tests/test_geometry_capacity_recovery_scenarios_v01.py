@@ -116,3 +116,35 @@ def test_capacity_scenario_script_has_no_venue_or_database_access():
                  "place_order(","cancel_order(","read_outcomes("):
         assert word not in src
     no_permissions(run(hours_between_runs=1,success_fraction="1"))
+
+
+def test_retrospective_retry_timing_would_change_even_if_sql_is_unchanged():
+    """Synthetic always-failing market symbol; no real study result is read."""
+    from datetime import datetime, timedelta, timezone
+
+    sql=Path("geometry_holdout_sealed_evaluator_v01.sql").read_text()
+    assert "v_prior_failures>=3" in sql
+    assert "interval '6 hours'" in sql
+    assert "raise exception 'SYMBOL_NOT_URL_SAFE'" in sql
+    assert "limit 40" in sql.lower()
+
+    due=datetime(2026,10,1,0,0,tzinfo=timezone.utc)
+
+    def hypothetical_terminal_after(hours_per_run):
+        errors=0
+        for hour in range(0,48,hours_per_run):
+            tick=due+timedelta(hours=hour,minutes=38)
+            if tick<=due+timedelta(minutes=5):
+                continue
+            errors+=1  # synthetic error on every attempt, never a true outcome
+            if errors>=3 and tick>due+timedelta(hours=6):
+                return tick
+        raise AssertionError("Expected synthetic terminal threshold")
+
+    legacy=hypothetical_terminal_after(6)
+    proposed=hypothetical_terminal_after(1)
+    assert legacy==due+timedelta(hours=12,minutes=38)
+    assert proposed==due+timedelta(hours=6,minutes=38)
+    assert proposed<legacy
+    # Important: no test result authorizes any scientific protocol retiming.
+    no_permissions(run(hours_between_runs=1,success_fraction="0.8"))
