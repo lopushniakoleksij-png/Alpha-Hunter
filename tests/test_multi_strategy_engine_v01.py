@@ -154,8 +154,12 @@ def test_s6_sweep_reclaim_uses_previous_canonical_levels():
         "low": 99.0,
         "close": 101.0,
     }
+    record["timeframes"]["1H"]["last_closed_candle"] = dict(
+        record["timeframes"]["1H"]["latest_candle"]
+    )
     previous = {"support": 100.0, "resistance": 112.0}
 
+    _stamp_valid_s6_clock(record)
     payload = apply_multi_strategy_engine(record, previous, config())
     s6 = by_id(payload, "S6")
 
@@ -212,3 +216,325 @@ def test_disabled_engine_still_cannot_grant_permission():
     assert all(row["status"] == "DISABLED" for row in payload["strategies"])
     assert record["trade_permission"] is False
     assert payload["trade_permission"] is False
+
+
+def _stamp_valid_s6_clock(record):
+    """Bind the fixture to the actual canonical 15 Oct 12:23 UTC source clock."""
+    record["collected_at_utc"] = "2026-10-15T12:20:24.956714+00:00"
+    record["timeframes"]["1H"]["latest_candle"]["timestamp"] = 1792065600000
+    closed = record["timeframes"]["1H"].get("last_closed_candle")
+    if isinstance(closed, dict):
+        closed["timestamp"] = 1792062000000
+
+
+def test_s6_mmt_live_wick_does_not_confirm_closed_candle_reclaim():
+    """15 Oct 2026 12:23 UTC: MMT was SHORT across 15m/1H/4H."""
+    record = base_record()
+    record.update(
+        symbol="MMTUSDT",
+        last_price=0.1412,
+        support=0.1402,
+        resistance=0.1758,
+        market_phase="BREAKDOWN",
+        opportunity_timing="LATE",
+    )
+    for timeframe in ("15m", "1H", "4H"):
+        record["timeframes"][timeframe]["trend"] = "BEARISH"
+    record["timeframes"]["1H"]["latest_candle"] = {
+        "open": 0.1414, "high": 0.1416, "low": 0.1402, "close": 0.1412,
+        "timestamp": 1792065600000,
+    }
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 0.1431, "high": 0.1437, "low": 0.1406, "close": 0.1414,
+        "timestamp": 1792062000000,
+    }
+    record["timeframes"]["1H"]["indicators"]["volume_anomaly"] = {
+        "state": "HIGH", "ratio": 2.061, "source": "LAST_CLOSED",
+    }
+
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 0.1406, "resistance": 0.1758}, config()
+        ), "S6"
+    )
+    assert s6["direction"] is None
+    assert s6["status"] == "NO_SETUP"
+    assert s6["action"] == "NO_SAFE_TRADE"
+    assert s6["signal_score"] == 4.0
+    assert s6["evidence"]["candle_basis"] == "LAST_FULLY_CLOSED_1H"
+    assert s6["trade_permission"] is False
+
+
+def test_s6_closed_countertrend_reclaim_is_watch_not_execute_now():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["market_phase"] = "BREAKDOWN"
+    record["opportunity_timing"] = "LATE"
+    for timeframe in ("15m", "1H", "4H"):
+        record["timeframes"][timeframe]["trend"] = "BEARISH"
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 100.0, "resistance": 112.0}, config()
+        ), "S6"
+    )
+    assert s6["direction"] == "LONG"
+    assert s6["status"] == "WATCH"
+    assert s6["action"] == "WAIT_FOR_TRIGGER"
+    assert s6["signal_score"] == 6.0
+    assert s6["checks"]["parent_direction_aligned"] is False
+    assert s6["checks"]["timing_acceptable"] is False
+    assert s6["trade_permission"] is False
+
+
+def test_s6_valid_confirmed_closed_short_remains_discoverable():
+    record = base_record()
+    record["last_price"] = 99.0
+    record["support"] = 85.0
+    record["timeframes"]["1H"]["support"] = 85.0
+    record["timeframes"]["4H"]["support"] = 85.0
+    for timeframe in ("15m", "1H", "4H"):
+        record["timeframes"][timeframe]["trend"] = "BEARISH"
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 99.5, "high": 100.5, "low": 97.0, "close": 99.0,
+    }
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 92.0, "resistance": 100.0}, config()
+        ), "S6"
+    )
+    assert s6["direction"] == "SHORT"
+    assert s6["status"] == "SHADOW_CANDIDATE"
+    assert s6["action"] == "EXECUTE_NOW"
+    assert s6["checks"]["parent_direction_aligned"] is True
+    assert s6["signal_score"] == 10.0
+    assert s6["trade_permission"] is False
+
+
+def test_s6_outlier_geometry_stays_watch_before_paper_decision():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 101.0, "high": 103.0, "low": 100.0, "close": 101.0,
+    }
+    settings = config()
+    settings["candidate_quality"]["maximum_action_reward_risk"] = 25.0
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 100.5, "resistance": 112.0}, settings
+        ), "S6"
+    )
+    assert s6["direction"] == "LONG"
+    assert s6["rr"] == 29.0
+    assert s6["status"] == "WATCH"
+    assert s6["action"] == "WAIT_FOR_TRIGGER"
+    assert s6["checks"]["rr_not_outlier"] is False
+    assert s6["signal_score"] == 6.0
+
+
+def test_s6_missing_closed_candle_fails_closed_even_with_live_sweep():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["latest_candle"] = {
+        "open": 101.0, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 100.0, "resistance": 112.0}, config()
+        ), "S6"
+    )
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+    assert s6["trade_permission"] is False
+
+
+def test_s6_closed_reclaim_with_missing_parent_direction_stays_watch():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 101.0, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    for timeframe in ("15m", "1H", "4H"):
+        record["timeframes"][timeframe]["trend"] = "DATA_UNAVAILABLE"
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 100.0, "resistance": 112.0}, config()
+        ), "S6"
+    )
+    assert s6["status"] == "WATCH"
+    assert s6["action"] == "WAIT_FOR_TRIGGER"
+    assert s6["checks"]["parent_direction_aligned"] is False
+    assert s6["trade_permission"] is False
+
+
+def test_s6_late_timing_blocks_immediate_even_when_direction_aligned():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["opportunity_timing"] = "LATE"
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 101.0, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(
+        apply_multi_strategy_engine(
+            record, {"support": 100.0, "resistance": 112.0}, config()
+        ), "S6"
+    )
+    assert s6["direction"] == "LONG"
+    assert s6["status"] == "WATCH"
+    assert s6["action"] == "WAIT_FOR_TRIGGER"
+    assert s6["checks"]["timing_acceptable"] is False
+
+
+def test_s6_closed_candle_without_timestamp_never_executes():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    del record["timeframes"]["1H"]["last_closed_candle"]["timestamp"]
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+    assert s6["trade_permission"] is False
+
+
+def test_s6_stale_closed_candle_never_executes():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    record["timeframes"]["1H"]["last_closed_candle"]["timestamp"] -= 3600000
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+
+
+def test_s6_future_closed_candle_never_executes():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    record["timeframes"]["1H"]["last_closed_candle"]["timestamp"] += 3600000
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+
+
+def test_s6_source_snapshot_before_latest_candle_start_never_executes():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    record["collected_at_utc"] = "2026-10-15T11:20:24+00:00"
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+
+
+def test_s6_missing_source_snapshot_clock_never_executes():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    del record["collected_at_utc"]
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+
+
+def test_s6_missing_in_progress_candle_timestamp_never_executes():
+    record = base_record()
+    record["last_price"] = 101.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    del record["timeframes"]["1H"]["latest_candle"]["timestamp"]
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["status"] == "DATA_INSUFFICIENT"
+    assert s6["action"] == "NO_SAFE_TRADE"
+
+
+def test_s6_current_price_below_reclaimed_support_blocks_long():
+    """A previously closed reclaim is invalid once the current price loses support."""
+    record = base_record()
+    record["last_price"] = 99.8
+    record["timeframes"]["4H"]["resistance"] = 112.0
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+    }
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0, "resistance": 112.0}, config()), "S6")
+    assert s6["direction"] == "LONG"
+    assert s6["rr"] is not None and 5.0 < s6["rr"] < 25.0
+    assert s6["signal_score"] < 10
+    assert s6["status"] == "WATCH"
+    assert s6["action"] == "WAIT_FOR_TRIGGER"
+    assert s6["checks"]["reclaim_accepted_now"] is False
+    assert s6["trade_permission"] is False
+
+
+def test_s6_current_price_above_rejected_resistance_blocks_short():
+    """A formerly closed rejection is invalid once current price recovers resistance."""
+    record = base_record()
+    record["last_price"] = 100.2
+    record["support"] = 85.0
+    record["timeframes"]["1H"]["support"] = 85.0
+    record["timeframes"]["4H"]["support"] = 85.0
+    for timeframe in ("15m", "1H", "4H"):
+        record["timeframes"][timeframe]["trend"] = "BEARISH"
+    record["timeframes"]["1H"]["last_closed_candle"] = {
+        "open": 99.5, "high": 101.0, "low": 97.0, "close": 99.0,
+    }
+    _stamp_valid_s6_clock(record)
+    s6 = by_id(apply_multi_strategy_engine(record, {"support": 92.0, "resistance": 100.0}, config()), "S6")
+    assert s6["direction"] == "SHORT"
+    assert s6["rr"] is not None and 5.0 < s6["rr"] < 25.0
+    assert s6["signal_score"] < 10
+    assert s6["status"] == "WATCH"
+    assert s6["action"] == "WAIT_FOR_TRIGGER"
+    assert s6["checks"]["reclaim_accepted_now"] is False
+    assert s6["trade_permission"] is False
+
+
+def test_s6_current_price_equal_swept_level_fails_closed_both_sides():
+    for direction in ("LONG", "SHORT"):
+        record = base_record()
+        record["last_price"] = 100.0
+        if direction == "LONG":
+            record["timeframes"]["1H"]["last_closed_candle"] = {
+                "open": 100.5, "high": 103.0, "low": 99.0, "close": 101.0,
+            }
+        else:
+            record["support"] = 85.0
+            record["timeframes"]["1H"]["support"] = 85.0
+            record["timeframes"]["4H"]["support"] = 85.0
+            for timeframe in ("15m", "1H", "4H"):
+                record["timeframes"][timeframe]["trend"] = "BEARISH"
+            record["timeframes"]["1H"]["last_closed_candle"] = {
+                "open": 99.5, "high": 101.0, "low": 97.0, "close": 99.0,
+            }
+        _stamp_valid_s6_clock(record)
+        s6 = by_id(apply_multi_strategy_engine(record, {"support": 100.0 if direction == "LONG" else 92.0, "resistance": 100.0 if direction == "SHORT" else 112.0}, config()), "S6")
+        assert s6["direction"] == direction
+        assert s6["status"] == "WATCH"
+        assert s6["action"] == "WAIT_FOR_TRIGGER"
+        assert s6["checks"]["reclaim_accepted_now"] is False
