@@ -1,0 +1,79 @@
+name: P0 Live Web Recovery Probe (read-only)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-live-web-recovery-probe-20261017.yml"
+      - "app.py"
+      - "alpha_hunter/storage.py"
+      - "tests/test_canonical_snapshot_publication_20261017.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-only-web-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      ALPHA_HUNTER_PUBLIC_WEB_URL: https://alpha-hunter-j5i3.onrender.com
+    steps:
+      - name: Inspect production build and latest dashboard response without writes
+        shell: python
+        run: |
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          base = os.environ["ALPHA_HUNTER_PUBLIC_WEB_URL"].rstrip("/")
+
+          def read(path, timeout=35):
+              req = urllib.request.Request(
+                  base + path,
+                  headers={
+                      "Accept": "application/json",
+                      "Cache-Control": "no-cache",
+                      "User-Agent": "AlphaHunter-ReadOnly-GHA-Recovery-Probe",
+                  },
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=timeout) as resp:
+                      return resp.status, json.load(resp), resp.headers
+              except urllib.error.HTTPError as exc:
+                  try:
+                      body = json.loads(exc.read(100000))
+                  except (ValueError, UnicodeError):
+                      body = {}
+                  return exc.code, body, exc.headers
+
+          try:
+              build_status, build, _ = read("/api/build", 15)
+              print("build_status=", build_status)
+              print("build_commit=", str(build.get("git_commit_short") or "unknown"))
+              if build_status != 200 or not isinstance(build, dict):
+                  raise RuntimeError("Production build identity is unavailable")
+
+              latest_status, payload, headers = read("/api/latest", 35)
+              print("latest_status=", latest_status)
+              if latest_status == 200:
+                  if not isinstance(payload, dict):
+                      raise RuntimeError("Live dashboard response is not a JSON object")
+                  print("dashboard_evidence=returned")
+                  print("snapshot_updated=", str(payload.get("updated") or "unavailable"))
+                  print("no_false_503=true")
+              elif latest_status == 503:
+                  if payload.get("error") != "live_data_unavailable":
+                      raise RuntimeError("503 response lacks fail-closed contract")
+                  print("dashboard_evidence=unavailable")
+                  print("fail_closed=true")
+                  raise RuntimeError("Live dashboard still unavailable; deployment blocked")
+              else:
+                  raise RuntimeError(f"Unexpected dashboard HTTP {latest_status}")
+
+          except Exception as exc:
+              print("Read-only production check not accepted:", type(exc).__name__, str(exc))
+              sys.exit(1)
