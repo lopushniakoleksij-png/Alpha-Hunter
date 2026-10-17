@@ -2,6 +2,7 @@
 from copy import deepcopy
 
 import pytest
+import requests
 
 import app as dashboard
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, SupabaseStorageError
@@ -177,3 +178,63 @@ def test_pending_canonical_snapshot_endpoint_keeps_trading_hidden(monkeypatch):
     response = dashboard.app.test_client().get("/")
     assert response.status_code == 503
     assert "Trading actions are intentionally hidden" in response.get_data(as_text=True)
+
+
+def _large_canonical_snapshot():
+    row = sample_canonical()
+    row["symbols"] = [
+        {"symbol": f"TEST{i:03d}USDT", "state": "NEUTRAL",
+         "last_price": 100.0 + i, "trade_permission": False,
+         "execution_setup": {}}
+        for i in range(57)
+    ]
+    return row
+
+
+def test_large_canonical_write_uses_bounded_idempotent_batches(monkeypatch):
+    writer, calls = setup_writer(monkeypatch)
+    original_select = writer._select_json
+
+    def select(table, params):
+        if table == writer.settings.symbol_table:
+            return [
+                {"symbol": row["symbol"], "payload": row["payload"]}
+                for kind, name, rows in calls
+                if kind == "write" and name == writer.settings.symbol_table
+                for row in rows
+            ]
+        return original_select(table, params)
+
+    monkeypatch.setattr(writer, "_select_json", select)
+    writer.save_snapshot(_large_canonical_snapshot())
+    batches = [
+        call[2] for call in calls
+        if call[0] == "write" and call[1] == writer.settings.symbol_table
+    ]
+    assert [len(batch) for batch in batches] == [16, 16, 16, 9]
+    assert _parent_states(calls) == ["PENDING", "VERIFIED"]
+    assert len({row["symbol"] for batch in batches for row in batch}) == 57
+
+
+def test_mid_batch_timeout_keeps_parent_pending_and_never_promotes(monkeypatch):
+    writer, calls = setup_writer(monkeypatch)
+    original_upsert = writer._upsert
+    batches = [0]
+
+    def interrupt(table, rows, on_conflict):
+        if table == writer.settings.symbol_table:
+            batches[0] += 1
+            if batches[0] == 3:
+                raise requests.ReadTimeout("synthetic timed-out third chunk")
+        return original_upsert(table, rows, on_conflict)
+
+    monkeypatch.setattr(writer, "_upsert", interrupt)
+    with pytest.raises(requests.ReadTimeout, match="timed-out third chunk"):
+        writer.save_snapshot(_large_canonical_snapshot())
+
+    assert batches == [3]
+    assert _parent_states(calls) == ["PENDING"]
+    assert [
+        len(call[2]) for call in calls
+        if call[0] == "write" and call[1] == writer.settings.symbol_table
+    ] == [16, 16]
