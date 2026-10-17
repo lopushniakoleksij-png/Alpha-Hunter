@@ -6,9 +6,12 @@ This never reads or writes Alpha Hunter production Supabase.
 import json
 import os
 
-import psycopg
 import pytest
 import requests
+
+# Full production CI deliberately does not install the isolated PG client.
+# Only the dedicated PostgreSQL 16/17 acceptance job needs this dependency.
+psycopg = pytest.importorskip("psycopg")
 from psycopg.types.json import Jsonb
 
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, SupabaseStorageError
