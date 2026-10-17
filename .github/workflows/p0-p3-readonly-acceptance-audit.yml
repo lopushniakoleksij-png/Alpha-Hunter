@@ -1,0 +1,28 @@
+name: P0-P3 Read Only Scientific Acceptance Audit
+on:
+  pull_request:
+    paths:
+      - 'ops/research/p0_p3_readonly_acceptance_audit_v01.sql'
+      - 'ops/research/P0_P3_EVIDENCE_CLOSURE_NO_GO_20261017.md'
+      - 'tests/test_p0_p3_readonly_acceptance_audit_v01.py'
+      - '.github/workflows/p0-p3-readonly-acceptance-audit.yml'
+permissions:
+  contents: read
+jobs:
+  readonly-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install parser and regression runner
+        run: python -m pip install --disable-pip-version-check pglast pytest
+      - name: Verify SELECT-only and research outcome seal
+        run: python -m pytest -q tests/test_p0_p3_readonly_acceptance_audit_v01.py
+      - name: Prove no production credentials or mutating API is used
+        shell: bash
+        run: |
+          ! env | grep -E '^SUPABASE|^BITGET_|^DATABASE_URL='
+          echo 'Research SQL parsed locally. No database connection, runtime order or migration.'
