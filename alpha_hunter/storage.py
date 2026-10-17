@@ -87,6 +87,10 @@ class SupabaseConfig:
 
 
 PARENT_STORAGE_CONTRACT = "snapshot-parent-v0.2"
+# Keep the heavy canonical symbol upsert below the original 15-second HTTP
+# timeout without increasing it. Parent publication remains PENDING until
+# every bounded batch and independent readback have completed.
+CANONICAL_SYMBOL_WRITE_BATCH_SIZE = 16
 
 
 def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
@@ -761,7 +765,17 @@ class SupabaseStorage:
             canonical_feature_rows.append(canonical)
 
         self._upsert(self.settings.snapshot_table, parent, "run_id")
-        self._upsert(self.settings.symbol_table, children, "run_id,symbol")
+        if canonical_cron:
+            for offset in range(0, len(children), CANONICAL_SYMBOL_WRITE_BATCH_SIZE):
+                # Each deterministic (run_id, symbol) group is idempotent. If an
+                # intermediate HTTP result is ambiguous, leave parent PENDING.
+                self._upsert(
+                    self.settings.symbol_table,
+                    children[offset:offset + CANONICAL_SYMBOL_WRITE_BATCH_SIZE],
+                    "run_id,symbol",
+                )
+        else:
+            self._upsert(self.settings.symbol_table, children, "run_id,symbol")
         self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
         self._upsert(
             "alpha_hunter_signal_features",
