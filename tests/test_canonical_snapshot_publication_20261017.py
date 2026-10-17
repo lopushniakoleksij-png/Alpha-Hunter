@@ -199,9 +199,9 @@ def test_large_canonical_write_uses_bounded_idempotent_batches(monkeypatch):
         if table == writer.settings.symbol_table:
             return [
                 {"symbol": row["symbol"], "payload": row["payload"]}
-                for kind, name, rows in calls
-                if kind == "write" and name == writer.settings.symbol_table
-                for row in rows
+                for call in calls
+                if call[0] == "write" and call[1] == writer.settings.symbol_table
+                for row in call[2]
             ]
         return original_select(table, params)
 
