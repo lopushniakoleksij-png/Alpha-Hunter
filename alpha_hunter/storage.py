@@ -301,6 +301,11 @@ class SupabaseStorage:
         if snapshot.get("_storage_contract") != PARENT_STORAGE_CONTRACT:
             return snapshot
 
+        if snapshot.get("_canonical_publication_state") not in (None, "VERIFIED"):
+            raise SupabaseStorageError(
+                "Canonical snapshot publication is not verified"
+            )
+
         run_id = str(snapshot.get("run_id") or "")
         if not run_id:
             raise SupabaseStorageError(
@@ -637,6 +642,17 @@ class SupabaseStorage:
         valid_symbols = [item for item in snapshot.get("symbols", []) if "error" not in item]
         error_count = len(snapshot.get("symbols", [])) - len(valid_symbols)
 
+        identity = snapshot.get("validation_identity")
+        canonical_cron = (
+            isinstance(identity, dict)
+            and str(identity.get("run_source") or "").upper() == "RENDER_CRON"
+        )
+        parent_payload = compact_parent_snapshot(snapshot)
+        if canonical_cron:
+            # The parent must precede children because of the run_id foreign key.
+            # An interrupted child write must never publish a usable scan.
+            parent_payload["_canonical_publication_state"] = "PENDING"
+
         parent = [{
             "run_id": run_id,
             "collected_at_utc": snapshot.get("collected_at_utc"),
@@ -644,7 +660,7 @@ class SupabaseStorage:
             "product_type": snapshot.get("product_type"),
             "symbol_count": len(snapshot.get("symbols", [])),
             "error_count": error_count,
-            "payload": compact_parent_snapshot(snapshot),
+            "payload": parent_payload,
         }]
         children = []
         for item in snapshot.get("symbols", []):
@@ -836,4 +852,70 @@ class SupabaseStorage:
             "event_id",
         )
         self._reconcile_paper_stages(snapshot, run_id)
+        if canonical_cron:
+            # Verify the exact persisted children AFTER independent entry/exit
+            # reconciliation. A 2xx parent response alone proves nothing.
+            expected = {
+                str(row["symbol"])
+                for row in children
+                if isinstance(row.get("symbol"), str) and row["symbol"]
+            }
+            if not children or len(children) > 2000 or len(expected) != len(children):
+                raise SupabaseStorageError(
+                    "Canonical publication rejected invalid expected children"
+                )
+            persisted_children = self._select_json(
+                self.settings.symbol_table,
+                {
+                    "select": "symbol,payload",
+                    "run_id": f"eq.{run_id}",
+                    "order": "symbol.asc",
+                    "limit": "2000",
+                },
+            )
+            actual = {
+                row.get("symbol")
+                for row in persisted_children
+                if isinstance(row.get("symbol"), str)
+                and isinstance(row.get("payload"), dict)
+                and row["payload"].get("symbol") == row["symbol"]
+            }
+            if (
+                len(persisted_children) != len(children)
+                or len(actual) != len(children)
+                or actual != expected
+            ):
+                raise SupabaseStorageError(
+                    "Canonical publication rejected incomplete child evidence"
+                )
+
+            verified_payload = {
+                **parent_payload,
+                "_canonical_publication_state": "VERIFIED",
+            }
+            self._upsert(
+                self.settings.snapshot_table,
+                [{**parent[0], "payload": verified_payload}],
+                "run_id",
+            )
+            published = self._select_json(
+                self.settings.snapshot_table,
+                {
+                    "select": "run_id,symbol_count,payload",
+                    "run_id": f"eq.{run_id}",
+                    "limit": "2",
+                },
+            )
+            if (
+                len(published) != 1
+                or published[0].get("run_id") != run_id
+                or published[0].get("symbol_count") != len(children)
+                or not isinstance(published[0].get("payload"), dict)
+                or published[0]["payload"].get("_canonical_publication_state")
+                != "VERIFIED"
+                or published[0]["payload"].get("validation_identity") != identity
+            ):
+                raise SupabaseStorageError(
+                    "Canonical publication lacks confirmed parent readback"
+                )
         return run_id
