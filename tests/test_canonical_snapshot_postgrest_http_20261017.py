@@ -96,17 +96,34 @@ def real_http_db(monkeypatch):
             )
         """)
         connection.execute("NOTIFY pgrst, 'reload schema'")
-        for _ in range(60):
+        # A newly started PostgREST container may respond while its schema
+        # cache is still reloading. Require BOTH tables to be stable across
+        # successive checks before attempting the first real HTTP write.
+        stable = 0
+        for _ in range(80):
             try:
-                response = requests.get(BASE + "/alpha_hunter_snapshots",
-                                        params={"select": "run_id", "limit": "1"}, timeout=2)
-                if response.status_code == 200:
-                    break
+                statuses = [
+                    requests.get(
+                        BASE + "/" + table,
+                        params={"select": "run_id", "limit": "1"},
+                        timeout=2,
+                    ).status_code
+                    for table in (
+                        "alpha_hunter_snapshots",
+                        "alpha_hunter_symbol_snapshots",
+                    )
+                ]
             except requests.RequestException:
-                pass
-            time.sleep(1)
+                statuses = []
+            if statuses == [200, 200]:
+                stable += 1
+                if stable >= 4:
+                    break
+            else:
+                stable = 0
+            time.sleep(0.3)
         else:
-            pytest.fail("Local PostgREST schema never became available")
+            pytest.fail("Local PostgREST schema cache did not stabilize")
         storage = LocalPostgrestWriter(
             SupabaseConfig(url=BASE, key="ISOLATED_ONLY",
                            retry_backoff_seconds=0, max_retries=2),
