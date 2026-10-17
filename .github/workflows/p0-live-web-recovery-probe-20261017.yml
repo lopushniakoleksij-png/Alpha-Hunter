@@ -80,8 +80,13 @@ jobs:
                       html_status = page.status
                       html_sample = page.read(400000).decode("utf-8", "replace")
                   print("dashboard_html_status=", html_status)
-                  if html_status != 200 or "Alpha Hunter Dashboard" not in html_sample:
-                      raise RuntimeError("Dashboard HTML is not serving correctly")
+                  if (
+                      html_status != 200
+                      or "Alpha Hunter V7.2" not in html_sample
+                      or "Execution first." not in html_sample
+                      or "LIVE DATA TEMPORARILY UNAVAILABLE" in html_sample
+                  ):
+                      raise RuntimeError("Normal dashboard HTML is not serving correctly")
               elif latest_status == 503:
                   if payload.get("error") != "live_data_unavailable":
                       raise RuntimeError("503 response lacks fail-closed contract")
