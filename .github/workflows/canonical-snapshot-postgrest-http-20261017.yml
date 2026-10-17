@@ -1,0 +1,61 @@
+name: Canonical Snapshot PostgREST HTTP 16-17 CI
+
+on:
+  pull_request:
+    paths:
+      - "alpha_hunter/storage.py"
+      - "tests/test_canonical_snapshot_postgrest_http_20261017.py"
+      - ".github/workflows/canonical-snapshot-postgrest-http-20261017.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-real-postgrest-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgrest:
+        image: postgrest/postgrest:v12.2.8
+        env:
+          PGRST_DB_URI: "postgres://postgres:isolated-only@postgres:5432/postgres"
+          PGRST_DB_SCHEMAS: "public"
+          PGRST_DB_ANON_ROLE: "postgres"
+          PGRST_SERVER_PORT: 3000
+        ports:
+          - 3000:3000
+    env:
+      AH_LOCAL_POSTGREST_ONLY: "1"
+      AH_LOCAL_PG_DSN: "host=127.0.0.1 port=5432 dbname=postgres user=postgres password=isolated-only"
+      BITGET_API_KEY: ""
+      BITGET_SECRET_KEY: ""
+      SUPABASE_URL: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - name: Install only existing runtime and local database test client
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest 'psycopg[binary]>=3.2,<3.4'
+      - name: Test real PostgREST HTTP upserts and recovery from SQLSTATE 57014
+        run: python -m pytest -q tests/test_canonical_snapshot_postgrest_http_20261017.py
