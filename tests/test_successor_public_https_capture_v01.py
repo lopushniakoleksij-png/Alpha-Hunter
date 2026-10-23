@@ -89,3 +89,39 @@ def test_stale_or_incorrect_symbol_quote_rejected(monkeypatch):
     set_response(monkeypatch, {"code": "00000", "data": [row]})
     with pytest.raises(ValueError, match="SOURCE_REQUEST_SYMBOL_OR_IDENTITY_INVALID"):
         source.capture_public_quote("synthetic")
+
+
+def test_opt_in_raw_public_response_bytes_exact_digest(monkeypatch):
+    import hashlib
+    row=quote_row()
+    payload={"code":"00000","data":[row]}
+    set_response(monkeypatch,payload)
+    capture, raw=source.capture_public_quote(
+        "synthetic-one-shot-artifact", include_raw_bytes=True)
+    assert raw==json.dumps(payload).encode()
+    assert hashlib.sha256(raw).hexdigest()==capture["response_sha256"]
+    assert capture["source_inventory_authenticated"] is False
+    assert capture["venue_price_signature_verified"] is False
+    assert capture["scientific_pass_permitted"] is False
+    assert capture["trade_permission"] is False
+    assert capture["exchange_authority"] is False
+
+
+def test_raw_capture_opt_in_must_be_exact_boolean(monkeypatch):
+    set_response(monkeypatch,{"code":"00000","data":[quote_row()]})
+    with pytest.raises(ValueError,match="RAW_CAPTURE_FLAG_INVALID"):
+        source.capture_public_quote("synthetic-unit",include_raw_bytes="yes")
+
+
+def test_ci_artifact_is_explicitly_temporary_and_never_a_live_monitor():
+    workflow=(ROOT/".github/workflows/successor-p02-public-venue-custody-review-v01.yml").read_text()
+    capture_file=(REVIEWS/"successor_public_https_pg16_custody_v01.py").read_text()
+    assert "permissions:\n  contents: read" in workflow
+    assert "AH_P02_EXPORT_PUBLIC_QUOTE_PROOF: EPHEMERAL_CI_ARTIFACT_ONLY" in workflow
+    assert "actions/upload-artifact@v4" in workflow
+    assert "retention-days: 30" in workflow
+    assert "retention-days: 90" not in workflow
+    assert "actual_paper_inventory_authenticated\": False" in capture_file
+    assert "persistent_independent_journal\": False" in capture_file
+    assert "real_alert_delivery\": False" in capture_file
+    assert "source_inventory_authenticated" in capture_file
