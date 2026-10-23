@@ -86,3 +86,43 @@ trigger/timeout adjustment, scheduler change, admitted paper order,
 manual intervention in existing positions, historical backfill or
 test reset. Independent production-incident diagnosis and release
 approvals remain open.
+
+
+## 23 October 2026 — continuation: concurrent exits and all-ledger boundary
+
+The branch's local PostgreSQL/PostgREST acceptance suite now also includes
+synthetic transport tests for (a) a position that exits and disappears from the
+open view *during* reconciliation but has a genuine persisted current-run
+receipt, (b) a receipt committed through PostgREST followed by a lost
+reconciliation acknowledgement, and (c) a position that disappears from the
+open view *without* a receipt. In all cases the initial pre-reconciliation
+inventory is mandatory. These are **ephemeral test-only** state transitions,
+never exchange trades or updates to user paper positions.
+
+Read-only production ledger census at audit time:
+- 25 paper order records have positive filled-minus-exited residual quantities;
+- only 3 appear in the currently managed horizon/protection view;
+- 22 are outside that view, including 19 carrying exit-quarantine reasons;
+- 3 residual records lack one or both recorded active paper protective legs.
+
+This audit does **not** imply 25 current executable exchange positions or give
+authority to force historical paper closes. It demonstrates that qualifying only
+the horizon-open view cannot prove *all-ledger* safety. Review the complete
+residual/quarantine census and independently attest position custody before any
+new scientific or production successor. Do not expand the active cohort or
+rewrite historic evidence.
+
+The legacy producer remains unchanged. The isolated source-scan read at
+2026-10-23 12:23:09 UTC had 57/57 child rows and, after reconciliation
+completed at 12:23:35 UTC, three paper exit receipts; the earlier
+11:43:21 missing-children incident remains historical evidence and is
+never erased by a later successful scan. A successful read-only web probe
+is only point-in-time recovery, not proof of a 35-minute continuous
+monitoring guarantee.
+
+**Non-negotiable boundary:** draft PR only; no merge, deploy, schema migration,
+production read-modify-write, admission change, scheduler/cron restart, timeout
+increase, order authority, forced paper fill, test reset or financial claim.
+A real successor must separately resolve stable as-of-run obligation custody,
+historical residual classification, independent quote lineage, and verified
+alert delivery under DBA/security and release review.
