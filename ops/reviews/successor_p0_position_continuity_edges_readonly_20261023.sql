@@ -34,8 +34,8 @@ WITH clock AS (
   SELECT m.symbol,m.direction,m.position_slot,m.entry_order_id,
          count(r.observed_at_utc) FILTER (WHERE r.observed_at_utc>=c.window_start_utc) AS receipts_24h,
          count(r.observed_at_utc) FILTER (WHERE r.observed_at_utc>=c.window_start_utc AND
-           (r.outcome NOT IN ('NO_TRIGGER','STOP_TRIGGERED','TARGET_TRIGGERED','HORIZON_CLOSED')
-            OR r.blockers <> '[]'::jsonb
+           ((r.outcome IS NULL OR r.outcome NOT IN ('NO_TRIGGER','STOP_TRIGGERED','TARGET_TRIGGERED','HORIZON_CLOSED'))
+            OR r.blockers IS DISTINCT FROM '[]'::jsonb
             OR r.paper_only IS DISTINCT FROM true
             OR r.trade_permission IS DISTINCT FROM false
             OR r.exchange_authority IS DISTINCT FROM false
@@ -45,7 +45,7 @@ WITH clock AS (
             OR r.best_bid_size IS NULL OR r.best_bid_size<=0
             OR r.best_ask_size IS NULL OR r.best_ask_size<=0
             OR NULLIF(r.evidence->>'quote_source','') IS NULL
-            OR r.same_run_receipts<>1)) AS structurally_invalid_receipts,
+            OR r.same_run_receipts IS DISTINCT FROM 1)) AS structurally_invalid_receipts,
          count(r.observed_at_utc) FILTER(WHERE r.observed_at_utc>=c.window_start_utc AND
            (NULLIF(r.evidence->>'raw_response_sha256','') IS NULL
             OR NULLIF(r.evidence->>'request_id','') IS NULL
