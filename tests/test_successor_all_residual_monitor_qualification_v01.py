@@ -123,3 +123,98 @@ def test_missing_or_self_referential_prior_seal_fails_closed():
     result = score(data)
     assert "PRIOR_SEALED_POSITION_SELF_REFERENCE" in blockers(result)
     assert not result["independently_authenticated_source"]
+
+
+def test_oct23_all_cohort_25_residual_rehearsal_never_promotes_science():
+    """Synthetic shape mirrors the independent 25/3/21/1 live ledger census.
+
+    No live rows, credentials, position IDs, or production writes are used.
+    The 3 managed positions have locally consistent *supplied* observations,
+    but the 21 quarantines and 1 unprotected residual remain fail-visible.
+    """
+    from copy import deepcopy
+
+    case=fixture()
+    base=deepcopy(case[0]["positions"][1])
+    third=deepcopy(base)
+    third["entry_order_id"]="synthetic-managed-third"
+    third["symbol"]="SYNTH03USDT"
+    case[0]["positions"].append(third)
+    case[2].append({"entry_order_id":third["entry_order_id"],
+                    "state":"MANAGED_PROTECTED","protection_count":2})
+    attempt=deepcopy(case[3][1])
+    attempt["entry_order_id"]=third["entry_order_id"]
+    attempt["symbol"]=third["symbol"]
+    attempt["attempt_id"]="synthetic-managed-third-attempt"
+    case[3].append(attempt)
+
+    for k in range(21):
+        row=deepcopy(base)
+        row["entry_order_id"]=f"synthetic-quarantined-{k:02d}"
+        row["symbol"]=f"SYNTHQ{k:02d}USDT"
+        case[0]["positions"].append(row)
+        case[2].append({"entry_order_id":row["entry_order_id"],
+                        "state":"QUARANTINED_UNVERIFIED",
+                        "quarantine_case_id":f"synthetic-case-{k:02d}"})
+
+    incident=deepcopy(case[0]["positions"][0])
+    incident["entry_order_id"]="synthetic-unprotected-partial"
+    case[0]["positions"].append(incident)
+    case[2].append({"entry_order_id":incident["entry_order_id"],
+                    "state":"UNPROTECTED_INCIDENT"})
+
+    case[0]["manifest_sha256"]=mod.sha256(
+        mod.dumps(case[0]["positions"],sort_keys=True,
+                  separators=(",",":"),ensure_ascii=False).encode()
+    ).hexdigest()
+
+    result=score(case)
+    assert result["expected_residuals"]==25
+    assert result["managed_locally_qualified"]==3
+    assert result["quarantined_or_unprotected"]==22
+    assert result["status"]=="FAIL_CLOSED_COVERAGE_OR_MONITORING_GAP"
+    assert "QUARANTINED_RESIDUAL_UNMONITORED" in blockers(result)
+    assert "UNPROTECTED_FILLED_RESIDUAL_INCIDENT" in blockers(result)
+    assert not result["scientific_pass_permitted"]
+    assert not result["production_promotion_permitted"]
+    assert not result["independently_authenticated_source"]
+    assert result["order_path"]=="NONE"
+    assert result["exchange_authority"] is False
+
+    # A missing case/disposition must fail closed even if remaining attempts
+    # and their self-labeled quotes look internally consistent.
+    case[2].pop()
+    result=score(case)
+    assert "RESIDUAL_DISPOSITION_COVERAGE_MISMATCH" in result["run_blockers"]
+    assert result["scientific_pass_permitted"] is False
+
+
+def test_oct23_live_sql_is_select_only_and_denies_independent_source_claim():
+    """Static safety invariant for the reviewed read-only source diagnostic."""
+    import re
+    sql=(ROOT/"ops/reviews/successor_p0_live_residual_quote_coverage_20261023.sql").read_text()
+    active="\n".join(
+        line for line in sql.splitlines()
+        if not line.lstrip().startswith("--")
+    )
+    assert re.match(r"\s*WITH\s+latest\s+AS\s*\(",active,re.I)
+    assert active.count(";")==1
+    forbidden=r"\b(INSERT|UPDATE|DELETE|ALTER|DROP|TRUNCATE|CREATE|GRANT|REVOKE|CALL|COPY|EXECUTE)\b"
+    assert not re.search(forbidden,active,re.I)
+    for contract in (
+        "alpha_hunter_paper_fills_v02",
+        "alpha_hunter_paper_exit_fills_v04",
+        "alpha_hunter_paper_protection_horizon_open_v09",
+        "alpha_hunter_paper_exit_attempts_v04",
+        "raw_response_sha256",
+        "quote_receipt_digest",
+        "request_id",
+        "gap_seconds>2100",
+        "independent_quote_bytes_authenticated",
+        "immutable_asof_position_inventory_proven",
+        "scientific_profitability_or_admission_authorized",
+        "FAIL_CLOSED_UNVERIFIED_LEDGER_OR_MONITORING",
+    ):
+        assert contract in sql,contract
+    assert "2100 AS frozen_max_monitoring_gap_seconds" in active
+    assert "false AS scientific_profitability_or_admission_authorized" in active
