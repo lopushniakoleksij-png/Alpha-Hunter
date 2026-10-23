@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated PostgreSQL 16 *full source-scope* RLS negative regression.
+"""Isolated PostgreSQL 16/17 *full source-scope* RLS negative regression.
 
 Reconstructs 12 named paper-ledger physical relations plus the security-invoker
 protection view from approved-column excerpts of live pg_catalog. All data is
@@ -22,7 +22,7 @@ DB="ah_p2_full_scope_only_ephemeral"
 ROLE="ah_p2_full_scope_ephemeral_reader"
 
 # Exact names of all currently observed source base relations, not a narrower
-# managed-view-only allowlist. Each is a LOCAL PG16 synthetic subset of columns.
+# managed-view-only allowlist. Each is a LOCAL PG16/17 synthetic subset of columns.
 DDL={
  "alpha_hunter_paper_orders_v02": """(
    order_id text PRIMARY KEY, decision_id text, submitted_at_utc timestamptz,
@@ -103,7 +103,8 @@ def setup():
     # Never runs DDL on live Supabase, the R10 cohort or the main service.
     password=secrets.token_urlsafe(24)
     with psycopg.connect(dsn,autocommit=True) as root:
-        assert str(root.execute("SHOW server_version_num").fetchone()[0]).startswith("16")
+        pg_major=int(root.execute("SHOW server_version_num").fetchone()[0])//10000
+        assert pg_major in (16,17), "EPHEMERAL_POSTGRES_16_OR_17_REQUIRED"
         root.execute(sql.SQL(
             "CREATE ROLE {} LOGIN NOINHERIT NOBYPASSRLS NOSUPERUSER NOCREATEROLE NOCREATEDB NOREPLICATION PASSWORD {}"
         ).format(sql.Identifier(ROLE),sql.Literal(password)))
