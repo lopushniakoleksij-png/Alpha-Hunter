@@ -14,6 +14,7 @@ import json
 import os
 import secrets
 import time
+from pathlib import Path
 
 import psycopg
 
@@ -126,8 +127,10 @@ def run():
     independent=journal_dsn()
     assert socket_read_timeout()
     root="p02-synthetic-"+secrets.token_hex(8)
-    first=capture_public_quote(root+"-1")
-    second=capture_public_quote(root+"-2")
+    first, raw_first = capture_public_quote(root+"-1", include_raw_bytes=True)
+    second, raw_second = capture_public_quote(root+"-2", include_raw_bytes=True)
+    assert sha256(raw_first).hexdigest() == first["response_sha256"]
+    assert sha256(raw_second).hexdigest() == second["response_sha256"]
     gap=(datetime.fromisoformat(second["transport_captured_at_utc"])
          -datetime.fromisoformat(first["transport_captured_at_utc"])).total_seconds()
     if gap < 0 or gap > 2100:
@@ -177,6 +180,57 @@ def run():
             WHERE scientific_pass OR trade_permission OR exchange_authority
               OR source_inventory_authenticated""").fetchone()[0]
         assert forbidden==0
+        # A GitHub-hosted artifact provides a second bounded-retention copy
+        # outside Supabase. It is NOT an independently administered append-only
+        # journal, guaranteed durable delivery, or venue-signed price feed.
+        export = os.getenv("AH_P02_EXPORT_PUBLIC_QUOTE_PROOF")
+        if export is not None and export != "EPHEMERAL_CI_ARTIFACT_ONLY":
+            raise AssertionError("UNAPPROVED_PUBLIC_PROOF_EXPORT")
+        if export == "EPHEMERAL_CI_ARTIFACT_ONLY":
+            proof_dir = Path("p02-public-quote-ci-proof")
+            proof_dir.mkdir(exist_ok=True)
+            for n, raw in enumerate((raw_first, raw_second), start=1):
+                if len(raw) > 65536 or not raw:
+                    raise AssertionError("RAW_PUBLIC_RESPONSE_INVALID")
+                (proof_dir / f"public-ticker-{n}.json").write_bytes(raw)
+            manifest = {
+                "proof_scope": "ONE_SHOT_PUBLIC_HTTPS_ONLY_NO_POSITION_SOURCE",
+                "source_host": "api.bitget.com",
+                "endpoint": "/api/v2/mix/market/ticker",
+                "product_type": "USDT-FUTURES",
+                "symbol": "BTCUSDT",
+                "captures": [
+                    { "sequence": n, "run_id": q["source_run_id"],
+                      "raw_filename": f"public-ticker-{n}.json",
+                      "raw_response_sha256": q["response_sha256"],
+                      "quote_row_sha256": q["raw_response_row_sha256"],
+                      "capture_manifest_sha256": q["capture_manifest_sha256"],
+                      "capture_utc": q["transport_captured_at_utc"],
+                      "request_id": q["request_id"],
+                      "exchange_timestamp_ms": q["exchange_timestamp_ms"] }
+                    for n, q in enumerate((first, second), start=1)
+                ],
+                "ephemeral_independent_pg16_commit_readback_passed": True,
+                "bounded_ci_retention_not_permanent": True,
+                "actual_paper_inventory_authenticated": False,
+                "authenticated_venue_signed_prices": False,
+                "persistent_independent_journal": False,
+                "real_alert_delivery": False,
+                "operational_monitoring_35m_proven": False,
+                "scientific_pass_permitted": False,
+                "production_mutated": False,
+                "trade_permission": False,
+                "exchange_authority": False,
+            }
+            (proof_dir / "manifest.json").write_text(
+                json.dumps(manifest, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8"
+            )
+            for row in manifest["captures"]:
+                saved = (proof_dir / row["raw_filename"]).read_bytes()
+                if sha256(saved).hexdigest() != row["raw_response_sha256"]:
+                    raise AssertionError("RAW_PUBLIC_PROOF_READBACK_HASH_MISMATCH")
+
         print("P02_PUBLIC_HTTPS_AND_INDEPENDENT_PG16_CUSTODY_PASS "+json.dumps({
             "genuine_bitget_https_captures":2,
             "tls_hostname_ca_checked":True,
