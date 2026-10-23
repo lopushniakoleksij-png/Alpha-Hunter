@@ -41,6 +41,14 @@ WITH latest AS (
  SELECT order_id,sum(quantity) AS qty FROM public.alpha_hunter_paper_fills_v02 GROUP BY order_id
 ), exited AS (
  SELECT entry_order_id,sum(quantity) AS qty FROM public.alpha_hunter_paper_exit_fills_v04 GROUP BY entry_order_id
+), orphan_entry_fills AS (
+ SELECT count(*) AS n FROM entered e
+ LEFT JOIN public.alpha_hunter_paper_orders_v02 o ON o.order_id=e.order_id
+ WHERE o.order_id IS NULL
+), negative_residuals AS (
+ SELECT count(*) AS n FROM entered e
+ LEFT JOIN exited x ON x.entry_order_id=e.order_id
+ WHERE coalesce(x.qty,0)>e.qty
 ), positive_residuals AS (
  SELECT o.order_id,o.symbol,o.direction,e.qty-coalesce(x.qty,0) AS residual_qty,
         EXISTS(SELECT 1 FROM public.alpha_hunter_paper_protection_open_v04 m
@@ -99,6 +107,8 @@ SELECT now() AS audit_at_utc, l.run_id AS latest_canonical_run_id,
        (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots c
         WHERE c.run_id=l.run_id) AS latest_child_rows,
        (SELECT count(*) FROM positive_residuals) AS all_cohort_residual_count,
+       (SELECT n FROM orphan_entry_fills) AS orphan_entry_fill_orders,
+       (SELECT n FROM negative_residuals) AS exited_more_than_filled_orders,
        (SELECT count(*) FROM positive_residuals WHERE managed) AS managed_from_fill_ledger,
        (SELECT count(*) FROM positive_residuals WHERE NOT managed AND quarantined) AS quarantined_outside_managed,
        (SELECT count(*) FROM positive_residuals WHERE NOT managed AND NOT quarantined) AS unexplained_unmanaged,
@@ -117,6 +127,9 @@ SELECT now() AS audit_at_utc, l.run_id AS latest_canonical_run_id,
        q.*,g.gap_breaches AS position_observation_gaps_over_35m_24h,
        g.max_observed_gap_seconds AS maximum_position_observation_gap_seconds_24h,
        CASE WHEN (SELECT count(*) FROM positive_residuals)=0
+         OR (SELECT n FROM orphan_entry_fills)>0
+         OR (SELECT n FROM negative_residuals)>0
+         OR (SELECT count(*) FROM positive_residuals WHERE NOT managed AND quarantined)>0
          OR (SELECT count(*) FROM positive_residuals WHERE NOT managed AND NOT quarantined)>0
          OR (SELECT count(*) FROM positive_residuals WHERE stop_legs=0 OR target_legs=0)>0
          OR (SELECT count(*) FROM scan_check WHERE NOT child_complete)>0
@@ -125,7 +138,12 @@ SELECT now() AS audit_at_utc, l.run_id AS latest_canonical_run_id,
          OR (SELECT count(*) FROM managed_now m WHERE NOT EXISTS
            (SELECT 1 FROM latest_attempts a WHERE a.entry_order_id=m.entry_order_id))>0
          OR q.receipt_digest_links<>q.attempts OR q.raw_quote_sha<>q.attempts
-         OR q.request_ids<>q.attempts OR g.gap_breaches>0
+         OR q.request_ids<>q.attempts OR q.source_labeled<>q.attempts
+         OR q.positive_top_books<>q.attempts
+         OR q.paper_only_unblocked<>q.attempts
+         OR q.distinct_position_attempts<>q.attempts
+         OR q.attempts<>(SELECT count(*) FROM managed_now)
+         OR g.gap_breaches>0
          THEN 'FAIL_CLOSED_UNVERIFIED_LEDGER_OR_MONITORING'
          ELSE 'STRUCTURAL_RECORDS_ONLY_INDEPENDENT_SOURCE_STILL_UNVERIFIED'
        END AS research_verdict,
