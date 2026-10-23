@@ -1,0 +1,57 @@
+name: R1 Isolated PG16 PG17 Least-Privilege Source Review
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/successor_pg16_full_scope_reader_gate_v01.py'
+      - '.github/workflows/successor-r1-pg16-pg17-isolated-security-review-v01.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r1-isolated-dualpg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-synthetic-source-rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_version: ['16', '17']
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      DATABASE_URL: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+      AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+    services:
+      ephemeral:
+        image: postgres:${{ matrix.pg_version }}-alpine
+        env:
+          POSTGRES_USER: bench
+          POSTGRES_PASSWORD: benchpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bench -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+    steps:
+      - name: Checkout draft PR branch only
+        uses: actions/checkout@v4
+      - name: Python for isolated security test
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin PostgreSQL client; never access production credentials
+        run: python -m pip install --disable-pip-version-check --no-cache-dir 'psycopg[binary]==3.2.10'
+      - name: Full 12-table synthetic reader and RLS permission-negative rehearsal
+        run: python ops/reviews/successor_pg16_full_scope_reader_gate_v01.py
