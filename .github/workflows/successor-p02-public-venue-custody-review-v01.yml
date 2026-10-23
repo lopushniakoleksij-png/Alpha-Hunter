@@ -65,8 +65,17 @@ jobs:
       - name: P0.2 public HTTPS ticker, independent journal and real fault tests
         env:
           AH_P02_ONE_SHOT_APPROVAL: EPHEMERAL_CI_PUBLIC_GET_ONLY
+          AH_P02_EXPORT_PUBLIC_QUOTE_PROOF: EPHEMERAL_CI_ARTIFACT_ONLY
           AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
           AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
           AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
           AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
         run: python ops/reviews/successor_public_https_pg16_custody_v01.py
+      - name: Preserve bounded-retention public-quote bytes and SHA256 manifest (NOT permanent custody)
+        uses: actions/upload-artifact@v4
+        with:
+          name: p02-one-shot-public-bitget-raw-quote-${{ github.run_id }}
+          path: p02-public-quote-ci-proof/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
