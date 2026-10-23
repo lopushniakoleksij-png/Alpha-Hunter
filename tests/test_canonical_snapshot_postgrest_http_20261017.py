@@ -61,6 +61,8 @@ def real_http_db(monkeypatch):
     if "host=127.0.0.1" not in dsn or "dbname=postgres" not in dsn:
         pytest.fail("Non-local PostgreSQL connection forbidden")
     with psycopg.connect(dsn, autocommit=True) as connection:
+        connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_exit_attempts_v04")
+        connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_protection_horizon_open_v09")
         connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_symbol_snapshots")
         connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_snapshots")
         connection.execute("DROP FUNCTION IF EXISTS public.ah_test_forced_cancel()")
@@ -95,6 +97,33 @@ def real_http_db(monkeypatch):
                 PRIMARY KEY (run_id, symbol)
             )
         """)
+        # Local synthetic inventory and durable receipts: no production data,
+        # no Supabase connection, and no live order or trade authority.
+        connection.execute("""
+            CREATE TABLE public.alpha_hunter_paper_protection_horizon_open_v09 (
+                entry_order_id text PRIMARY KEY,
+                decision_id text NOT NULL,
+                symbol text NOT NULL,
+                direction text NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE public.alpha_hunter_paper_exit_attempts_v04 (
+                entry_order_id text NOT NULL,
+                source_run_id text NOT NULL,
+                decision_id text NOT NULL,
+                symbol text NOT NULL,
+                direction text NOT NULL,
+                observed_at_utc timestamptz NOT NULL,
+                outcome text NOT NULL,
+                blockers jsonb NOT NULL,
+                paper_only boolean NOT NULL,
+                exchange_authority boolean NOT NULL,
+                trade_permission boolean NOT NULL,
+                order_path text NOT NULL,
+                PRIMARY KEY (entry_order_id, source_run_id)
+            )
+        """)
         connection.execute("NOTIFY pgrst, 'reload schema'")
         # A newly started PostgREST container may respond while its schema
         # cache is still reloading. Require BOTH tables to be stable across
@@ -111,11 +140,13 @@ def real_http_db(monkeypatch):
                     for table in (
                         "alpha_hunter_snapshots",
                         "alpha_hunter_symbol_snapshots",
+                        "alpha_hunter_paper_protection_horizon_open_v09",
+                        "alpha_hunter_paper_exit_attempts_v04",
                     )
                 ]
             except requests.RequestException:
                 statuses = []
-            if statuses == [200, 200]:
+            if statuses == [200, 200, 200, 200]:
                 stable += 1
                 if stable >= 4:
                     break
@@ -129,16 +160,10 @@ def real_http_db(monkeypatch):
                            retry_backoff_seconds=0, max_retries=2),
             session=LocalPostgrestSession(),
         )
-        # Test only parent and child HTTP path. Existing regressions independently
-        # cover signals, immutable paper rows and entry/exit reconciliation.
-        actual_select = storage._select_json
-
-        def scoped_select(table, params):
-            if table == "alpha_hunter_paper_protection_horizon_open_v09":
-                return []  # This fixture has no positions; custody is tested separately.
-            return actual_select(table, params)
-
-        monkeypatch.setattr(storage, "_select_json", scoped_select)
+        # All canonical parent, child, position-inventory and receipt readbacks
+        # use the isolated real PostgREST service, not an in-memory fake.
+        # Entry/exit business reconciliation is separately tested and remains
+        # deliberately inactive in this narrowly scoped transport fixture.
         actual_upsert = storage._upsert
 
         def limited_upsert(table, rows, key):
@@ -151,6 +176,8 @@ def real_http_db(monkeypatch):
         try:
             yield storage, connection
         finally:
+            connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_exit_attempts_v04")
+            connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_protection_horizon_open_v09")
             connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_symbol_snapshots")
             connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_snapshots")
             connection.execute("DROP FUNCTION IF EXISTS public.ah_test_forced_cancel()")
@@ -211,3 +238,60 @@ def test_real_http_third_chunk_57014_then_idempotent_recovery(real_http_db):
     assert storage.save_snapshot(value) == run_id
     assert read_state(conn, run_id) == "VERIFIED"
     assert read_child_count(conn, run_id) == 57
+
+
+def insert_local_position(conn):
+    """Synthetic managed paper inventory visible via real isolated PostgREST."""
+    conn.execute("""
+        INSERT INTO public.alpha_hunter_paper_protection_horizon_open_v09
+            (entry_order_id, decision_id, symbol, direction)
+        VALUES ('isolated-position-1', 'isolated-decision-1', 'TEST000USDT', 'LONG')
+    """)
+
+
+def insert_local_receipt(conn, run_id, *, outcome="NO_TRIGGER"):
+    """Synthetic receipt is in Postgres, not mocked in a Python response."""
+    conn.execute("""
+        INSERT INTO public.alpha_hunter_paper_exit_attempts_v04
+            (entry_order_id, source_run_id, decision_id, symbol, direction,
+             observed_at_utc, outcome, blockers, paper_only,
+             exchange_authority, trade_permission, order_path)
+        VALUES
+            ('isolated-position-1', %s, 'isolated-decision-1', 'TEST000USDT',
+             'LONG', '2026-10-17T09:40:00Z', %s, '[]'::jsonb,
+             true, false, false, 'NONE')
+    """, (run_id, outcome))
+
+
+def test_real_http_nonempty_position_missing_receipt_stays_pending_then_recovers(real_http_db):
+    storage, conn = real_http_db
+    value = scanner_payload(n=2)
+    value["run_id"] = "a" * 32
+    insert_local_position(conn)
+
+    # A healthy parent and complete children must NOT substitute for actual
+    # position-monitoring evidence if reconciliation produced no receipt.
+    with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+
+    # Replaying this deterministic scan after a real local receipt appears can
+    # qualify it prospectively in the test fixture; no live history is rewritten.
+    insert_local_receipt(conn, value["run_id"])
+    assert storage.save_snapshot(value) == value["run_id"]
+    assert read_state(conn, value["run_id"]) == "VERIFIED"
+    assert read_child_count(conn, value["run_id"]) == 2
+
+
+def test_real_http_nonempty_position_unusable_receipt_never_publishes(real_http_db):
+    storage, conn = real_http_db
+    value = scanner_payload(n=2)
+    value["run_id"] = "b" * 32
+    insert_local_position(conn)
+    insert_local_receipt(conn, value["run_id"], outcome="INPUT_MISSING")
+
+    with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
