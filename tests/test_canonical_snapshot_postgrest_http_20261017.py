@@ -303,3 +303,91 @@ def test_real_http_nonempty_position_unusable_receipt_never_publishes(real_http_
         storage.save_snapshot(value)
     assert read_child_count(conn, value["run_id"]) == 2
     assert read_state(conn, value["run_id"]) == "PENDING"
+
+
+
+def _commit_receipt_via_local_http(run_id, *, outcome="STOP_TRIGGERED"):
+    """True isolated HTTP commit, but only a synthetic reconciliation producer."""
+    receipt = {
+        "entry_order_id": "isolated-position-1",
+        "source_run_id": run_id,
+        "decision_id": "isolated-decision-1",
+        "symbol": "TEST000USDT",
+        "direction": "LONG",
+        "observed_at_utc": "2026-10-17T09:40:00Z",
+        "outcome": outcome,
+        "blockers": [],
+        "paper_only": True,
+        "exchange_authority": False,
+        "trade_permission": False,
+        "order_path": "NONE",
+    }
+    response = requests.post(
+        BASE + "/alpha_hunter_paper_exit_attempts_v04",
+        json=receipt,
+        headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+        timeout=5,
+    )
+    assert response.status_code in (200, 201, 204), response.text[:500]
+
+
+def test_real_http_exit_removes_position_after_inventory_but_receipt_still_required(
+    real_http_db, monkeypatch,
+):
+    """An exit can remove a position from the open view during reconciliation.
+
+    The writer must verify the pre-reconciliation census, not silently accept an
+    empty post-exit census. Real PostgREST supplies the current-run receipt.
+    """
+    storage, conn = real_http_db
+    insert_local_position(conn)
+    value = scanner_payload(n=2)
+    value["run_id"] = "c" * 32
+
+    def simulated_exit(_snapshot, run_id):
+        _commit_receipt_via_local_http(run_id)
+        conn.execute(
+            "DELETE FROM public.alpha_hunter_paper_protection_horizon_open_v09 "
+            "WHERE entry_order_id='isolated-position-1'"
+        )
+
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", simulated_exit)
+    assert storage.save_snapshot(value) == value["run_id"]
+    assert read_state(conn, value["run_id"]) == "VERIFIED"
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_protection_horizon_open_v09"
+    ).fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_exit_attempts_v04 "
+        "WHERE source_run_id=%s", (value["run_id"],)
+    ).fetchone()[0] == 1
+
+
+def test_real_http_lost_reconciliation_ack_after_commit_stays_pending(
+    real_http_db, monkeypatch,
+):
+    """A successful HTTP receipt INSERT is not proof of a successful stage ACK."""
+    storage, conn = real_http_db
+    insert_local_position(conn)
+    value = scanner_payload(n=2)
+    value["run_id"] = "d" * 32
+
+    def lost_ack(_snapshot, run_id):
+        _commit_receipt_via_local_http(run_id)
+        raise SupabaseStorageError("isolated synthetic lost reconciliation acknowledgment")
+
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", lost_ack)
+    with pytest.raises(SupabaseStorageError, match="lost reconciliation acknowledgment"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_exit_attempts_v04 "
+        "WHERE source_run_id=%s", (value["run_id"],)
+    ).fetchone()[0] == 1
+
+    # A separately confirmed, idempotent replay against the *same* live
+    # inventory may qualify the scan; never waive receipt or stage requirements.
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", lambda *_args: None)
+    assert storage.save_snapshot(value) == value["run_id"]
+    assert read_state(conn, value["run_id"]) == "VERIFIED"
