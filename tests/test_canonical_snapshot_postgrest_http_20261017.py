@@ -391,3 +391,38 @@ def test_real_http_lost_reconciliation_ack_after_commit_stays_pending(
     monkeypatch.setattr(storage, "_reconcile_paper_stages", lambda *_args: None)
     assert storage.save_snapshot(value) == value["run_id"]
     assert read_state(conn, value["run_id"]) == "VERIFIED"
+
+
+
+def test_real_http_lost_position_from_live_inventory_never_erases_obligation(
+    real_http_db, monkeypatch,
+):
+    """A disappearing open-view row cannot excuse an absent scan receipt.
+
+    A position can leave the managed view while the scan is reconciling.
+    This is local synthetic concurrency, not a genuine executed stop.
+    """
+    storage, conn = real_http_db
+    insert_local_position(conn)
+    value = scanner_payload(n=2)
+    value["run_id"] = "e" * 32
+
+    def removal_without_receipt(_snapshot, _run_id):
+        conn.execute(
+            "DELETE FROM public.alpha_hunter_paper_protection_horizon_open_v09 "
+            "WHERE entry_order_id='isolated-position-1'"
+        )
+        # Deliberately create NO durable current-run monitoring receipt.
+
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", removal_without_receipt)
+    with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_protection_horizon_open_v09"
+    ).fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_exit_attempts_v04 "
+        "WHERE source_run_id=%s", (value["run_id"],)
+    ).fetchone()[0] == 0
