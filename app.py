@@ -511,6 +511,11 @@ def _hydrate_dashboard_snapshot(
     if snapshot.get("_storage_contract") != "snapshot-parent-v0.2":
         return snapshot
 
+    # The parent is created before child rows to honor its foreign key.
+    # Pending canonical parents must never be treated as completed evidence.
+    if snapshot.get("_canonical_publication_state") not in (None, "VERIFIED"):
+        raise RuntimeError("Canonical snapshot publication is unverified")
+
     run_id = str(snapshot.get("run_id") or "")
     if not run_id:
         raise RuntimeError("Compact canonical snapshot is missing run_id")
