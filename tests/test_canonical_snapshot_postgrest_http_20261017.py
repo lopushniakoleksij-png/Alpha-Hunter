@@ -131,6 +131,14 @@ def real_http_db(monkeypatch):
         )
         # Test only parent and child HTTP path. Existing regressions independently
         # cover signals, immutable paper rows and entry/exit reconciliation.
+        actual_select = storage._select_json
+
+        def scoped_select(table, params):
+            if table == "alpha_hunter_paper_protection_horizon_open_v09":
+                return []  # This fixture has no positions; custody is tested separately.
+            return actual_select(table, params)
+
+        monkeypatch.setattr(storage, "_select_json", scoped_select)
         actual_upsert = storage._upsert
 
         def limited_upsert(table, rows, key):

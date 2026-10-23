@@ -865,8 +865,28 @@ class SupabaseStorage:
             [*paper_events, *execution_events],
             "event_id",
         )
+        # Capture obligations before exits can remove positions from the open
+        # view. A failed inventory read must not suppress exit reconciliation.
+        monitoring_positions = []
+        monitoring_inventory_error = None
+        if canonical_cron:
+            try:
+                monitoring_positions = self._select_json(
+                    PAPER_PROTECTION_OPEN_VIEW,
+                    {"select": "entry_order_id,decision_id,symbol,direction",
+                     "limit": "1000"},
+                )
+                if len(monitoring_positions) >= 1000:
+                    raise SupabaseStorageError("Monitoring inventory may be truncated")
+            except Exception as exc:
+                monitoring_inventory_error = exc
         self._reconcile_paper_stages(snapshot, run_id)
         if canonical_cron:
+            if monitoring_inventory_error is not None:
+                raise SupabaseStorageError(
+                    "Canonical publication lacks monitoring inventory"
+                ) from monitoring_inventory_error
+            self._verify_canonical_monitoring(snapshot, run_id, monitoring_positions)
             # Verify the exact persisted children AFTER independent entry/exit
             # reconciliation. A 2xx parent response alone proves nothing.
             expected = {
@@ -933,3 +953,58 @@ class SupabaseStorage:
                     "Canonical publication lacks confirmed parent readback"
                 )
         return run_id
+
+    def _verify_canonical_monitoring(self, snapshot, run_id, positions):
+        """Require durable current-run receipts; this is not execution proof.
+
+        Keep this separate from the reconciliation return/HTTP acknowledgement.
+        Empty inventories are valid; missing or malformed inventories are not.
+        Newly filled positions with no later observation remain unpublished
+        rather than manufacturing a same-run monitoring baseline.
+        """
+        expected = {p.get("entry_order_id"): p for p in positions}
+        if len(expected) != len(positions) or any(
+            not isinstance(k, str) or not k for k in expected
+        ):
+            raise SupabaseStorageError("Canonical monitoring inventory invalid")
+        if not expected:
+            return
+        rows = self._select_json(PAPER_EXIT_ATTEMPT_TABLE, {
+            "select": "entry_order_id,decision_id,symbol,direction,source_run_id,"
+                      "observed_at_utc,outcome,blockers,paper_only,exchange_authority,"
+                      "trade_permission,order_path",
+            "source_run_id": f"eq.{run_id}", "limit": "1000",
+        })
+        if len(rows) >= 1000:
+            raise SupabaseStorageError("Canonical monitoring readback may be truncated")
+        def timestamp(value):
+            value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if value.utcoffset() is None:
+                raise ValueError("timezone required")
+            return value
+        try:
+            scan_at = timestamp(snapshot.get("collected_at_utc"))
+            for order_id, position in expected.items():
+                matches = [r for r in rows if r.get("entry_order_id") == order_id]
+                if len(matches) != 1:
+                    raise ValueError("missing or duplicate receipt")
+                row = matches[0]
+                if any(not position.get(k) or row.get(k) != position[k]
+                       for k in ("decision_id", "symbol", "direction")):
+                    raise ValueError("position identity mismatch")
+                age = (timestamp(row.get("observed_at_utc")) - scan_at).total_seconds()
+                if not 0 <= age <= 2100:
+                    raise ValueError("receipt outside scan observation window")
+                if (row.get("source_run_id") != run_id
+                    or row.get("outcome") not in {"NO_TRIGGER", "STOP_TRIGGERED",
+                                                   "TARGET_TRIGGERED", "HORIZON_CLOSED"}
+                    or row.get("blockers") != []
+                    or row.get("paper_only") is not True
+                    or row.get("exchange_authority") is not False
+                    or row.get("trade_permission") is not False
+                    or row.get("order_path") != "NONE"):
+                    raise ValueError("unusable monitoring receipt")
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise SupabaseStorageError(
+                "Canonical publication lacks usable durable monitoring evidence"
+            ) from exc

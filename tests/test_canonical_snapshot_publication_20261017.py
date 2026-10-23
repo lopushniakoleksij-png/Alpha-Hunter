@@ -46,6 +46,8 @@ def setup_writer(monkeypatch, child_mode="complete", parent_mode="complete",
 
     def select(table, params):
         calls.append(("read", table, deepcopy(params)))
+        if table == "alpha_hunter_paper_protection_horizon_open_v09":
+            return []
         if table == storage.settings.symbol_table:
             if child_mode == "empty":
                 return []

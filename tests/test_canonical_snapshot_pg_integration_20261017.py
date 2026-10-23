@@ -99,6 +99,8 @@ def writer_for_db(monkeypatch, conn, *, simulate_lost_child_ack=False):
         # FK/publication contract; existing reconciliation regressions cover them.
 
     def select(table, params):
+        if table == "alpha_hunter_paper_protection_horizon_open_v09":
+            return []
         run_id = params["run_id"][3:]
         if table == writer.settings.symbol_table:
             return [
