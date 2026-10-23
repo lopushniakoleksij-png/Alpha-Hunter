@@ -134,7 +134,15 @@ def real_http_db(monkeypatch):
                 statuses = [
                     requests.get(
                         BASE + "/" + table,
-                        params={"select": "run_id", "limit": "1"},
+                        params={
+                            "select": (
+                                "run_id" if table in (
+                                    "alpha_hunter_snapshots",
+                                    "alpha_hunter_symbol_snapshots",
+                                ) else "entry_order_id"
+                            ),
+                            "limit": "1",
+                        },
                         timeout=2,
                     ).status_code
                     for table in (
