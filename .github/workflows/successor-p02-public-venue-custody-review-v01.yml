@@ -5,6 +5,7 @@ on:
     paths:
       - 'ops/reviews/successor_public_https_capture_v01.py'
       - 'ops/reviews/successor_public_https_pg16_custody_v01.py'
+      - 'ops/reviews/successor_selected_public_quote_artifact_20261023.py'
       - 'tests/test_successor_public_https_capture_v01.py'
       - '.github/workflows/successor-p02-public-venue-custody-review-v01.yml'
 
@@ -71,7 +72,12 @@ jobs:
           AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
           AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
         run: python ops/reviews/successor_public_https_pg16_custody_v01.py
+      - name: One-shot public NIGHT/SOON quote research, no source/position keys
+        env:
+          AH_P02_SYMBOL_PROBE_APPROVAL: EPHEMERAL_CI_PUBLIC_GET_ONLY
+        run: python ops/reviews/successor_selected_public_quote_artifact_20261023.py
       - name: Preserve bounded-retention public-quote bytes and SHA256 manifest (NOT permanent custody)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: p02-one-shot-public-bitget-raw-quote-${{ github.run_id }}
