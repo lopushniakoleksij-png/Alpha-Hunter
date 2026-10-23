@@ -24,7 +24,7 @@ class RejectRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, fp, code, msg, headers, newurl):
         raise ValueError("REDIRECT_FORBIDDEN")
 
-def capture_public_quote(run_id):
+def capture_public_quote(run_id, *, include_raw_bytes=False):
     ctx = ssl.create_default_context()
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
@@ -57,4 +57,11 @@ def capture_public_quote(run_id):
     quote["scientific_pass_permitted"] = False
     quote["trade_permission"] = False
     quote["exchange_authority"] = False
+    # Optional research-only raw evidence for short-lived GitHub CI artifacts.
+    # Does NOT prove venue-signed data, independent permanent custody, source
+    # paper positions or any alert delivery. Default API remains unchanged.
+    if include_raw_bytes is True:
+        return quote, payload
+    if include_raw_bytes is not False:
+        raise ValueError("RAW_CAPTURE_FLAG_INVALID")
     return quote
