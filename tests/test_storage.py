@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -32,6 +33,17 @@ class FakeSession:
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
         return FakeResponse()
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        symbols = []
+        for posted_url, call in self.calls:
+            if posted_url.endswith("/alpha_hunter_symbol_snapshots") and "data" in call:
+                symbols.extend(
+                    {"symbol": row["symbol"]}
+                    for row in json.loads(call["data"])
+                )
+        return StatusResponse(200, payload=symbols)
 
 
 class SequencedSession:
@@ -87,17 +99,70 @@ def test_supabase_writes_parent_and_children():
     )
     run_id = storage.save_snapshot(sample_snapshot())
     assert len(run_id) == 32
-    assert len(session.calls) == 5
+    assert len(session.calls) == 6
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id,symbol"}
-    assert session.calls[2][1]["params"] == {"on_conflict": "signal_id"}
+    assert session.calls[2][1]["params"]["select"] == "symbol"
     assert session.calls[3][1]["params"] == {"on_conflict": "signal_id"}
-    assert session.calls[4][1]["params"] == {"on_conflict": "run_id,symbol"}
-    assert session.calls[2][0].endswith("/rest/v1/alpha_hunter_signals")
-    assert session.calls[3][0].endswith("/rest/v1/alpha_hunter_signal_features")
-    assert session.calls[4][0].endswith(
+    assert session.calls[4][1]["params"] == {"on_conflict": "signal_id"}
+    assert session.calls[5][1]["params"] == {"on_conflict": "run_id,symbol"}
+    assert session.calls[3][0].endswith("/rest/v1/alpha_hunter_signals")
+    assert session.calls[4][0].endswith("/rest/v1/alpha_hunter_signal_features")
+    assert session.calls[5][0].endswith(
         "/rest/v1/alpha_hunter_readiness_observations_v01"
     )
+
+
+def test_snapshot_child_writes_are_small_and_verified_before_signal_persistence():
+    snapshot = sample_snapshot()
+    prototype = snapshot["symbols"][0]
+    snapshot["symbols"] = [
+        {**prototype, "symbol": f"TEST{i:02d}USDT"} for i in range(17)
+    ]
+    session = FakeSession()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=session,
+    )
+    storage.save_snapshot(snapshot)
+
+    child_posts = [
+        call for url, call in session.calls
+        if url.endswith("/alpha_hunter_symbol_snapshots") and "data" in call
+    ]
+    assert [len(json.loads(call["data"])) for call in child_posts] == [8, 8, 1]
+    verification = [
+        call for url, call in session.calls
+        if url.endswith("/alpha_hunter_symbol_snapshots") and "params" in call
+        and call["params"].get("select") == "symbol"
+    ]
+    assert len(verification) == 1
+    verified_index = session.calls.index(next(
+        pair for pair in session.calls
+        if pair[1] in verification
+    ))
+    signal_index = next(
+        i for i, (url, _) in enumerate(session.calls)
+        if url.endswith("/alpha_hunter_signals")
+    )
+    assert verified_index < signal_index
+
+
+def test_unverified_compact_children_block_downstream_persistence():
+    session = SequencedSession([
+        StatusResponse(201),  # parent FK must exist first
+        StatusResponse(201),  # child write returned success
+        StatusResponse(200, payload=[]),  # custody read-back disagrees
+    ])
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="secret"),
+        session=session,
+    )
+    with pytest.raises(SupabaseStorageError, match="not verified"):
+        storage.save_snapshot(sample_snapshot())
+    assert len(session.calls) == 3
+    assert all(not url.endswith("/alpha_hunter_signals")
+               for url, _ in session.calls)
 
 
 def test_supabase_read_retries_transient_status_then_succeeds():
@@ -143,6 +208,7 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
         StatusResponse(503, text="temporary upstream reset"),
         StatusResponse(201),
         StatusResponse(201),
+        StatusResponse(200, payload=[{"symbol": "SUIUSDT"}]),
         StatusResponse(201),
         StatusResponse(201),
         StatusResponse(201),
@@ -160,7 +226,7 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
     run_id = storage.save_snapshot(sample_snapshot())
 
     assert len(run_id) == 32
-    assert len(session.calls) == 6
+    assert len(session.calls) == 7
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id"}
 
@@ -307,8 +373,8 @@ def test_canonical_signal_and_feature_rows_share_same_signal_id():
     )
     run_id = storage.save_snapshot(sample_snapshot())
 
-    signal_rows = json.loads(session.calls[2][1]["data"])
-    feature_rows = json.loads(session.calls[3][1]["data"])
+    signal_rows = json.loads(session.calls[3][1]["data"])
+    feature_rows = json.loads(session.calls[4][1]["data"])
 
     assert signal_rows[0]["run_id"] == run_id
     assert feature_rows[0]["run_id"] == run_id
@@ -435,7 +501,7 @@ def test_signal_feature_and_parent_payloads_are_compact():
     assert "timeframes" not in parent_payload["symbols"][0]
     assert "multi_strategy_engine" not in parent_payload["symbols"][0]
 
-    readiness_rows = json.loads(session.calls[4][1]["data"])
+    readiness_rows = json.loads(session.calls[5][1]["data"])
     assert readiness_rows[0]["symbol"] == "SUIUSDT"
     assert readiness_rows[0]["reward_risk"] == 6.0
     assert readiness_rows[0]["trade_permission"] is False
