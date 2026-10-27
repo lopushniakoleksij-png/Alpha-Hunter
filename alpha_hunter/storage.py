@@ -363,6 +363,61 @@ class SupabaseStorage:
                 f"Supabase upsert failed for {table}: HTTP {response.status_code}: {body}"
             )
 
+    def _persist_verified_symbol_children(
+        self, run_id: str, children: list[dict[str, Any]],
+    ) -> None:
+        """Bound the size of each JSONB write, then verify all child identities.
+
+        Production incident 2026-10-27: large single-request child upserts
+        repeatedly hit PostgREST SQLSTATE 57014, leaving compact parent rows
+        with zero symbol details. Chunking lowers each statement's work without
+        increasing the fixed HTTP timeout or the protected scan cadence.
+        """
+        if not (1 <= len(children) <= 2000):
+            raise SupabaseStorageError("Canonical child count out of bounds")
+
+        expected: set[str] = set()
+        for child in children:
+            symbol = child.get("symbol")
+            if (
+                child.get("run_id") != run_id
+                or not isinstance(symbol, str)
+                or not symbol
+                or symbol in expected
+                or not isinstance(child.get("payload"), dict)
+                or child["payload"].get("symbol") != symbol
+            ):
+                raise SupabaseStorageError("Invalid canonical symbol child identity")
+            expected.add(symbol)
+
+        # Keep the existing idempotent (run_id,symbol) upsert and retry policy.
+        # Bounded batches prevent one large expensive JSONB upsert statement.
+        batch_size = 8
+        for offset in range(0, len(children), batch_size):
+            self._upsert(
+                self.settings.symbol_table,
+                children[offset:offset + batch_size],
+                "run_id,symbol",
+            )
+
+        # A 2xx write response is insufficient to establish end-to-end custody.
+        # Read only narrow indexed identifiers; never re-read bulky JSONB here.
+        verified = self._select_json(
+            self.settings.symbol_table,
+            {
+                "select": "symbol",
+                "run_id": f"eq.{run_id}",
+                "order": "symbol.asc",
+                "limit": "2000",
+            },
+        )
+        actual = [row.get("symbol") for row in verified]
+        if len(actual) != len(children) or set(actual) != expected:
+            raise SupabaseStorageError(
+                "Canonical compact child write not verified: "
+                f"expected={len(children)}, observed={len(actual)}"
+            )
+
     def _insert_immutable(
         self,
         table: str,
@@ -744,8 +799,12 @@ class SupabaseStorage:
             canonical["signal_id"] = signal_id
             canonical_feature_rows.append(canonical)
 
+        # The child table has an immediate FK to the parent, so parent-first
+        # insertion is required. Treat this parent as incomplete until *every*
+        # symbol child is independently confirmed. Never continue to paper
+        # execution on a missing/ambiguous child write.
         self._upsert(self.settings.snapshot_table, parent, "run_id")
-        self._upsert(self.settings.symbol_table, children, "run_id,symbol")
+        self._persist_verified_symbol_children(str(run_id), children)
         self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
         self._upsert(
             "alpha_hunter_signal_features",
