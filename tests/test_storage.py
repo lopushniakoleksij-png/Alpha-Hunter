@@ -471,8 +471,8 @@ def test_signal_feature_and_parent_payloads_are_compact():
     )
     storage.save_snapshot(snapshot)
 
-    signal_rows = json.loads(session.calls[2][1]["data"])
-    feature_rows = json.loads(session.calls[3][1]["data"])
+    signal_rows = json.loads(session.calls[3][1]["data"])
+    feature_rows = json.loads(session.calls[4][1]["data"])
     signal_payload = signal_rows[0]["payload"]
     feature_source = feature_rows[0]["source_payload"]
 
