@@ -48,6 +48,11 @@ SUPABASE_TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
 # Keep dashboard requests below Gunicorn's 30-second default worker timeout.
 # This scope never alters cron ingestion or operator write paths.
 DASHBOARD_READ_BUDGET_SECONDS = 18.0
+# The optional successor profitability view may exceed the PostgREST statement
+# timeout. Fall back quickly to the recorded test-engine status, with an
+# explicit successor-unavailable blocker; never infer a successor PASS.
+# Web dashboard reads only; the sealed paper cron does not use this deadline.
+DASHBOARD_OPTIONAL_STATUS_READ_TIMEOUT_SECONDS = 2.5
 # During a confirmed outage, return the safe recovery page promptly instead
 # of allowing every mobile refresh to open another expensive database query.
 DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS = 75.0
@@ -147,6 +152,17 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
         raise RuntimeError("Supabase environment variables are not configured")
 
     deadline = _DASHBOARD_READ_DEADLINE.get()
+    # Optional scientific status must never use the entire browser request
+    # budget. Keep all other reads and non-dashboard callers unchanged.
+    optional_dashboard_status = (
+        deadline is not None
+        and table == "alpha_hunter_paper_profitability_status_v09"
+    )
+    attempts = 1 if optional_dashboard_status else SUPABASE_READ_ATTEMPTS
+    timeout_seconds = (
+        min(SUPABASE_READ_TIMEOUT_SECONDS, DASHBOARD_OPTIONAL_STATUS_READ_TIMEOUT_SECONDS)
+        if optional_dashboard_status else SUPABASE_READ_TIMEOUT_SECONDS
+    )
 
     def bounded_backoff(attempt: int) -> None:
         delay = SUPABASE_RETRY_BACKOFF_SECONDS * attempt
@@ -154,13 +170,13 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         time.sleep(delay)
 
-    for attempt in range(1, SUPABASE_READ_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         remaining = deadline - time.monotonic() if deadline is not None else None
         if remaining is not None and remaining <= 0:
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         request_timeout = (
-            min(SUPABASE_READ_TIMEOUT_SECONDS, remaining)
-            if remaining is not None else SUPABASE_READ_TIMEOUT_SECONDS
+            min(timeout_seconds, remaining)
+            if remaining is not None else timeout_seconds
         )
         try:
             response = requests.get(
@@ -170,14 +186,14 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
                 timeout=request_timeout,
             )
         except requests.RequestException:
-            if attempt >= SUPABASE_READ_ATTEMPTS:
+            if attempt >= attempts:
                 raise
             bounded_backoff(attempt)
             continue
 
         if (
             response.status_code in SUPABASE_TRANSIENT_STATUSES
-            and attempt < SUPABASE_READ_ATTEMPTS
+            and attempt < attempts
         ):
             bounded_backoff(attempt)
             continue
