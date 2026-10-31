@@ -192,7 +192,9 @@ def test_status_view_is_phone_safe_and_never_claims_support_during_capture():
         "with (security_invoker=true,security_barrier=true)",
         "COLLECTING - CAPTURE ONLY - NOT YET EVALUABLE",
         "capture_sample_gate_met",
-        "IMPLEMENT_FROZEN_PUBLIC_3M_FIRST_TOUCH_EVALUATOR",
+        "CONTINUE_PROSPECTIVE_CAPTURE_UNTIL_MINIMUM_UTC_DAYS_AND_SAMPLE_GATES",
+        "SEALED_PUBLIC_3M_EVALUATOR_ACTIVE",
+        "DO_NOT_READ_PRIMARY_OUTCOMES_BEFORE_COHORT_FREEZE",
         "'NONE'::text as scientific_conclusion",
         "grant select on public.alpha_hunter_geometry_holdout_status_v01 to service_role",
     ]
