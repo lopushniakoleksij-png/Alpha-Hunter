@@ -1,0 +1,428 @@
+"""True HTTP/PostgREST canonical publication integration, local ephemeral services only.
+
+Real PostgreSQL foreign keys, real HTTP upserts with PostgREST and synthetic
+SQLSTATE 57014 statement-cancel errors. Never connects to production Supabase.
+"""
+import os
+import time
+
+import pytest
+import requests
+
+psycopg = pytest.importorskip("psycopg")
+
+from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, SupabaseStorageError
+
+BASE = "http://127.0.0.1:3000"
+
+
+class LocalPostgrestSession(requests.Session):
+    """Rewrite Supabase gateway prefix for the direct isolated PostgREST endpoint."""
+
+    def request(self, method, url, *args, **kwargs):
+        assert url.startswith(BASE + "/rest/v1/")
+        return super().request(
+            method, url.replace(BASE + "/rest/v1/", BASE + "/", 1),
+            *args, **kwargs,
+        )
+
+
+class LocalPostgrestWriter(SupabaseStorage):
+    @property
+    def headers(self):
+        # Direct PostgREST anonymous role in this isolated test needs no JWT.
+        return {
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates,return=minimal",
+        }
+
+
+def scanner_payload(n=57):
+    return {
+        "version": "test-v0",
+        "product_type": "usdt-futures",
+        "collected_at_utc": "2026-10-17T09:40:00Z",
+        "validation_identity": {"run_source": "RENDER_CRON"},
+        "symbols": [{
+            "symbol": f"TEST{i:03d}USDT",
+            "last_price": 100.0 + i,
+            "state": "NEUTRAL",
+            "trade_permission": False,
+            "execution_setup": {},
+        } for i in range(n)],
+    }
+
+
+@pytest.fixture
+def real_http_db(monkeypatch):
+    if os.getenv("AH_LOCAL_POSTGREST_ONLY") != "1":
+        pytest.skip("PostgREST acceptance is not enabled")
+    dsn = os.getenv("AH_LOCAL_PG_DSN", "")
+    if "host=127.0.0.1" not in dsn or "dbname=postgres" not in dsn:
+        pytest.fail("Non-local PostgreSQL connection forbidden")
+    with psycopg.connect(dsn, autocommit=True) as connection:
+        connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_exit_attempts_v04")
+        connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_protection_horizon_open_v09")
+        connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_symbol_snapshots")
+        connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_snapshots")
+        connection.execute("DROP FUNCTION IF EXISTS public.ah_test_forced_cancel()")
+        connection.execute("""
+            CREATE TABLE public.alpha_hunter_snapshots (
+                run_id text PRIMARY KEY,
+                collected_at_utc timestamptz,
+                version text,
+                product_type text,
+                symbol_count integer,
+                error_count integer,
+                payload jsonb NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE public.alpha_hunter_symbol_snapshots (
+                run_id text NOT NULL REFERENCES public.alpha_hunter_snapshots(run_id),
+                symbol text NOT NULL,
+                collected_at_utc timestamptz,
+                state text,
+                previous_state text,
+                state_changed boolean,
+                trade_permission boolean,
+                direction text,
+                reward_risk numeric,
+                last_price numeric,
+                open_interest numeric,
+                funding_rate numeric,
+                data_integrity_score numeric,
+                error text,
+                payload jsonb NOT NULL,
+                PRIMARY KEY (run_id, symbol)
+            )
+        """)
+        # Local synthetic inventory and durable receipts: no production data,
+        # no Supabase connection, and no live order or trade authority.
+        connection.execute("""
+            CREATE TABLE public.alpha_hunter_paper_protection_horizon_open_v09 (
+                entry_order_id text PRIMARY KEY,
+                decision_id text NOT NULL,
+                symbol text NOT NULL,
+                direction text NOT NULL
+            )
+        """)
+        connection.execute("""
+            CREATE TABLE public.alpha_hunter_paper_exit_attempts_v04 (
+                entry_order_id text NOT NULL,
+                source_run_id text NOT NULL,
+                decision_id text NOT NULL,
+                symbol text NOT NULL,
+                direction text NOT NULL,
+                observed_at_utc timestamptz NOT NULL,
+                outcome text NOT NULL,
+                blockers jsonb NOT NULL,
+                paper_only boolean NOT NULL,
+                exchange_authority boolean NOT NULL,
+                trade_permission boolean NOT NULL,
+                order_path text NOT NULL,
+                PRIMARY KEY (entry_order_id, source_run_id)
+            )
+        """)
+        connection.execute("NOTIFY pgrst, 'reload schema'")
+        # A newly started PostgREST container may respond while its schema
+        # cache is still reloading. Require BOTH tables to be stable across
+        # successive checks before attempting the first real HTTP write.
+        stable = 0
+        for _ in range(80):
+            try:
+                statuses = [
+                    requests.get(
+                        BASE + "/" + table,
+                        params={
+                            "select": (
+                                "run_id" if table in (
+                                    "alpha_hunter_snapshots",
+                                    "alpha_hunter_symbol_snapshots",
+                                ) else "entry_order_id"
+                            ),
+                            "limit": "1",
+                        },
+                        timeout=2,
+                    ).status_code
+                    for table in (
+                        "alpha_hunter_snapshots",
+                        "alpha_hunter_symbol_snapshots",
+                        "alpha_hunter_paper_protection_horizon_open_v09",
+                        "alpha_hunter_paper_exit_attempts_v04",
+                    )
+                ]
+            except requests.RequestException:
+                statuses = []
+            if statuses == [200, 200, 200, 200]:
+                stable += 1
+                if stable >= 4:
+                    break
+            else:
+                stable = 0
+            time.sleep(0.3)
+        else:
+            pytest.fail("Local PostgREST schema cache did not stabilize")
+        storage = LocalPostgrestWriter(
+            SupabaseConfig(url=BASE, key="ISOLATED_ONLY",
+                           retry_backoff_seconds=0, max_retries=2),
+            session=LocalPostgrestSession(),
+        )
+        # All canonical parent, child, position-inventory and receipt readbacks
+        # use the isolated real PostgREST service, not an in-memory fake.
+        # Entry/exit business reconciliation is separately tested and remains
+        # deliberately inactive in this narrowly scoped transport fixture.
+        actual_upsert = storage._upsert
+
+        def limited_upsert(table, rows, key):
+            if table in (storage.settings.snapshot_table, storage.settings.symbol_table):
+                return actual_upsert(table, rows, key)
+
+        monkeypatch.setattr(storage, "_upsert", limited_upsert)
+        monkeypatch.setattr(storage, "_insert_immutable", lambda *a, **kw: None)
+        monkeypatch.setattr(storage, "_reconcile_paper_stages", lambda *a, **kw: None)
+        try:
+            yield storage, connection
+        finally:
+            connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_exit_attempts_v04")
+            connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_paper_protection_horizon_open_v09")
+            connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_symbol_snapshots")
+            connection.execute("DROP TABLE IF EXISTS public.alpha_hunter_snapshots")
+            connection.execute("DROP FUNCTION IF EXISTS public.ah_test_forced_cancel()")
+            connection.execute("NOTIFY pgrst, 'reload schema'")
+
+
+def read_state(conn, run_id):
+    return conn.execute(
+        "select payload->>'_canonical_publication_state' from public.alpha_hunter_snapshots where run_id=%s",
+        (run_id,),
+    ).fetchone()[0]
+
+
+def read_child_count(conn, run_id):
+    return conn.execute(
+        "select count(*) from public.alpha_hunter_symbol_snapshots where run_id=%s",
+        (run_id,),
+    ).fetchone()[0]
+
+
+def test_real_http_57_rows_publish_only_after_complete_readback(real_http_db):
+    storage, conn = real_http_db
+    value = scanner_payload()
+    run_id = storage.save_snapshot(value)
+    assert read_child_count(conn, run_id) == 57
+    assert read_state(conn, run_id) == "VERIFIED"
+    # A repeated deterministic HTTP upsert cannot produce duplicate children.
+    assert storage.save_snapshot(value) == run_id
+    assert read_child_count(conn, run_id) == 57
+    assert read_state(conn, run_id) == "VERIFIED"
+
+
+def test_real_http_third_chunk_57014_then_idempotent_recovery(real_http_db):
+    storage, conn = real_http_db
+    conn.execute("""
+        CREATE FUNCTION public.ah_test_forced_cancel()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.symbol='TEST032USDT' THEN
+            RAISE EXCEPTION 'synthetic statement timeout (isolated test)' USING ERRCODE='57014';
+          END IF;
+          RETURN NEW;
+        END $$
+    """)
+    conn.execute("""
+        CREATE TRIGGER ah_test_forced_cancel_trigger
+        BEFORE INSERT ON public.alpha_hunter_symbol_snapshots
+        FOR EACH ROW EXECUTE FUNCTION public.ah_test_forced_cancel()
+    """)
+    value = scanner_payload()
+    with pytest.raises(SupabaseStorageError, match="upsert failed for alpha_hunter_symbol_snapshots"):
+        storage.save_snapshot(value)
+    run_id = value["run_id"]
+    assert read_state(conn, run_id) == "PENDING"
+    assert read_child_count(conn, run_id) == 32
+
+    conn.execute("DROP TRIGGER ah_test_forced_cancel_trigger ON public.alpha_hunter_symbol_snapshots")
+    assert storage.save_snapshot(value) == run_id
+    assert read_state(conn, run_id) == "VERIFIED"
+    assert read_child_count(conn, run_id) == 57
+
+
+def insert_local_position(conn):
+    """Synthetic managed paper inventory visible via real isolated PostgREST."""
+    conn.execute("""
+        INSERT INTO public.alpha_hunter_paper_protection_horizon_open_v09
+            (entry_order_id, decision_id, symbol, direction)
+        VALUES ('isolated-position-1', 'isolated-decision-1', 'TEST000USDT', 'LONG')
+    """)
+
+
+def insert_local_receipt(conn, run_id, *, outcome="NO_TRIGGER"):
+    """Synthetic receipt is in Postgres, not mocked in a Python response."""
+    conn.execute("""
+        INSERT INTO public.alpha_hunter_paper_exit_attempts_v04
+            (entry_order_id, source_run_id, decision_id, symbol, direction,
+             observed_at_utc, outcome, blockers, paper_only,
+             exchange_authority, trade_permission, order_path)
+        VALUES
+            ('isolated-position-1', %s, 'isolated-decision-1', 'TEST000USDT',
+             'LONG', '2026-10-17T09:40:00Z', %s, '[]'::jsonb,
+             true, false, false, 'NONE')
+    """, (run_id, outcome))
+
+
+def test_real_http_nonempty_position_missing_receipt_stays_pending_then_recovers(real_http_db):
+    storage, conn = real_http_db
+    value = scanner_payload(n=2)
+    value["run_id"] = "a" * 32
+    insert_local_position(conn)
+
+    # A healthy parent and complete children must NOT substitute for actual
+    # position-monitoring evidence if reconciliation produced no receipt.
+    with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+
+    # Replaying this deterministic scan after a real local receipt appears can
+    # qualify it prospectively in the test fixture; no live history is rewritten.
+    insert_local_receipt(conn, value["run_id"])
+    assert storage.save_snapshot(value) == value["run_id"]
+    assert read_state(conn, value["run_id"]) == "VERIFIED"
+    assert read_child_count(conn, value["run_id"]) == 2
+
+
+def test_real_http_nonempty_position_unusable_receipt_never_publishes(real_http_db):
+    storage, conn = real_http_db
+    value = scanner_payload(n=2)
+    value["run_id"] = "b" * 32
+    insert_local_position(conn)
+    insert_local_receipt(conn, value["run_id"], outcome="INPUT_MISSING")
+
+    with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+
+
+
+def _commit_receipt_via_local_http(run_id, *, outcome="STOP_TRIGGERED"):
+    """True isolated HTTP commit, but only a synthetic reconciliation producer."""
+    receipt = {
+        "entry_order_id": "isolated-position-1",
+        "source_run_id": run_id,
+        "decision_id": "isolated-decision-1",
+        "symbol": "TEST000USDT",
+        "direction": "LONG",
+        "observed_at_utc": "2026-10-17T09:40:00Z",
+        "outcome": outcome,
+        "blockers": [],
+        "paper_only": True,
+        "exchange_authority": False,
+        "trade_permission": False,
+        "order_path": "NONE",
+    }
+    response = requests.post(
+        BASE + "/alpha_hunter_paper_exit_attempts_v04",
+        json=receipt,
+        headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+        timeout=5,
+    )
+    assert response.status_code in (200, 201, 204), response.text[:500]
+
+
+def test_real_http_exit_removes_position_after_inventory_but_receipt_still_required(
+    real_http_db, monkeypatch,
+):
+    """An exit can remove a position from the open view during reconciliation.
+
+    The writer must verify the pre-reconciliation census, not silently accept an
+    empty post-exit census. Real PostgREST supplies the current-run receipt.
+    """
+    storage, conn = real_http_db
+    insert_local_position(conn)
+    value = scanner_payload(n=2)
+    value["run_id"] = "c" * 32
+
+    def simulated_exit(_snapshot, run_id):
+        _commit_receipt_via_local_http(run_id)
+        conn.execute(
+            "DELETE FROM public.alpha_hunter_paper_protection_horizon_open_v09 "
+            "WHERE entry_order_id='isolated-position-1'"
+        )
+
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", simulated_exit)
+    assert storage.save_snapshot(value) == value["run_id"]
+    assert read_state(conn, value["run_id"]) == "VERIFIED"
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_protection_horizon_open_v09"
+    ).fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_exit_attempts_v04 "
+        "WHERE source_run_id=%s", (value["run_id"],)
+    ).fetchone()[0] == 1
+
+
+def test_real_http_lost_reconciliation_ack_after_commit_stays_pending(
+    real_http_db, monkeypatch,
+):
+    """A successful HTTP receipt INSERT is not proof of a successful stage ACK."""
+    storage, conn = real_http_db
+    insert_local_position(conn)
+    value = scanner_payload(n=2)
+    value["run_id"] = "d" * 32
+
+    def lost_ack(_snapshot, run_id):
+        _commit_receipt_via_local_http(run_id)
+        raise SupabaseStorageError("isolated synthetic lost reconciliation acknowledgment")
+
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", lost_ack)
+    with pytest.raises(SupabaseStorageError, match="lost reconciliation acknowledgment"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_exit_attempts_v04 "
+        "WHERE source_run_id=%s", (value["run_id"],)
+    ).fetchone()[0] == 1
+
+    # A separately confirmed, idempotent replay against the *same* live
+    # inventory may qualify the scan; never waive receipt or stage requirements.
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", lambda *_args: None)
+    assert storage.save_snapshot(value) == value["run_id"]
+    assert read_state(conn, value["run_id"]) == "VERIFIED"
+
+
+
+def test_real_http_lost_position_from_live_inventory_never_erases_obligation(
+    real_http_db, monkeypatch,
+):
+    """A disappearing open-view row cannot excuse an absent scan receipt.
+
+    A position can leave the managed view while the scan is reconciling.
+    This is local synthetic concurrency, not a genuine executed stop.
+    """
+    storage, conn = real_http_db
+    insert_local_position(conn)
+    value = scanner_payload(n=2)
+    value["run_id"] = "e" * 32
+
+    def removal_without_receipt(_snapshot, _run_id):
+        conn.execute(
+            "DELETE FROM public.alpha_hunter_paper_protection_horizon_open_v09 "
+            "WHERE entry_order_id='isolated-position-1'"
+        )
+        # Deliberately create NO durable current-run monitoring receipt.
+
+    monkeypatch.setattr(storage, "_reconcile_paper_stages", removal_without_receipt)
+    with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
+        storage.save_snapshot(value)
+    assert read_child_count(conn, value["run_id"]) == 2
+    assert read_state(conn, value["run_id"]) == "PENDING"
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_protection_horizon_open_v09"
+    ).fetchone()[0] == 0
+    assert conn.execute(
+        "SELECT count(*) FROM public.alpha_hunter_paper_exit_attempts_v04 "
+        "WHERE source_run_id=%s", (value["run_id"],)
+    ).fetchone()[0] == 0
