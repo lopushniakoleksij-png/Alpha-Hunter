@@ -182,18 +182,28 @@ def test_pending_canonical_snapshot_endpoint_keeps_trading_hidden(monkeypatch):
     assert "Trading actions are intentionally hidden" in response.get_data(as_text=True)
 
 
-def _large_canonical_snapshot():
+def _large_canonical_snapshot(count=57):
     row = sample_canonical()
     row["symbols"] = [
         {"symbol": f"TEST{i:03d}USDT", "state": "NEUTRAL",
          "last_price": 100.0 + i, "trade_permission": False,
          "execution_setup": {}}
-        for i in range(57)
+        for i in range(count)
     ]
     return row
 
 
-def test_large_canonical_write_uses_bounded_idempotent_batches(monkeypatch):
+@pytest.mark.parametrize(
+    "count,expected_batches",
+    [
+        (57, [8, 8, 8, 8, 8, 8, 8, 1]),
+        # Actual incident 31 Oct 2026: 62 advertised symbol rows / zero children.
+        (62, [8, 8, 8, 8, 8, 8, 8, 6]),
+    ],
+)
+def test_large_canonical_write_uses_bounded_idempotent_batches(
+    monkeypatch, count, expected_batches,
+):
     writer, calls = setup_writer(monkeypatch)
     original_select = writer._select_json
 
@@ -208,14 +218,14 @@ def test_large_canonical_write_uses_bounded_idempotent_batches(monkeypatch):
         return original_select(table, params)
 
     monkeypatch.setattr(writer, "_select_json", select)
-    writer.save_snapshot(_large_canonical_snapshot())
+    writer.save_snapshot(_large_canonical_snapshot(count))
     batches = [
         call[2] for call in calls
         if call[0] == "write" and call[1] == writer.settings.symbol_table
     ]
-    assert [len(batch) for batch in batches] == [16, 16, 16, 9]
+    assert [len(batch) for batch in batches] == expected_batches
     assert _parent_states(calls) == ["PENDING", "VERIFIED"]
-    assert len({row["symbol"] for batch in batches for row in batch}) == 57
+    assert len({row["symbol"] for batch in batches for row in batch}) == count
 
 
 def test_mid_batch_timeout_keeps_parent_pending_and_never_promotes(monkeypatch):
@@ -239,4 +249,4 @@ def test_mid_batch_timeout_keeps_parent_pending_and_never_promotes(monkeypatch):
     assert [
         len(call[2]) for call in calls
         if call[0] == "write" and call[1] == writer.settings.symbol_table
-    ] == [16, 16]
+    ] == [8, 8]
