@@ -90,7 +90,10 @@ PARENT_STORAGE_CONTRACT = "snapshot-parent-v0.2"
 # Keep the heavy canonical symbol upsert below the original 15-second HTTP
 # timeout without increasing it. Parent publication remains PENDING until
 # every bounded batch and independent readback have completed.
-CANONICAL_SYMBOL_WRITE_BATCH_SIZE = 16
+# The 31 Oct 2026 incident confirmed repeated 62-row upsert cancellations on
+# the ~1.8 GB symbol table. Limit each statement to eight compact children,
+# without changing the frozen 15s HTTP timeout or any scientific gate.
+CANONICAL_SYMBOL_WRITE_BATCH_SIZE = 8
 
 
 def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
