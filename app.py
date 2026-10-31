@@ -48,6 +48,11 @@ SUPABASE_TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
 # Keep dashboard requests below Gunicorn's 30-second default worker timeout.
 # This scope never alters cron ingestion or operator write paths.
 DASHBOARD_READ_BUDGET_SECONDS = 18.0
+# The optional successor profitability view may exceed the PostgREST statement
+# timeout. Fall back quickly to the recorded test-engine status, with an
+# explicit successor-unavailable blocker; never infer a successor PASS.
+# Web dashboard reads only; the sealed paper cron does not use this deadline.
+DASHBOARD_OPTIONAL_STATUS_READ_TIMEOUT_SECONDS = 2.5
 # During a confirmed outage, return the safe recovery page promptly instead
 # of allowing every mobile refresh to open another expensive database query.
 DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS = 75.0
@@ -147,6 +152,17 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
         raise RuntimeError("Supabase environment variables are not configured")
 
     deadline = _DASHBOARD_READ_DEADLINE.get()
+    # Optional scientific status must never use the entire browser request
+    # budget. Keep all other reads and non-dashboard callers unchanged.
+    optional_dashboard_status = (
+        deadline is not None
+        and table == "alpha_hunter_paper_profitability_status_v09"
+    )
+    attempts = 1 if optional_dashboard_status else SUPABASE_READ_ATTEMPTS
+    timeout_seconds = (
+        min(SUPABASE_READ_TIMEOUT_SECONDS, DASHBOARD_OPTIONAL_STATUS_READ_TIMEOUT_SECONDS)
+        if optional_dashboard_status else SUPABASE_READ_TIMEOUT_SECONDS
+    )
 
     def bounded_backoff(attempt: int) -> None:
         delay = SUPABASE_RETRY_BACKOFF_SECONDS * attempt
@@ -154,13 +170,13 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         time.sleep(delay)
 
-    for attempt in range(1, SUPABASE_READ_ATTEMPTS + 1):
+    for attempt in range(1, attempts + 1):
         remaining = deadline - time.monotonic() if deadline is not None else None
         if remaining is not None and remaining <= 0:
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         request_timeout = (
-            min(SUPABASE_READ_TIMEOUT_SECONDS, remaining)
-            if remaining is not None else SUPABASE_READ_TIMEOUT_SECONDS
+            min(timeout_seconds, remaining)
+            if remaining is not None else timeout_seconds
         )
         try:
             response = requests.get(
@@ -170,14 +186,14 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
                 timeout=request_timeout,
             )
         except requests.RequestException:
-            if attempt >= SUPABASE_READ_ATTEMPTS:
+            if attempt >= attempts:
                 raise
             bounded_backoff(attempt)
             continue
 
         if (
             response.status_code in SUPABASE_TRANSIENT_STATUSES
-            and attempt < SUPABASE_READ_ATTEMPTS
+            and attempt < attempts
         ):
             bounded_backoff(attempt)
             continue
@@ -500,6 +516,10 @@ def bind_execution_fill(
     return payload
 
 
+class CanonicalSnapshotPublishing(RuntimeError):
+    """A newly visible scan parent is still waiting for its child evidence."""
+
+
 def _hydrate_dashboard_snapshot(
     row: dict[str, Any],
     payload: dict[str, Any],
@@ -538,6 +558,25 @@ def _hydrate_dashboard_snapshot(
     ):
         raise RuntimeError("Compact canonical parent symbol_count is invalid")
     if len(children) != expected_count:
+        # Canonical scanner persists the parent before the child batch. A
+        # short-lived, incomplete newest parent is a publishing state, not a
+        # Supabase transport outage. Never show it as a completed scan.
+        try:
+            parent_created = datetime.fromisoformat(
+                str(row.get("created_at") or "").replace("Z", "+00:00")
+            )
+            age_seconds = (
+                datetime.now(timezone.utc) - parent_created.astimezone(timezone.utc)
+            ).total_seconds()
+        except (ValueError, TypeError):
+            age_seconds = float("inf")
+        if (
+            len(children) < expected_count
+            and -5 <= age_seconds <= 90
+        ):
+            raise CanonicalSnapshotPublishing(
+                "Canonical scan child evidence is still publishing"
+            )
         raise RuntimeError("Incomplete compact canonical snapshot child evidence")
 
     by_symbol: dict[str, dict[str, Any]] = {}
@@ -572,7 +611,7 @@ def _hydrate_dashboard_snapshot(
 
 def latest_snapshot() -> dict[str, Any]:
     params = {
-        "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
+        "select": "run_id,collected_at_utc,created_at,version,symbol_count,error_count,payload",
         "order": "collected_at_utc.desc",
         "limit": "1",
     }
@@ -2503,11 +2542,36 @@ def bounded_dashboard_payload() -> dict[str, Any]:
         if time.monotonic() >= _DASHBOARD_READ_DEADLINE.get():
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         return dashboard_payload(snapshot, test_status, lifecycle_status)
+    except CanonicalSnapshotPublishing:
+        # Do not arm the 75-second outage circuit for a normal scanner
+        # parent-then-children commit; next 10-second refresh must recheck.
+        raise
     except Exception:
         _record_dashboard_read_failure()
         raise
     finally:
         _DASHBOARD_READ_DEADLINE.reset(token)
+
+
+# Same independent public quote widget, but accurately label the short,
+# read-only publication window instead of reporting a database outage.
+DASHBOARD_PUBLISHING_PAGE = (
+    DASHBOARD_RECOVERY_PAGE
+    .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST SCAN IS PUBLISHING")
+    .replace(
+        "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
+        "The newest canonical scan has arrived, but its per-symbol evidence is still being committed. Trading decisions remain hidden until the complete scan is verified.",
+    )
+)
+
+
+def _dashboard_publishing_response():
+    response = app.make_response((render_template_string(
+        DASHBOARD_PUBLISHING_PAGE, build=build_identity(),
+    ), 202))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "10"
+    return response
 
 
 def _dashboard_recovery_response():
@@ -2528,6 +2592,9 @@ def dashboard():
             PAGE,
             data=bounded_dashboard_payload(),
         )
+    except CanonicalSnapshotPublishing:
+        app.logger.info("Newest canonical scan is publishing child evidence")
+        return _dashboard_publishing_response()
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
         return _dashboard_recovery_response()
@@ -2538,6 +2605,16 @@ def api_latest():
     if not dashboard_read_circuit_open():
         try:
             return jsonify(bounded_dashboard_payload())
+        except CanonicalSnapshotPublishing:
+            response = jsonify({
+                "error": "canonical_scan_publishing",
+                "retry_after_seconds": 10,
+                "build": build_identity(),
+            })
+            response.status_code = 503
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Retry-After"] = "10"
+            return response
         except Exception:
             app.logger.exception("API latest live-data read failed")
     response = jsonify({
