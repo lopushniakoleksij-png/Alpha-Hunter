@@ -168,3 +168,91 @@ def test_fast_optional_successor_status_keeps_priority(monkeypatch):
         "alpha_hunter_paper_repair_status_v01",
     ]
     assert calls[0][1] <= 2.5
+
+
+def test_canonical_parent_before_children_is_publishing_not_outage(monkeypatch):
+    from datetime import datetime, timezone
+    import pytest
+
+    parent = {
+        "run_id": "publishing-run",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "symbol_count": 2,
+    }
+    payload = {
+        "_storage_contract": "snapshot-parent-v0.2",
+        "run_id": "publishing-run",
+        "symbols": [{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}],
+    }
+    monkeypatch.setattr(
+        dashboard_app, "supabase_get_rows",
+        lambda table, params: [
+            {"symbol": "BTCUSDT", "payload": {"symbol": "BTCUSDT"}}
+        ],
+    )
+
+    with pytest.raises(dashboard_app.CanonicalSnapshotPublishing):
+        dashboard_app._hydrate_dashboard_snapshot(parent, payload)
+
+    client = dashboard_app.app.test_client()
+    monkeypatch.setattr(
+        dashboard_app, "latest_snapshot",
+        lambda: (_ for _ in ()).throw(
+            dashboard_app.CanonicalSnapshotPublishing("publishing")
+        ),
+    )
+    monkeypatch.setattr(dashboard_app, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    monkeypatch.setenv("RENDER_SERVICE_ID", "web-only-test")
+    page = client.get("/")
+    assert page.status_code == 202
+    assert "LATEST SCAN IS PUBLISHING" in page.get_data(as_text=True)
+    assert "Bitget public market prices" in page.get_data(as_text=True)
+    assert "Trading actions are intentionally hidden" in page.get_data(as_text=True)
+    assert dashboard_app._DASHBOARD_READ_UNAVAILABLE_UNTIL == 0.0
+
+    api = client.get("/api/latest")
+    assert api.status_code == 503
+    assert api.get_json()["error"] == "canonical_scan_publishing"
+    assert dashboard_app._DASHBOARD_READ_UNAVAILABLE_UNTIL == 0.0
+
+
+def test_persistently_missing_canonical_children_remains_hard_error(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    import pytest
+
+    parent = {
+        "run_id": "old-incomplete",
+        "created_at": (datetime.now(timezone.utc) - timedelta(minutes=8)).isoformat(),
+        "symbol_count": 2,
+    }
+    payload = {
+        "_storage_contract": "snapshot-parent-v0.2",
+        "run_id": "old-incomplete",
+        "symbols": [{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}],
+    }
+    monkeypatch.setattr(dashboard_app, "supabase_get_rows", lambda *_: [])
+    with pytest.raises(RuntimeError, match="Incomplete compact canonical snapshot"):
+        dashboard_app._hydrate_dashboard_snapshot(parent, payload)
+
+
+def test_published_complete_parent_uses_full_verified_children(monkeypatch):
+    from datetime import datetime, timezone
+
+    parent = {
+        "run_id": "complete-run",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "symbol_count": 2,
+    }
+    payload = {
+        "_storage_contract": "snapshot-parent-v0.2",
+        "run_id": "complete-run",
+        "symbols": [{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}],
+    }
+    children = [
+        {"symbol": "ETHUSDT", "payload": {"symbol": "ETHUSDT", "score": 2}},
+        {"symbol": "BTCUSDT", "payload": {"symbol": "BTCUSDT", "score": 1}},
+    ]
+    monkeypatch.setattr(dashboard_app, "supabase_get_rows", lambda *_: children)
+    hydrated = dashboard_app._hydrate_dashboard_snapshot(parent, payload)
+    assert [r["symbol"] for r in hydrated["symbols"]] == ["BTCUSDT", "ETHUSDT"]
+    assert hydrated["symbols"][0]["score"] == 1
