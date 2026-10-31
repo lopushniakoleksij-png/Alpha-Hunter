@@ -516,6 +516,10 @@ def bind_execution_fill(
     return payload
 
 
+class CanonicalSnapshotPublishing(RuntimeError):
+    """A newly visible scan parent is still waiting for its child evidence."""
+
+
 def _hydrate_dashboard_snapshot(
     row: dict[str, Any],
     payload: dict[str, Any],
@@ -554,6 +558,25 @@ def _hydrate_dashboard_snapshot(
     ):
         raise RuntimeError("Compact canonical parent symbol_count is invalid")
     if len(children) != expected_count:
+        # Canonical scanner persists the parent before the child batch. A
+        # short-lived, incomplete newest parent is a publishing state, not a
+        # Supabase transport outage. Never show it as a completed scan.
+        try:
+            parent_created = datetime.fromisoformat(
+                str(row.get("created_at") or "").replace("Z", "+00:00")
+            )
+            age_seconds = (
+                datetime.now(timezone.utc) - parent_created.astimezone(timezone.utc)
+            ).total_seconds()
+        except (ValueError, TypeError):
+            age_seconds = float("inf")
+        if (
+            len(children) < expected_count
+            and -5 <= age_seconds <= 90
+        ):
+            raise CanonicalSnapshotPublishing(
+                "Canonical scan child evidence is still publishing"
+            )
         raise RuntimeError("Incomplete compact canonical snapshot child evidence")
 
     by_symbol: dict[str, dict[str, Any]] = {}
@@ -588,7 +611,7 @@ def _hydrate_dashboard_snapshot(
 
 def latest_snapshot() -> dict[str, Any]:
     params = {
-        "select": "run_id,collected_at_utc,version,symbol_count,error_count,payload",
+        "select": "run_id,collected_at_utc,created_at,version,symbol_count,error_count,payload",
         "order": "collected_at_utc.desc",
         "limit": "1",
     }
@@ -2519,11 +2542,36 @@ def bounded_dashboard_payload() -> dict[str, Any]:
         if time.monotonic() >= _DASHBOARD_READ_DEADLINE.get():
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         return dashboard_payload(snapshot, test_status, lifecycle_status)
+    except CanonicalSnapshotPublishing:
+        # Do not arm the 75-second outage circuit for a normal scanner
+        # parent-then-children commit; next 10-second refresh must recheck.
+        raise
     except Exception:
         _record_dashboard_read_failure()
         raise
     finally:
         _DASHBOARD_READ_DEADLINE.reset(token)
+
+
+# Same independent public quote widget, but accurately label the short,
+# read-only publication window instead of reporting a database outage.
+DASHBOARD_PUBLISHING_PAGE = (
+    DASHBOARD_RECOVERY_PAGE
+    .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST SCAN IS PUBLISHING")
+    .replace(
+        "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
+        "The newest canonical scan has arrived, but its per-symbol evidence is still being committed. Trading decisions remain hidden until the complete scan is verified.",
+    )
+)
+
+
+def _dashboard_publishing_response():
+    response = app.make_response((render_template_string(
+        DASHBOARD_PUBLISHING_PAGE, build=build_identity(),
+    ), 202))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "10"
+    return response
 
 
 def _dashboard_recovery_response():
@@ -2544,6 +2592,9 @@ def dashboard():
             PAGE,
             data=bounded_dashboard_payload(),
         )
+    except CanonicalSnapshotPublishing:
+        app.logger.info("Newest canonical scan is publishing child evidence")
+        return _dashboard_publishing_response()
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
         return _dashboard_recovery_response()
@@ -2554,6 +2605,16 @@ def api_latest():
     if not dashboard_read_circuit_open():
         try:
             return jsonify(bounded_dashboard_payload())
+        except CanonicalSnapshotPublishing:
+            response = jsonify({
+                "error": "canonical_scan_publishing",
+                "retry_after_seconds": 10,
+                "build": build_identity(),
+            })
+            response.status_code = 503
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Retry-After"] = "10"
+            return response
         except Exception:
             app.logger.exception("API latest live-data read failed")
     response = jsonify({
