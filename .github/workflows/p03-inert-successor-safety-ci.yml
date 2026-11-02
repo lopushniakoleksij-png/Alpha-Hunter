@@ -1,0 +1,39 @@
+name: P03 inert successor stand-alone safety regression
+on:
+  push:
+    branches:
+      - candidate/p03-isolated-successor-hold-20261102
+    paths:
+      - 'ops/release_guard/p03_inert_successor_server.py'
+      - 'tests/test_p03_inert_successor_server_v01.py'
+      - '.github/workflows/p03-inert-successor-safety-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inert-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      DATABASE_URL: ''
+      POSTGRES_URL: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile only standalone inert service
+        run: python -m py_compile ops/release_guard/p03_inert_successor_server.py
+      - name: Verify localhost health, NO-GO, HTTP write rejection and fail-closed boot
+        run: python -m unittest discover -s tests -p 'test_p03_inert_successor_server_v01.py' -v
+      - name: Reject any production secrets or trading configuration
+        run: |
+          test -z "$SUPABASE_URL" && test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$DATABASE_URL" && test -z "$POSTGRES_URL"
+          test -z "$BITGET_API_KEY" && test -z "$BITGET_SECRET_KEY"
+          test -z "$RENDER_API_KEY"
