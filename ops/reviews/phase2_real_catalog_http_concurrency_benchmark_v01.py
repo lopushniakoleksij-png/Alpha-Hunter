@@ -119,7 +119,7 @@ def seed_history(conn, rows):
           SELECT 'h-'||g::text,'historical-run-'||g::text,
             'HISTUSDT',timestamptz '2026-10-01 00:00:00+00'
                +(g*interval '1 second'),
-            'S'||(g%10)::text,'WATCH','NO_SAFE_TRADE','SHORT',
+            'S'||mod(g,10)::text,'WATCH','NO_SAFE_TRADE','SHORT',
             jsonb_build_object('synthetic_noise',
                (SELECT string_agg(md5(g::text||':'||i::text),'')
                 FROM generate_series(1,34) i)),
