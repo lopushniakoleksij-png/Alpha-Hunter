@@ -1,0 +1,46 @@
+name: P0 prospective independent Bitget public quote custody
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/phase2_public_quote_independent_witness_v01.py'
+      - 'tests/test_phase2_public_quote_independent_witness_v01.py'
+      - '.github/workflows/p0-independent-public-quote-custody-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  quote-witness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AH_WITNESS_OUTPUT_DIR: public_quote_witness_evidence
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline parser tests with no market/network
+        run: python -m unittest discover -s tests -p test_phase2_public_quote_independent_witness_v01.py -v
+      - name: Verify no private exchange, database or deployment authority
+        run: |
+          test -z "$BITGET_API_KEY"
+          test -z "$BITGET_SECRET_KEY"
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$RENDER_API_KEY"
+      - name: Prospectively capture public authenticated-HTTPS transport quote and depth
+        run: python ops/reviews/phase2_public_quote_independent_witness_v01.py
+      - name: Preserve raw public response bytes and SHA256 manifest
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitget-public-readonly-witness
+          path: public_quote_witness_evidence/
+          retention-days: 7
+          if-no-files-found: error
