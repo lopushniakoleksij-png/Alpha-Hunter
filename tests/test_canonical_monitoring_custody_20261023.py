@@ -12,12 +12,20 @@ POSITION = dict(entry_order_id="position-1", decision_id="decision-1",
                 symbol="BTCUSDT", direction="LONG")
 
 
-def install_monitoring(monkeypatch, writer, calls, mutation=None):
+def install_monitoring(monkeypatch, writer, calls, mutation=None, prior_mutation=None):
     original = writer._select_json
     def select(table, params):
         if table == "alpha_hunter_paper_protection_horizon_open_v09":
             return [deepcopy(POSITION)]
         if table == "alpha_hunter_paper_exit_attempts_v04":
+            if params["source_run_id"].startswith("neq."):
+                receipt = dict(POSITION, source_run_id="prior-verified-run",
+                               observed_at_utc="2026-10-17T08:20:00Z",
+                               outcome="NO_TRIGGER", blockers=[], paper_only=True,
+                               exchange_authority=False, trade_permission=False,
+                               order_path="NONE")
+                rows = [receipt]
+                return prior_mutation(rows) if prior_mutation else rows
             calls.append(("monitoring_readback",))
             receipt = dict(POSITION, source_run_id=params["source_run_id"][3:],
                            observed_at_utc="2026-10-17T08:40:00Z",
@@ -85,3 +93,34 @@ def test_real_early_return_without_quotes_cannot_publish(monkeypatch):
     with pytest.raises(SupabaseStorageError, match="durable monitoring evidence"):
         writer.save_snapshot(sample_canonical())
     assert _parent_states(calls) == ["PENDING"]
+
+
+@pytest.mark.parametrize("prior_mutation", [
+    lambda rows: [],
+    lambda rows: [{**rows[0], "observed_at_utc": "2026-10-17T08:04:59Z"}],
+    lambda rows: [{**rows[0], "outcome": "INPUT_MISSING"}],
+    lambda rows: [{**rows[0], "decision_id": "wrong-decision"}],
+    lambda rows: [{**rows[0], "source_run_id": ""}],
+    lambda rows: [{**rows[0], "observed_at_utc": "2026-10-17T08:20:00"}],
+    lambda rows: rows * 2,
+])
+def test_missing_stale_or_untrusted_prior_receipt_blocks_publication(
+    monkeypatch, prior_mutation,
+):
+    writer, calls = setup_writer(monkeypatch)
+    install_monitoring(monkeypatch, writer, calls, prior_mutation=prior_mutation)
+    with pytest.raises(SupabaseStorageError, match="preceding-observation continuity"):
+        writer.save_snapshot(sample_canonical())
+    assert _parent_states(calls) == ["PENDING"]
+
+
+def test_exact_35_minute_prior_observation_is_allowed(monkeypatch):
+    writer, calls = setup_writer(monkeypatch)
+    install_monitoring(
+        monkeypatch, writer, calls,
+        prior_mutation=lambda rows: [
+            {**rows[0], "observed_at_utc": "2026-10-17T08:05:00Z"}
+        ],
+    )
+    writer.save_snapshot(sample_canonical())
+    assert _parent_states(calls) == ["PENDING", "VERIFIED"]
