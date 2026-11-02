@@ -1,0 +1,56 @@
+name: P03 rollback live restored SHA independent HTTPS witness
+on:
+  push:
+    branches:
+      - archive/p03-successor-pre-rollback-20261102
+    paths:
+      - '.github/workflows/p03-rollback-restored-witness-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restored-inert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Independently verify actual Rollback-to-NO-GO HTTP response
+        env:
+          P03_URL: 'https://alpha-hunter-p03-inert-successor-20261102.onrender.com'
+        run: |
+          python3 - <<'PY'
+          import json,os,ssl,time,urllib.request,urllib.error
+          base=os.environ['P03_URL'].rstrip('/')
+          assert base=='https://alpha-hunter-p03-inert-successor-20261102.onrender.com'
+          ctx=ssl.create_default_context()
+          def req(path,method='GET'):
+              r=urllib.request.Request(base+path,method=method)
+              try:
+                  with urllib.request.urlopen(r,timeout=25,context=ctx) as x:
+                      return x.status,json.loads(x.read(4096))
+              except urllib.error.HTTPError as e:
+                  return e.code,json.loads(e.read(4096))
+          result=None
+          for attempt in range(8):
+              try:
+                  result=req('/healthz')
+                  if result[0]==200 and result[1].get('rollback_drill_marker') is None:
+                      break
+              except Exception:
+                  pass
+              time.sleep(4)
+          if result is None or result[0]!=200:
+              raise AssertionError('rollback health failed: '+str(result))
+          state=result[1]
+          assert state.get('status')=='NO_GO_INERT_ONLY',state
+          assert state.get('rollback_drill_marker') is None, state
+          assert state.get('source_or_position_access') is False, state
+          assert state.get('deployment_authorized') is False, state
+          assert state.get('trading_enabled') is False,state
+          a=req('/api/latest'); b=req('/api/order','POST')
+          assert a[0]==503,a
+          assert b[0]==405,b
+          print(json.dumps({'result':'ROLLBACK_VERIFIED_REAL_EXTERNAL_HTTPS',
+              'canary_marker_removed':True,'no_go_health':True,'parent_scan_access':False,
+              'api_latest_http':a[0],'order_post_http':b[0],
+              'production_authorized':False,'live_trading':False},sort_keys=True))
+          PY
