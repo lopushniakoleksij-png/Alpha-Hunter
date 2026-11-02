@@ -43,6 +43,7 @@ jobs:
     env:
       AH_P0_ISOLATED_ONLY: '1'
       AH_P0_HISTORY_ROWS: '1640424'
+      AH_P0_PARENT_LEDGER_COMPLETE: '1'
       SUPABASE_URL: ''
       SUPABASE_SERVICE_ROLE_KEY: ''
       BITGET_API_KEY: ''
