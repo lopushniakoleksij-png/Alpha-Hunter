@@ -21,6 +21,7 @@ def _sha256(value):
 
 def verify_chain(*,monitor,provider_raw,provider_witness,alert,ack,publication):
     blockers=[]
+    if not isinstance(provider_witness,dict): provider_witness={}
     if not isinstance(provider_raw,bytes) or not provider_raw:
         blockers.append("RAW_PROVIDER_RESPONSE_MISSING")
     elif (provider_witness or {}).get("body_sha256") != _sha256(provider_raw):
