@@ -126,6 +126,18 @@ def assess_first_entry_baseline(*, position, entry_fills, entry_parent,
             or first_observation.get("symbol") != position.get("symbol")
             or first_observation.get("decision_id") != position.get("decision_id")):
         faults.append("FIRST_OBSERVATION_POSITION_IDENTITY_INVALID")
+    if (first_observation.get("outcome") not in (
+            "NO_TRIGGER", "STOP_TRIGGERED", "TARGET_TRIGGERED", "HORIZON_CLOSED")
+            or first_observation.get("blockers") != []):
+        faults.append("FIRST_OBSERVATION_AMBIGUOUS_OR_BLOCKED")
+    if (first_observation.get("paper_only") is not True
+            or first_observation.get("exchange_authority") is not False
+            or first_observation.get("trade_permission") is not False
+            or first_observation.get("order_path") != "NONE"):
+        faults.append("FIRST_OBSERVATION_AUTHORITY_UNVERIFIED")
+    if (not isinstance(first_observation.get("source_run_id"), str)
+            or not first_observation.get("source_run_id")):
+        faults.append("FIRST_OBSERVATION_SOURCE_UNVERIFIED")
     return {
         "status": "REJECTED" if faults else "CANDIDATE_NEEDS_INDEPENDENT_PROVIDER_AND_PROTECTION_ATTESTATION",
         "blockers": tuple(sorted(set(faults))),
