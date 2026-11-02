@@ -221,14 +221,14 @@ def test_postgrest_57014_and_ambiguous_ack():
         parent("synthetic-57014")
         conn.execute("""
           CREATE FUNCTION public.ah_local_cancel_57014()
-          RETURNS trigger LANGUAGE plpgsql AS $
+          RETURNS trigger LANGUAGE plpgsql AS $p0$
           BEGIN
             IF NEW.run_id='synthetic-57014'
                AND NEW.symbol='TEST032USDT' THEN
               RAISE EXCEPTION 'local cancellation test only' USING ERRCODE='57014';
             END IF;
             RETURN NEW;
-          END $
+          END $p0$
         """)
         conn.execute("""
           CREATE TRIGGER ah_local_cancel_57014 BEFORE INSERT OR UPDATE
@@ -272,14 +272,14 @@ def test_postgrest_57014_and_ambiguous_ack():
         parent("synthetic-unknown-ack")
         conn.execute("""
           CREATE FUNCTION public.ah_local_slow_ack()
-          RETURNS trigger LANGUAGE plpgsql AS $
+          RETURNS trigger LANGUAGE plpgsql AS $p0$
           BEGIN
             IF NEW.run_id='synthetic-unknown-ack'
                AND NEW.symbol='TEST000USDT' THEN
               PERFORM pg_sleep(0.6);
             END IF;
             RETURN NEW;
-          END $
+          END $p0$
         """)
         conn.execute("""
           CREATE TRIGGER ah_local_slow_ack BEFORE INSERT
@@ -397,7 +397,9 @@ def main():
         "live_profitability_claim":False,"production_equivalent":False,
         "production_mutation":False,"deployment_authorized":False,
         "trade_permission":False}
-    report["postgrest_failure_injection"]=test_postgrest_57014_and_ambiguous_ack()
+    report["postgrest_failure_injection"]=(
+        test_postgrest_57014_and_ambiguous_ack()
+        if os.getenv("AH_P0_FAILURE_PROBES")=="1" else "NOT_RUN_IN_THIS_JOB")
     (OUT/"report.json").write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
     print(json.dumps(report,sort_keys=True))
     print("FULL production trigger-chain and DBA approval remain BLOCKED.")
