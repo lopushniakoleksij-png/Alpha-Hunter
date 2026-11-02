@@ -1,0 +1,49 @@
+name: P0.3 frozen real-role source custody and NO-GO release contract
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/p03_live_prod_security_baseline_20261102.json'
+      - 'ops/reviews/phase2_p03_security_release_gate_v01.py'
+      - 'tests/test_phase2_p03_security_release_gate_v01.py'
+      - '.github/workflows/p03-independent-security-review-contract-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  fail-closed-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_ANON_KEY: ''
+      RENDER_API_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test snapshot classifier and prevent release-authority escalation
+        run: python -m unittest discover -s tests -p test_phase2_p03_security_release_gate_v01.py -v
+      - name: Independently inspect no-go reasons in artifact
+        run: python ops/reviews/phase2_p03_security_release_gate_v01.py
+      - name: Save frozen evidence and explicitly blocked release
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p03-security-metadata-readonly-no-go
+          path: |
+            ops/reviews/p03_live_prod_security_baseline_20261102.json
+            p03_readonly_security_evidence/no_go_assessment.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: No production credentials present
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$SUPABASE_ANON_KEY"
+          test -z "$RENDER_API_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$BITGET_SECRET_KEY"
