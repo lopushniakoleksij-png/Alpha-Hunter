@@ -26,7 +26,7 @@ jobs:
                   "User-Agent":"AlphaHunter-Independent-ReadOnly-HTTP-20261102"})
               try:
                   with urllib.request.urlopen(request,timeout=38) as response:
-                      return response.status,response.read(350000).decode("utf-8","replace")
+                      return response.status,response.read(8_000_000).decode("utf-8","replace")
               except urllib.error.HTTPError as e:
                   return e.code,e.read(3000).decode("utf-8","replace")
           status_build,build=probe("/api/build","application/json")
