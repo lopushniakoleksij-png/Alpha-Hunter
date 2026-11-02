@@ -149,7 +149,7 @@ def test_integrated_trigger_57014_recovery_and_monitoring_continuity(real_http_d
     storage, conn = real_http_db
     value = scanner_payload(n=61)
     value["run_id"] = "9"*32
-    insert_local_position(conn)
+    insert_local_position(conn, with_prior=False)
     create_nested_trigger_chain(conn)
     try:
         # Actual HTTP/PostgREST handles a PostgreSQL AFTER-trigger exception.
@@ -174,13 +174,27 @@ def test_integrated_trigger_57014_recovery_and_monitoring_continuity(real_http_d
         assert read_child_count(conn, value["run_id"]) == 61
 
         insert_local_receipt(conn, value["run_id"])
+        # A same-run receipt with no previous evidence must not promote.
+        with pytest.raises(SupabaseStorageError, match="preceding-observation continuity"):
+            storage.save_snapshot(value)
+        assert read_state(conn, value["run_id"]) == "PENDING"
+
+        # Even an actual previous durable receipt 40 minutes earlier cannot
+        # be used to pass the unchanged <=35-minute continuity requirement.
+        write_prior_receipt_over_http("prior-gap", "2026-10-17T09:00:00Z")
+        with pytest.raises(SupabaseStorageError, match="preceding-observation continuity"):
+            storage.save_snapshot(value)
+        assert read_state(conn, value["run_id"]) == "PENDING"
+
+        # A 20-minute earlier PostgREST receipt makes the combined runtime
+        # publication gate eligible (but NEVER enables trading authority).
+        write_prior_receipt_over_http("prior-ok", "2026-10-17T09:20:00Z")
         assert storage.save_snapshot(value) == value["run_id"]
         assert read_state(conn, value["run_id"]) == "VERIFIED"
         assert read_child_count(conn, value["run_id"]) == 61
 
-        # A last-good receipt does not erase a 40-minute gap. PR #371 alone
-        # currently publishes; independent Phase II scientific gate rejects it.
-        write_prior_receipt_over_http("prior-gap", "2026-10-17T09:00:00Z")
+        # Historical failed 40-minute evidence remains invalid even though
+        # the same scan has subsequently received a valid 20-minute receipt.
         failed = verdict_using_persisted_http_rows(
             storage, run_id=value["run_id"], prior_run_id="prior-gap",
         )
@@ -191,7 +205,6 @@ def test_integrated_trigger_57014_recovery_and_monitoring_continuity(real_http_d
 
         # An independently stored previous receipt within 20 minutes is eligible
         # for local evidence review, but *still* never enables trading.
-        write_prior_receipt_over_http("prior-ok", "2026-10-17T09:20:00Z")
         passed = verdict_using_persisted_http_rows(
             storage, run_id=value["run_id"], prior_run_id="prior-ok",
         )
