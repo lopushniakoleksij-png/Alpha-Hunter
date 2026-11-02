@@ -131,7 +131,7 @@ def test_execution_sql_is_append_only_rls_scoped_and_has_no_live_path():
 
 def test_active_exposure_key_blocks_duplicate_paper_submission():
     decision = _decision()
-    key = ("TESTUSDT", "S2", "LONG")
+    key = ("TESTUSDT", "S2", "LONG")  # legacy DB shape is normalized
 
     orders, fills, events = build_initial_paper_execution(
         [decision],
@@ -171,3 +171,81 @@ def test_r8_execution_gate_blocks_all_submissions_before_activation():
     assert fills == []
     assert [event["state"] for event in events] == ["CANCELLED"]
     assert "PAPER_R8_INTEGRITY_NOT_ACTIVATED" in events[0]["payload"]["blockers"]
+
+
+def test_different_strategy_same_symbol_direction_is_blocked():
+    existing = _decision()
+    existing["strategy_id"] = "S4"
+    candidate = _decision()
+    candidate["strategy_id"] = "S3"
+    candidate["decision_id"] = "decision-s3-same-symbol-direction"
+
+    orders, fills, events = build_initial_paper_execution(
+        [candidate],
+        active_exposure_keys={
+            (existing["symbol"], existing["strategy_id"], existing["direction"])
+        },
+    )
+
+    assert orders == []
+    assert fills == []
+    assert [event["state"] for event in events] == ["CANCELLED"]
+    assert "ACTIVE_PAPER_EXPOSURE_EXISTS" in events[0]["payload"]["blockers"]
+
+
+def test_same_scan_different_strategies_cannot_duplicate_symbol_direction():
+    s4 = _decision()
+    s4["strategy_id"] = "S4"
+    s3 = _decision()
+    s3["strategy_id"] = "S3"
+    s3["decision_id"] = "decision-s3-after-s4"
+
+    orders, fills, events = build_initial_paper_execution([s4, s3])
+
+    assert len(orders) == 1
+    assert len(fills) == 1
+    assert [event["state"] for event in events] == [
+        "SUBMITTED",
+        "FILLED",
+        "CANCELLED",
+    ]
+    assert "ACTIVE_PAPER_EXPOSURE_EXISTS" in events[-1]["payload"]["blockers"]
+
+def test_malformed_active_exposure_keys_block_entire_paper_batch():
+    first = _decision()
+    second = _decision()
+    second["decision_id"] = "second-invalid-active-exposure"
+    for invalid in (
+        ("TESTUSDT",),
+        ("TESTUSDT", "S2", "LONG", "unexpected"),
+        ("", "S2", "LONG"),
+        (None, "S2", "LONG"),
+        ("TESTUSDT", "S2", None),
+        ("TESTUSDT", "UP"),
+    ):
+        orders, fills, events = build_initial_paper_execution(
+            [first, second], active_exposure_keys={invalid},
+        )
+        assert orders == []
+        assert fills == []
+        assert len(events) == 2
+        assert all(event["state"] == "CANCELLED" for event in events)
+        assert all(
+            "PAPER_ACTIVE_EXPOSURE_KEYS_INVALID" in event["payload"]["blockers"]
+            for event in events
+        )
+
+
+def test_legacy_and_two_part_keys_normalize_symbol_and_direction():
+    candidate = _decision()
+    for valid in (
+        ("testusdt", "long"),
+        (" testusdt ", "S4", " long "),
+    ):
+        orders, fills, events = build_initial_paper_execution(
+            [candidate], active_exposure_keys={valid},
+        )
+        assert orders == []
+        assert fills == []
+        assert events[0]["state"] == "CANCELLED"
+        assert "ACTIVE_PAPER_EXPOSURE_EXISTS" in events[0]["payload"]["blockers"]
