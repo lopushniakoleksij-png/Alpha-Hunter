@@ -54,6 +54,88 @@ def parent(run, account):
     if resp.status_code not in (200,201,204):
         raise RuntimeError(f"Isolated parent insert HTTP {resp.status_code} {resp.text[:500]}")
 
+
+def test_synthetic_payoff_and_calibration_interlocks(db):
+    """Exact production trigger bodies, but local EMPTY cost-floor view only.
+
+    Never claim real cost model or release: no authenticated quote, orders or
+    R8/R9/R10 activation is created.
+    """
+    db.execute("""
+      CREATE VIEW public.alpha_hunter_execution_cost_floor_status_v01
+      AS SELECT 'ALL'::text AS cost_scope,
+                NULL::double precision AS observable_taker_round_trip_floor_median_bps
+      WHERE false
+    """)
+    db.execute("""
+      CREATE TRIGGER trg_ah_payoff_geometry_health_v01 AFTER INSERT
+      ON public.alpha_hunter_execution_decision_freezes_v01
+      FOR EACH ROW EXECUTE FUNCTION private.alpha_hunter_capture_payoff_geometry_health_v01()
+    """)
+    db.execute("""
+      CREATE TRIGGER trg_ah_calibrated_paper_order_v02 AFTER INSERT
+      ON public.alpha_hunter_execution_decision_freezes_v01
+      FOR EACH ROW EXECUTE FUNCTION private.alpha_hunter_create_calibrated_paper_order_v02()
+    """)
+    db.execute("""
+      INSERT INTO private.alpha_hunter_payoff_geometry_health_specs_v01(
+         spec_id,status,registered_at_utc,minimum_history_n,
+         cost_fragile_threshold_r,stop_reference,target_reference,
+         minimum_forward_observations,minimum_forward_symbols,minimum_forward_days)
+      VALUES ('PAYOFF-GEOMETRY-HEALTH-V01','COLLECTING',
+              '2026-10-01 00:00+00',30,0.25,'STRUCTURAL','STRUCTURAL',100,1,1)
+    """)
+    db.execute("""
+      INSERT INTO public.alpha_hunter_execution_decision_freezes_v01(
+        execution_event_id,spec_id,decision_observation_id,strategy_instance_id,
+        decision_run_id,symbol,strategy_id,direction,action,
+        decision_observed_at_utc,decision_captured_at_utc,frozen_at_utc,
+        reference_price,planned_entry_price,stop_price,target_price,reward_risk,
+        best_bid,best_ask,midpoint,entry_cross_price,quote_complete,prospective_capture)
+      VALUES('synthetic-geometry-1','SYNTHETIC-RESEARCH-NO-PROFIT',
+             'synthetic-observation-1','synthetic-instance-1',
+             'parent-synthetic-connected','TESTUSDT','S2','SHORT','EXECUTE_NOW',
+             '2026-11-02 11:30+00','2026-11-02 11:31+00','2026-11-02 11:31+00',
+             100,100,103,85,5,99.9,100.1,100,99.9,true,true)
+    """)
+    proof=db.execute("""
+      SELECT geometry_health,history_n,trade_permission,
+             production_promotion_permitted,order_path
+      FROM private.alpha_hunter_payoff_geometry_health_observations_v01
+      WHERE execution_event_id='synthetic-geometry-1'
+    """).fetchone()
+    if proof!=("INSUFFICIENT_HISTORY",0,False,False,"NONE"):
+        raise AssertionError("Synthetic payoff trigger did not fail closed "+str(proof))
+    orders=db.execute("SELECT count(*) FROM private.alpha_hunter_calibrated_paper_orders_v01").fetchone()[0]
+    if orders!=0:
+        raise AssertionError("Calibrated paper order created without activated policy")
+    with db.transaction():
+        db.execute("SAVEPOINT payoff_trial")
+        db.execute("""
+          INSERT INTO public.alpha_hunter_execution_decision_freezes_v01(
+            execution_event_id,spec_id,decision_observation_id,strategy_instance_id,
+            decision_run_id,symbol,strategy_id,direction,action,
+            decision_observed_at_utc,decision_captured_at_utc,frozen_at_utc,
+            planned_entry_price,stop_price,target_price,reward_risk,
+            best_bid,best_ask,midpoint,entry_cross_price,quote_complete,prospective_capture)
+          VALUES('synthetic-geometry-rollback','SYNTHETIC-RESEARCH-NO-PROFIT',
+                 'obs-rollback','instance-rollback','parent-synthetic-connected',
+                 'TESTUSDT','S2','SHORT','EXECUTE_NOW','2026-11-02 11:30+00',
+                 '2026-11-02 11:31+00','2026-11-02 11:31+00',
+                 100,103,85,5,99.9,100.1,100,99.9,true,true)
+        """)
+        db.execute("ROLLBACK TO SAVEPOINT payoff_trial")
+    after=db.execute("""
+      SELECT count(*) FROM private.alpha_hunter_payoff_geometry_health_observations_v01
+      WHERE execution_event_id='synthetic-geometry-rollback'
+    """).fetchone()[0]
+    if after:
+        raise AssertionError("Rolled back payoff created orphan")
+    return {"geometry_status":proof[0],"history_n":proof[1],
+            "calibrated_paper_orders_created":orders,"rollback":"PASS",
+            "cost_floor_view":"SYNTHETIC_EMPTY_STUB_NOT_PRODUCTION_EXACT",
+            "trade_permission":False}
+
 def main():
     assert_local()
     psql(ROOT/"tests/fixtures/p0_production_catalog_trigger_chain_20261102.sql")
@@ -124,11 +206,13 @@ def main():
             db.execute("ROLLBACK TO SAVEPOINT synthetic_rollback")
         after=db.execute("SELECT count(*) FROM public.alpha_hunter_account_state_snapshots").fetchone()[0]
         if before!=after:raise AssertionError("Synthetic rollback changed account ledger count")
+        geometry=test_synthetic_payoff_and_calibration_interlocks(db)
         report={"status":"ISOLATED_PARENT_LEDGER_AND_PROTECTION_PASS",
                 "postgres_major":int(db.execute("SHOW server_version_num").fetchone()[0])//10000,
                 "materialized":len(rows),"open_positions":1,
                 "protection_events":protection[0],
                 "account_rollback_passed":True,
+                "payoff_and_calibration":geometry,
                 "paper_only":True,"trade_permission":False,
                 "full_production_equivalence":False,
                 "release_authorization":False,
