@@ -182,6 +182,149 @@ def write_run(run):
     return run,durations
 
 
+
+def test_postgrest_57014_and_ambiguous_ack():
+    """Real disposable PostgREST failure injection and exact database custody.
+
+    Separate synthetic run IDs keep these tests entirely distinct from
+    paper positions and frozen R8-R10 science.
+    """
+    def parent(run):
+        r=requests.post(BASE+"/alpha_hunter_snapshots",json={
+            "run_id":run,"collected_at_utc":"2026-11-02T11:30:00Z",
+            "version":"synthetic-failure","product_type":"usdt-futures",
+            "symbol_count":62,"error_count":0,
+            "payload":{"_canonical_publication_state":"PENDING",
+                       "validation_identity":{"run_source":"RENDER_CRON",
+                                              "scientific_fingerprint_sha256":"synthetic-only"}}},
+            headers={"Prefer":"resolution=merge-duplicates,return=minimal"},
+            timeout=10)
+        if r.status_code not in (200,201,204):
+            raise RuntimeError("synthetic parent failed "+r.text[:400])
+
+    def rows(run, indices):
+        return [{
+            "run_id":run,"symbol":f"TEST{i:03d}USDT",
+            "collected_at_utc":"2026-11-02T11:30:00Z",
+            "state":"NEUTRAL","trade_permission":False,
+            "last_price":100.0,"payload":payload_for(run,i)}
+            for i in indices]
+
+    def put(run, indices, *, timeout=(3,15)):
+        return requests.post(BASE+"/alpha_hunter_symbol_snapshots",
+            params={"on_conflict":"run_id,symbol"},
+            json=rows(run,indices),
+            headers={"Prefer":"resolution=merge-duplicates,return=minimal"},
+            timeout=timeout)
+
+    with psycopg.connect(DSN,autocommit=True) as conn:
+        parent("synthetic-57014")
+        conn.execute("""
+          CREATE FUNCTION public.ah_local_cancel_57014()
+          RETURNS trigger LANGUAGE plpgsql AS $
+          BEGIN
+            IF NEW.run_id='synthetic-57014'
+               AND NEW.symbol='TEST032USDT' THEN
+              RAISE EXCEPTION 'local cancellation test only' USING ERRCODE='57014';
+            END IF;
+            RETURN NEW;
+          END $
+        """)
+        conn.execute("""
+          CREATE TRIGGER ah_local_cancel_57014 BEFORE INSERT OR UPDATE
+          ON public.alpha_hunter_symbol_snapshots
+          FOR EACH ROW EXECUTE FUNCTION public.ah_local_cancel_57014()
+        """)
+        try:
+            for k in range(0,32,8):
+                r=put("synthetic-57014",range(k,k+8))
+                if r.status_code not in (200,201,204):
+                    raise AssertionError("unexpected pre-cancel HTTP failure")
+            r=put("synthetic-57014",range(32,40))
+            if r.status_code<400 or "57014" not in r.text:
+                raise AssertionError("PostgREST failed to expose SQLSTATE 57014")
+            partial=conn.execute(
+                "SELECT count(*) FROM public.alpha_hunter_symbol_snapshots WHERE run_id=%s",
+                ("synthetic-57014",)).fetchone()[0]
+            if partial!=32:
+                raise AssertionError("failed PostgREST chunk incorrectly committed")
+            state=conn.execute(
+                "SELECT payload->>'_canonical_publication_state' FROM public.alpha_hunter_snapshots WHERE run_id=%s",
+                ("synthetic-57014",)).fetchone()[0]
+            if state!="PENDING":
+                raise AssertionError("incomplete parent incorrectly published")
+        finally:
+            conn.execute("DROP TRIGGER ah_local_cancel_57014 ON public.alpha_hunter_symbol_snapshots")
+            conn.execute("DROP FUNCTION public.ah_local_cancel_57014()")
+
+        # Exact retry of the same run; replaying 32 successful child writes
+        # cannot create duplicated strategy observations or episodes.
+        write_run("synthetic-57014")
+        child=conn.execute(
+            "SELECT count(*) FROM public.alpha_hunter_symbol_snapshots WHERE run_id=%s",
+            ("synthetic-57014",)).fetchone()[0]
+        obs=conn.execute(
+            "SELECT count(*) FROM public.alpha_hunter_strategy_observations_v01 WHERE run_id=%s",
+            ("synthetic-57014",)).fetchone()[0]
+        if (child,obs)!=(62,620):
+            raise AssertionError(f"PostgREST 57014 retry failed: {child},{obs}")
+
+        parent("synthetic-unknown-ack")
+        conn.execute("""
+          CREATE FUNCTION public.ah_local_slow_ack()
+          RETURNS trigger LANGUAGE plpgsql AS $
+          BEGIN
+            IF NEW.run_id='synthetic-unknown-ack'
+               AND NEW.symbol='TEST000USDT' THEN
+              PERFORM pg_sleep(0.6);
+            END IF;
+            RETURN NEW;
+          END $
+        """)
+        conn.execute("""
+          CREATE TRIGGER ah_local_slow_ack BEFORE INSERT
+          ON public.alpha_hunter_symbol_snapshots
+          FOR EACH ROW EXECUTE FUNCTION public.ah_local_slow_ack()
+        """)
+        try:
+            timed_out=False
+            try:
+                put("synthetic-unknown-ack",[0],timeout=(3,0.05))
+            except requests.exceptions.ReadTimeout:
+                timed_out=True
+            if not timed_out:
+                raise AssertionError("read-timeout injection failed")
+            time.sleep(0.9)
+            observed=conn.execute(
+                "SELECT count(*) FROM public.alpha_hunter_symbol_snapshots WHERE run_id=%s",
+                ("synthetic-unknown-ack",)).fetchone()[0]
+            if observed not in (0,1):
+                raise AssertionError("ambiguous HTTP write created duplicate rows")
+        finally:
+            conn.execute("DROP TRIGGER ah_local_slow_ack ON public.alpha_hunter_symbol_snapshots")
+            conn.execute("DROP FUNCTION public.ah_local_slow_ack()")
+        r=put("synthetic-unknown-ack",[0])
+        if r.status_code not in (200,201,204):
+            raise AssertionError("ambiguous ACK retry failed "+r.text[:400])
+        final=conn.execute(
+            "SELECT count(*) FROM public.alpha_hunter_symbol_snapshots WHERE run_id=%s",
+            ("synthetic-unknown-ack",)).fetchone()[0]
+        final_obs=conn.execute(
+            "SELECT count(*) FROM public.alpha_hunter_strategy_observations_v01 WHERE run_id=%s",
+            ("synthetic-unknown-ack",)).fetchone()[0]
+        if (final,final_obs)!=(1,10):
+            raise AssertionError("ambiguous ACK exact readback failed")
+        return {
+            "injected_postgrest_SQLSTATE_57014":"PASS",
+            "partial_chunk_after_cancel":partial,
+            "postgrest_cancel_replay_children":child,
+            "postgrest_cancel_replay_strategy_observations":obs,
+            "injected_client_read_timeout":"PASS",
+            "ambiguous_ack_observed_before_retry":observed,
+            "ambiguous_ack_final_children":final,
+            "ambiguous_ack_final_strategy_observations":final_obs,
+            "all_synthetic_parents_stay_PENDING":True}
+
 def main():
     insist_local()
     OUT.mkdir(parents=True,exist_ok=True)
@@ -254,6 +397,7 @@ def main():
         "live_profitability_claim":False,"production_equivalent":False,
         "production_mutation":False,"deployment_authorized":False,
         "trade_permission":False}
+    report["postgrest_failure_injection"]=test_postgrest_57014_and_ambiguous_ack()
     (OUT/"report.json").write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
     print(json.dumps(report,sort_keys=True))
     print("FULL production trigger-chain and DBA approval remain BLOCKED.")
