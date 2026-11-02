@@ -4,7 +4,7 @@ Date: 2026-11-02 UTC. Status: DRAFT / NOT RELEASE-AUTHORIZED.
 ## Scope and source identities
 - Parent candidate: draft #371, head `5024226a1897ea87ab8e6ec5ec50847c6f7989eb`, **NOT** production.
 - #371 already includes eight-child bounded writes (the same batch-size idea as #372), PENDING -> VERIFIED parent state, full child readback, pre-exit inventory and real local PostgREST receipt checks. Do **not** blindly merge #372 and produce conflicting file writes.
-- Research gate from draft #377 is tested separately against the actual persisted local HTTP result. It includes previous-observation gaps, frozen fingerprint, safe exit-side depth. The current #371 writer itself **does not yet enforce previous-to-current continuity**; integrated test deliberately exposes this gap. A local gate failure prohibits scientific promotion even when the parent says VERIFIED.
+- **Successor runtime change on this stacked #378 branch:** the canonical writer now independently queries prior durable `alpha_hunter_paper_exit_attempts_v04` rows from another run and enforces the previous-to-current <=35-minute bound before promoting PENDING to VERIFIED. It fails closed if preceding evidence is absent, malformed, too old, duplicated, or has invalid identity/outcome/authority. The unchanged #371 base alone does NOT contain this runtime continuity enforcement. The separate #377 gate additionally checks successor fingerprint and exit-side capacity; that pure classifier is NOT yet wired into the producer.
 - #375 proposes a narrow PostgreSQL partial index for repeated downstream percentile aggregation in the AFTER symbol trigger. Its successful isolated SQL parity/rollback does not prove that true nested trigger latency at realistic load is acceptable. Its SQL is non-auto-executable and **must not be applied to production without DBA approval**.
 
 ## Reproduced production P0 evidence (read-only)
@@ -16,7 +16,7 @@ Workflow: `.github/workflows/phase2-integrated-postgrest-20261102.yml`, PG16 and
 2. Trigger nested SQLSTATE 57014 on TEST032USDT. Actual local HTTP upsert fails after four 8-row batches: parent remains PENDING; exactly 32 children persist; zero same-run receipts.
 3. Drop the *test-only* failure trigger. Retrying same deterministic run must preserve idempotent children. Even with 61 children, absent current-run receipt leaves PENDING.
 4. Insert one synthetic current-run paper receipt into isolated PostgreSQL. Then verify parent publication to VERIFIED, 61/61 children, one matching current-run receipt.
-5. Independently read previous and current receipts over local PostgREST. A 40-minute inter-observation gap fails the 35-minute scientific gate even if parent is VERIFIED. A 20-minute gap passes *only* the local evidence-consistency gate; trade permission remains FALSE.
+5. Runtime publication itself stays PENDING if a current receipt has no prior real DB observation or has a prior observation >35m earlier; it becomes VERIFIED only after an independently stored <=35m prior receipt. The separate scientific replay still preserves the invalid 40-minute historical gap; trade permission remains FALSE.
 6. All legacy/initial 57014, lost ACK, missing receipt, concurrent position removal and identity tests in #371 must still pass.
 
 ## Independent DBA review — explicitly NOT APPROVED
@@ -44,4 +44,4 @@ Workflow: `.github/workflows/phase2-integrated-postgrest-20261102.yml`, PG16 and
 6. If any operation produces partial children, stale receipt, fingerprint mismatch, timeout, ambiguous ACK, missing protective evidence or duplicated writer, rollback successor to prior verified commit while preserving existing monitor/protection path and recording the failed attempt. No retrospective fabricated pass.
 
 ## Verdict
-Isolated implementation candidate / production NO-GO pending exact SHA CI, full trigger load equivalence, all-ledger scientific custody, independent DBA/security signoff and release isolation. This is not live profit proof or production repair.
+Successor runtime continuity **implemented and PG16/PG17 PostgREST-tested at an isolated draft SHA**. No old science is reclassified. Production NO-GO pending full trigger-load equivalence, cross-run receipt provenance, all-ledger scientific custody, independent DBA/security signoff and release isolation. This is not live profit proof or a deployed repair.
