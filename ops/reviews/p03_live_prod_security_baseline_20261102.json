@@ -1,0 +1,112 @@
+{
+  "schema_version": "p03-security-baseline-v01",
+  "observed_date_utc": "2026-11-02",
+  "evidence_method": "read-only live Supabase pg_catalog SELECTs, GitHub branch metadata and Render service details",
+  "production_postgres_version": "17.6",
+  "roles": {
+    "anon": {
+      "bypassrls": false,
+      "canlogin": false
+    },
+    "authenticated": {
+      "bypassrls": false,
+      "canlogin": false
+    },
+    "authenticator": {
+      "bypassrls": false,
+      "canlogin": true
+    },
+    "service_role": {
+      "bypassrls": true,
+      "canlogin": false
+    }
+  },
+  "relations": {
+    "alpha_hunter_snapshots": {
+      "rls_enabled": true,
+      "policies": 0,
+      "anon_select_grant": true,
+      "anon_insert_grant": true,
+      "authenticated_select_grant": true,
+      "authenticated_insert_grant": true,
+      "service_role_insert_grant": true
+    },
+    "alpha_hunter_symbol_snapshots": {
+      "rls_enabled": true,
+      "policies": 0,
+      "anon_select_grant": true,
+      "anon_insert_grant": true,
+      "authenticated_select_grant": true,
+      "authenticated_insert_grant": true,
+      "service_role_insert_grant": true
+    },
+    "alpha_hunter_paper_exit_attempts_v04": {
+      "rls_enabled": true,
+      "policies": 0,
+      "anon_select_grant": false,
+      "anon_insert_grant": false,
+      "authenticated_select_grant": false,
+      "authenticated_insert_grant": false,
+      "service_role_insert_grant": true
+    },
+    "alpha_hunter_profitability_test_activations_v01": {
+      "rls_enabled": true,
+      "policies": 0,
+      "anon_insert_grant": false,
+      "authenticated_insert_grant": false,
+      "service_role_insert_grant": false
+    }
+  },
+  "functions": {
+    "public_security_definer_total": 5,
+    "public_security_definer_anon_executable": 0,
+    "private_security_definer_anon_executable": 0,
+    "private_security_definer_authenticated_executable": 0,
+    "private_schema_anon_usage": false,
+    "private_schema_authenticated_usage": false,
+    "public_invoker_views_with_grants_to_public_roles": 0
+  },
+  "source_custody": {
+    "receipts_since_2026_11_01": 168,
+    "parent_linked_receipts": 168,
+    "verified_parent_receipts": 0,
+    "public_quote_only_receipts": 168,
+    "missing_quote_source_label": 65,
+    "provider_signature_receipts": 0,
+    "confirmed_alert_delivery_acks": null
+  },
+  "release_surface": {
+    "protected_cron": {
+      "branch": "main",
+      "auto_deploy": true,
+      "schedule": "0 * * * *",
+      "suspended": false
+    },
+    "existing_web": {
+      "branch": "main",
+      "auto_deploy": false
+    },
+    "github_main_branch_protected": false,
+    "approved_isolated_successor_service": null,
+    "immutable_sha_reviewed_and_signed": false,
+    "independent_dba_signed": false,
+    "independent_security_signed": false,
+    "independent_science_risk_signed": false,
+    "independent_operations_signed": false,
+    "production_authorization": false
+  },
+  "immutable_positions": {
+    "managed_paper_positions": 3,
+    "historical_first_entry_ordering_status": "UNRESOLVED_AMBIGUOUS",
+    "no_production_write_permitted": true,
+    "paper_only": true,
+    "real_order_permission": false
+  },
+  "evidence_limitations": [
+    "RLS/grants are SQL catalog metadata; no real service_role JWT/gateway request was executed",
+    "Provider-signed quote and historical first-touch evidence absent in inspected receipts",
+    "No durable recipient alert confirmation was independently demonstrated",
+    "SECURITY DEFINER analysis is catalog-level, not independent penetration testing",
+    "Snapshot becomes stale after any production schema, role, or deployment modification"
+  ]
+}
