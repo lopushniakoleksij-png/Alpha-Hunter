@@ -5,7 +5,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -958,12 +958,12 @@ class SupabaseStorage:
         return run_id
 
     def _verify_canonical_monitoring(self, snapshot, run_id, positions):
-        """Require durable current-run receipts; this is not execution proof.
+        """Require current AND immediately previous durable position receipts.
 
-        Keep this separate from the reconciliation return/HTTP acknowledgement.
-        Empty inventories are valid; missing or malformed inventories are not.
-        Newly filled positions with no later observation remain unpublished
-        rather than manufacturing a same-run monitoring baseline.
+        A healthy current-run receipt does not heal a prior 35-minute gap.
+        Earlier evidence must be independently persisted with a different
+        source_run_id; no timestamp is synthesized from scan scheduling.
+        This guard is a fail-closed operational gate, NOT quote/exchange proof.
         """
         expected = {p.get("entry_order_id"): p for p in positions}
         if len(expected) != len(positions) or any(
@@ -972,42 +972,110 @@ class SupabaseStorage:
             raise SupabaseStorageError("Canonical monitoring inventory invalid")
         if not expected:
             return
+        columns = (
+            "entry_order_id,decision_id,symbol,direction,source_run_id,"
+            "observed_at_utc,outcome,blockers,paper_only,exchange_authority,"
+            "trade_permission,order_path"
+        )
         rows = self._select_json(PAPER_EXIT_ATTEMPT_TABLE, {
-            "select": "entry_order_id,decision_id,symbol,direction,source_run_id,"
-                      "observed_at_utc,outcome,blockers,paper_only,exchange_authority,"
-                      "trade_permission,order_path",
+            "select": columns,
             "source_run_id": f"eq.{run_id}", "limit": "1000",
         })
         if len(rows) >= 1000:
             raise SupabaseStorageError("Canonical monitoring readback may be truncated")
+
         def timestamp(value):
-            value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if not isinstance(value, (str, datetime)):
+                raise ValueError("timestamp type invalid")
+            value = datetime.fromisoformat(
+                value.replace("Z", "+00:00") if isinstance(value, str)
+                else value.isoformat()
+            )
             if value.utcoffset() is None:
                 raise ValueError("timezone required")
-            return value
+            return value.astimezone(timezone.utc)
+
+        def usable_receipt(row):
+            return (
+                row.get("outcome") in {
+                    "NO_TRIGGER", "STOP_TRIGGERED", "TARGET_TRIGGERED",
+                    "HORIZON_CLOSED",
+                }
+                and row.get("blockers") == []
+                and row.get("paper_only") is True
+                and row.get("exchange_authority") is False
+                and row.get("trade_permission") is False
+                and row.get("order_path") == "NONE"
+            )
+
         try:
             scan_at = timestamp(snapshot.get("collected_at_utc"))
+            current = {}
             for order_id, position in expected.items():
                 matches = [r for r in rows if r.get("entry_order_id") == order_id]
                 if len(matches) != 1:
-                    raise ValueError("missing or duplicate receipt")
+                    raise ValueError("missing or duplicate current receipt")
                 row = matches[0]
                 if any(not position.get(k) or row.get(k) != position[k]
                        for k in ("decision_id", "symbol", "direction")):
-                    raise ValueError("position identity mismatch")
-                age = (timestamp(row.get("observed_at_utc")) - scan_at).total_seconds()
+                    raise ValueError("current position identity mismatch")
+                observed_at = timestamp(row.get("observed_at_utc"))
+                age = (observed_at - scan_at).total_seconds()
                 if not 0 <= age <= 2100:
-                    raise ValueError("receipt outside scan observation window")
-                if (row.get("source_run_id") != run_id
-                    or row.get("outcome") not in {"NO_TRIGGER", "STOP_TRIGGERED",
-                                                   "TARGET_TRIGGERED", "HORIZON_CLOSED"}
-                    or row.get("blockers") != []
-                    or row.get("paper_only") is not True
-                    or row.get("exchange_authority") is not False
-                    or row.get("trade_permission") is not False
-                    or row.get("order_path") != "NONE"):
-                    raise ValueError("unusable monitoring receipt")
+                    raise ValueError("current receipt outside scan observation window")
+                if row.get("source_run_id") != run_id or not usable_receipt(row):
+                    raise ValueError("unusable current monitoring receipt")
+                current[order_id] = (row, observed_at)
+
+            # One bounded HTTP read of independently stored PRIOR receipts.
+            # Both timestamps are bounded to avoid scanning historic exit attempts.
+            # A receipt from the same run cannot count as the previous interval.
+            lower = (scan_at - timedelta(minutes=35)).isoformat()
+            upper = max(t for _, t in current.values()).isoformat()
+            previous = self._select_json(PAPER_EXIT_ATTEMPT_TABLE, {
+                "select": columns,
+                "source_run_id": f"neq.{run_id}",
+                "and": (
+                    f"(observed_at_utc.gte.{lower},"
+                    f"observed_at_utc.lt.{upper})"
+                ),
+                "order": "observed_at_utc.desc",
+                "limit": "2000",
+            })
+            if len(previous) >= 2000:
+                raise ValueError("previous monitoring receipt query may be truncated")
+            for order_id, position in expected.items():
+                row, observed_at = current[order_id]
+                candidates = [
+                    (timestamp(p.get("observed_at_utc")), p)
+                    for p in previous
+                    if p.get("entry_order_id") == order_id
+                ]
+                candidates = [
+                    (t, p) for t, p in candidates if t < observed_at
+                ]
+                if not candidates:
+                    raise ValueError("missing preceding observation or gap over 35m")
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                prior_at, prior = candidates[0]
+                if len(candidates) > 1 and candidates[1][0] == prior_at:
+                    raise ValueError("ambiguous duplicate preceding observation")
+                if any(
+                    not position.get(k) or prior.get(k) != position[k]
+                    for k in ("decision_id", "symbol", "direction")
+                ):
+                    raise ValueError("preceding position identity mismatch")
+                if (
+                    not isinstance(prior.get("source_run_id"), str)
+                    or not prior["source_run_id"].strip()
+                    or prior["source_run_id"] == run_id
+                    or not usable_receipt(prior)
+                ):
+                    raise ValueError("preceding receipt has invalid source or outcome")
+                if not 0 < (observed_at - prior_at).total_seconds() <= 2100:
+                    raise ValueError("previous-to-current monitoring gap over 35m")
         except (TypeError, ValueError, OverflowError) as exc:
             raise SupabaseStorageError(
-                "Canonical publication lacks usable durable monitoring evidence"
+                "Canonical publication lacks usable durable monitoring evidence "
+                "or <=35m preceding-observation continuity"
             ) from exc
