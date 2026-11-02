@@ -1,0 +1,222 @@
+name: P0 Successor Real PG16 TCP Review Only
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/successor_pg16_tcp_benchmark_v01.py'
+      - 'ops/reviews/successor_pg16_rls_reader_gate_v01.py'
+      - 'ops/reviews/successor_pg16_full_scope_reader_gate_v01.py'
+      - 'ops/reviews/successor_full_schema_set_based_candidate_v01.sql'
+      - 'tests/postgres/successor-full-production-schema-fixture.sql'
+      - 'tests/postgres/successor-monitoring-cycle-seal-schema.sql'
+      - 'tests/postgres/successor-monitoring-cycle-seal.test.mjs'
+      - 'ops/reviews/successor_pg16_cycle_seal_verify_v01.py'
+      - 'ops/reviews/successor_dual_pg16_journal_fault_v01.py'
+      - 'ops/reviews/successor_forward_asof_inventory_v01.py'
+      - 'ops/reviews/successor_pg16_repeatable_source_capture_v01.py'
+      - 'ops/reviews/successor_bounded_child_writer_v01.py'
+      - 'ops/reviews/successor_pg16_bounded_child_fanout_v01.py'
+      - 'ops/reviews/successor_pg16_postgrest_http_contention_v01.py'
+      - 'ops/reviews/successor_pg16_atomic_http_cycle_v01.py'
+      - 'ops/reviews/successor_pg16_p0_partial_atomic_monitor_gate_v01.py'
+      - 'ops/reviews/successor_pg16_r1_non_superuser_owner_gate_v01.py'
+      - 'ops/reviews/successor_pg16_r1_temporary_setrole_lifecycle_v01.py'
+      - 'ops/reviews/successor_p2_ambiguous_http_monitor_gate_v01.py'
+      - 'ops/reviews/successor_all_residual_monitor_qualification_v01.py'
+      - 'ops/reviews/successor_dual_pg16_position_diagnostic_v01.py'
+      - 'ops/reviews/successor_mock_http_transport_independent_custody_v01.py'
+      - 'tests/test_successor_all_residual_monitor_qualification_v01.py'
+      - 'tests/test_successor_bounded_child_writer_v01.py'
+      - '.github/workflows/successor-pg16-isolated-review-v01.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p0-real-pg16-shadow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-postgres-shadow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bench
+          POSTGRES_PASSWORD: benchpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bench -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+      journal:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: journal
+          POSTGRES_PASSWORD: journalpass
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U journal -d postgres"
+          --health-interval 5s
+          --health-timeout 4s
+          --health-retries 12
+    steps:
+      - name: Checkout draft only
+        uses: actions/checkout@v4
+      - name: Setup test-only Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated pinned PostgreSQL driver
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir 'psycopg[binary]==3.2.10'
+      - name: P0 true 57014 rollback and all-residual atomic child-position seal gate in disposable PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_p0_partial_atomic_monitor_gate_v01.py
+
+      - name: R1 non-superuser schema/view ownership fail-closed gate on isolated PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_r1_non_superuser_owner_gate_v01.py
+
+      - name: R1 temporary SET ROLE and forward rollback lifecycle on disposable PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_r1_temporary_setrole_lifecycle_v01.py
+
+      - name: Verify least-privilege reader role and row-level security in disposable PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_rls_reader_gate_v01.py
+
+      - name: Verify all 12 paper-ledger sources and protection view RLS fail-closed in PG16
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_full_scope_reader_gate_v01.py
+
+      - name: Exercise production trigger and full affected schema over local TCP, without trade credentials
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_tcp_benchmark_v01.py
+      - name: Verify isolated per-position sealed cycle receipt and committed source evidence
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_cycle_seal_verify_v01.py
+      - name: Isolated main write-timeout and independent diagnostic journal
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: |
+          python ops/reviews/successor_dual_pg16_journal_fault_v01.py
+
+      - name: P2 independent per-order diagnostic receipts survive failed main write, surface legacy residuals
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: |
+          python ops/reviews/successor_dual_pg16_position_diagnostic_v01.py
+
+      - name: P2 simulated real HTTP quote collection and durable second-DB custody under primary timeout
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: |
+          python ops/reviews/successor_mock_http_transport_independent_custody_v01.py
+
+      - name: P0 verify real repeatable-read source snapshot and concurrent ledger writes
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_repeatable_source_capture_v01.py
+
+      - name: Compare bounded and bulk child fanout with identical production trigger in two isolated PG16 databases
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          python ops/reviews/successor_pg16_bounded_child_fanout_v01.py
+
+      - name: Probe identical strategy fanout via actual isolated PostgREST HTTP under concurrent synthetic load
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+        run: |
+          set -euo pipefail
+          # Own runner-local disposable databases only. Never connect to Supabase.
+          python ops/reviews/successor_pg16_postgrest_http_contention_v01.py --prepare
+          docker pull postgrest/postgrest:v12.2.3
+          trap 'docker logs ah-p2-trigger --tail 15 2>/dev/null || true; docker logs ah-p2-candidate --tail 15 2>/dev/null || true; docker rm -f ah-p2-trigger ah-p2-candidate >/dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name ah-p2-trigger --network host \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_pgrst_trigger_fresh_ephemeral" \
+            -e "PGRST_DB_ANON_ROLE=bench_api" \
+            -e "PGRST_DB_SCHEMAS=public" \
+            -e "PGRST_SERVER_HOST=127.0.0.1" \
+            -e "PGRST_SERVER_PORT=3000" \
+            -e "PGRST_DB_POOL=10" \
+            postgrest/postgrest:v12.2.3
+          docker run -d --rm --name ah-p2-candidate --network host \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_pgrst_setbased_fresh_ephemeral" \
+            -e "PGRST_DB_ANON_ROLE=bench_api" \
+            -e "PGRST_DB_SCHEMAS=public" \
+            -e "PGRST_SERVER_HOST=127.0.0.1" \
+            -e "PGRST_SERVER_PORT=3001" \
+            -e "PGRST_DB_POOL=10" \
+            postgrest/postgrest:v12.2.3
+          python ops/reviews/successor_pg16_postgrest_http_contention_v01.py
+
+      - name: P2 verify atomic parent + child + strategies + receipt in ONE isolated PostgREST HTTP request
+        env:
+          AH_SHADOW_POSTGRES_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_PG_DSN: postgresql://bench:benchpass@127.0.0.1:5432/postgres
+          AH_SHADOW_JOURNAL_APPROVED: EPHEMERAL_GITHUB_ACTIONS_ONLY
+          AH_SHADOW_JOURNAL_DSN: postgresql://journal:journalpass@127.0.0.1:5433/postgres
+        run: |
+          set -euo pipefail
+          # Third entirely disposable DB. Test RPC schema is NEVER exposed on Supabase.
+          python ops/reviews/successor_pg16_atomic_http_cycle_v01.py --prepare
+          trap 'docker logs ah-p2-atomic --tail 20 2>/dev/null || true; docker rm -f ah-p2-atomic >/dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name ah-p2-atomic --network host \
+            -e "PGRST_DB_URI=postgres://bench:benchpass@127.0.0.1:5432/ah_p2_atomic_only_ephemeral" \
+            -e "PGRST_DB_ANON_ROLE=bench_api" \
+            -e "PGRST_DB_SCHEMAS=successor_shadow" \
+            -e "PGRST_SERVER_HOST=127.0.0.1" \
+            -e "PGRST_SERVER_PORT=3002" \
+            -e "PGRST_DB_POOL=10" \
+            postgrest/postgrest:v12.2.3
+          python ops/reviews/successor_pg16_atomic_http_cycle_v01.py
+          python ops/reviews/successor_p2_ambiguous_http_monitor_gate_v01.py
