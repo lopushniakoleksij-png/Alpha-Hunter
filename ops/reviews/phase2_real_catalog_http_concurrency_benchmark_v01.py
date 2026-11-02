@@ -52,6 +52,12 @@ def run_ddl():
         env=env,capture_output=True,text=True,timeout=90)
     if result.returncode:
         raise RuntimeError("Catalog fixture failed: "+result.stderr[-2400:])
+    if os.getenv("AH_P0_PARENT_LEDGER_COMPLETE")=="1":
+        addendum=REPO/"tests/fixtures/p0_catalog_parent_ledger_protection_addendum_20261102.sql"
+        rr=subprocess.run(["psql","-v","ON_ERROR_STOP=1","-f",str(addendum)],
+            env=env,capture_output=True,text=True,timeout=90)
+        if rr.returncode:
+            raise RuntimeError("Catalog parent/ledger addendum failed: "+rr.stderr[-2400:])
 
 
 def json_noise(seed, n):
@@ -169,6 +175,18 @@ def write_run(run):
             "payload":{"_canonical_publication_state":"PENDING",
                        "validation_identity":{"run_source":"RENDER_CRON",
                        "scientific_fingerprint_sha256":"synthetic-only"}}}
+    if os.getenv("AH_P0_PARENT_LEDGER_COMPLETE")=="1":
+        parent["payload"]["private_account"]={
+            "status":"CONNECTED",
+            "accounts":[{"margin_coin":"USDT","account_equity":"1000",
+                         "available":"950","unrealized_pl":"-10","locked":"50"}],
+            "open_position_count":1,
+            "open_positions":[{"symbol":"TESTUSDT","hold_side":"short","total":"2",
+                "open_price_avg":"100","mark_price":"101","unrealized_pl":"-2",
+                "take_profit":None,"stop_loss":None,
+                "protection_observation_status":"DATA_INSUFFICIENT",
+                "protection_orders":[]}],
+            "protection_observation_status":"DATA_INSUFFICIENT"}
     r=requests.post(BASE+"/alpha_hunter_snapshots",json=parent,
                     headers={"Prefer":"resolution=merge-duplicates,return=minimal"},
                     timeout=10)
@@ -390,8 +408,35 @@ def main():
             "SELECT pg_column_size(payload) FROM public.alpha_hunter_symbol_snapshots WHERE run_id=%s ORDER BY symbol LIMIT 62",
             (runs[0],)).fetchall()
         widths=[v[0] for v in sample]
+    parent_extra={}
+    if os.getenv("AH_P0_PARENT_LEDGER_COMPLETE")=="1":
+        with psycopg.connect(DSN,autocommit=True) as check:
+            p=check.execute("""
+                SELECT m.run_id,m.status,s.connection_status,s.complete,s.trade_permission
+                FROM public.alpha_hunter_account_ledger_materialization_events m
+                JOIN public.alpha_hunter_account_state_snapshots s
+                  ON s.account_snapshot_id=m.account_snapshot_id
+                WHERE m.run_id=ANY(%s) ORDER BY m.run_id
+            """,(runs,)).fetchall()
+            if len(p)!=3 or any(x[1:]!=("MATERIALIZED_CONNECTED","CONNECTED_READ_ONLY",True,False)
+                                for x in p):
+                raise AssertionError(f"Concurrent parent ledger evidence invalid: {p}")
+            prot=check.execute("""
+                SELECT count(*),count(*) FILTER(WHERE trade_permission=false)
+                FROM public.alpha_hunter_protection_reconciliation_events_v01
+            """).fetchone()
+            pos=check.execute("""
+                SELECT count(*) FROM public.alpha_hunter_open_position_snapshots
+                WHERE trade_permission=false
+            """).fetchone()[0]
+            if pos!=3 or prot[0]<3 or prot[0]!=prot[1]:
+                raise AssertionError(f"Concurrent protection events invalid: {prot} positions={pos}")
+            parent_extra={"parent_account_events":len(p),
+                "connected_positions":pos,"protective_reconciliation_events":prot[0],
+                "all_paper_only":True}
     report={"status":"CATALOG_TRIGGER_SUBSET_RESEARCH_ONLY",
-        "exact_catalog_functions_reused":5,
+        "exact_catalog_functions_reused":(12 if parent_extra else 5),
+        "parent_account_protection_extra":parent_extra,
         "trigger_functions_not_yet_reconstituted":7,
         "postgres_major":ver,"historical_strategy_rows_seeded":counts["history"],
         "history_total_size_bytes":size_history,"history_seed_seconds":seed_seconds,
