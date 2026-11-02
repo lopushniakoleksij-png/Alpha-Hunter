@@ -91,9 +91,11 @@ def payload_for(run, idx, target_width=8421):
                           "spread_pct":0.2,"depth_imbalance":0.0,
                           "exchange_timestamp_ms":1793619000000},
             "recent_trades":{"trade_imbalance":0.0,
-                             "newest_trade_timestamp_ms":1793619000000}}},
+                             "newest_trade_timestamp_ms":1793619000000}}}
     # Payload min width dictated by 10x strategy ~1KB; never truncate
     # meaningful trigger input to attain an artificial target.
+    if not isinstance(root, dict) or not isinstance(root.get('multi_strategy_engine'),dict):
+        raise AssertionError('payload JSON must be an object, never a tuple/list')
     initial=len(json.dumps(root))
     if initial<target_width:
         root["synthetic_padding"]=json_noise((run,idx),target_width-initial)
@@ -183,6 +185,12 @@ def write_run(run):
 def main():
     insist_local()
     OUT.mkdir(parents=True,exist_ok=True)
+    # Fail fast before multi-gigabyte seeding if synthetic JSON has changed shape.
+    sample=payload_for('shape-canary',0)
+    if (not isinstance(sample,dict)
+            or len(sample['multi_strategy_engine']['strategies'])!=10
+            or not isinstance(sample['microstructure'],dict)):
+        raise AssertionError('synthetic shape preflight failed')
     run_ddl()
     with psycopg.connect(DSN,autocommit=True) as conn:
         ver=int(conn.execute("SHOW server_version_num").fetchone()[0])//10000
