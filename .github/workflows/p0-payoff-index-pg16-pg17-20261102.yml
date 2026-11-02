@@ -1,0 +1,40 @@
+name: P0 payoff geometry index isolated PG16 PG17
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-payoff-index-pg16-pg17-20261102.yml"
+      - "ops/reviews/20261102_payoff_health_index_CANDIDATE_NOT_FOR_PRODUCTION.sql"
+      - "ops/reviews/20261102_payoff_index_benchmark_pg16_pg17.sql"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-payoff-index:
+    name: Isolated PostgreSQL ${{ matrix.pg }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ["16", "17"]
+    services:
+      db:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: isolated_only
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify isolated baseline, candidate index, aggregate parity, rollback
+        run: |
+          docker exec -i "${{ job.services.db.id }}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            < ops/reviews/20261102_payoff_index_benchmark_pg16_pg17.sql
+      - name: Safety scope confirmation
+        run: |
+          echo "Synthetic isolated PostgreSQL only."
+          echo "No production DB credentials, secrets, scanner change, or deploy."
+          echo "Real PostgREST / trigger-chain benchmark and DBA review remain separately required."

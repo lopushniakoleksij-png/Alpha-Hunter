@@ -1,0 +1,51 @@
+name: P0 live dashboard recovery HTTP probe (GET only)
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/p0-live-http-readonly-20261102.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  http-read-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe production HTTP status (no writes, no orders)
+        shell: python
+        run: |
+          import json
+          import urllib.request
+          import urllib.error
+          from datetime import datetime, timezone
+          base="https://alpha-hunter-j5i3.onrender.com"
+          def probe(path, accept):
+              request=urllib.request.Request(base+path, method="GET", headers={
+                  "Accept":accept,
+                  "Cache-Control":"no-cache",
+                  "User-Agent":"AlphaHunter-Independent-ReadOnly-HTTP-20261102"})
+              try:
+                  with urllib.request.urlopen(request,timeout=38) as response:
+                      return response.status,response.read(8_000_000).decode("utf-8","replace")
+              except urllib.error.HTTPError as e:
+                  return e.code,e.read(3000).decode("utf-8","replace")
+          status_build,build=probe("/api/build","application/json")
+          print("build_http=",status_build)
+          assert status_build==200, "Build endpoint unavailable"
+          info=json.loads(build)
+          print("build_version=",str(info.get("git_commit_short") or info.get("commit") or "unspecified")[:24])
+          status_latest,payload=probe("/api/latest","application/json")
+          print("latest_http=",status_latest)
+          if status_latest==503:
+              print("latest_error=",json.loads(payload).get("error"))
+              raise SystemExit("FAIL: dashboard canonical live read still unavailable")
+          assert status_latest==200, "Unexpected latest status"
+          data=json.loads(payload)
+          assert isinstance(data,dict) and data, "Live JSON empty"
+          print("snapshot_updated=",str(data.get("updated") or "not exposed"))
+          html_status,html=probe("/","text/html")
+          print("dashboard_html_http=",html_status)
+          assert html_status==200, "Dashboard HTML not available"
+          assert "Alpha Hunter" in html, "Unexpected HTML body"
+          assert "LIVE DATA TEMPORARILY UNAVAILABLE" not in html, "HTML still error page"
+          print("PROBE_PASS=True")
