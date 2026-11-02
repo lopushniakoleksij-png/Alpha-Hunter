@@ -1,0 +1,55 @@
+name: P0 parent-ledger-protection exact catalog PG16 PG17
+on:
+  pull_request:
+    paths:
+      - 'tests/fixtures/p0_catalog_parent_ledger_protection_addendum_20261102.sql'
+      - 'tests/fixtures/p0_production_catalog_trigger_chain_20261102.sql'
+      - '.github/workflows/p0-parent-ledger-protection-exact-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  catalog-parent-protection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGDATABASE: postgres
+      PGPASSWORD: isolated-only
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install local psql client if necessary
+        run: command -v psql || (sudo apt-get update -qq && sudo apt-get install -qq -y postgresql-client)
+      - name: Compile full-width core and parent-protection addendum
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f tests/fixtures/p0_production_catalog_trigger_chain_20261102.sql
+          psql -X -v ON_ERROR_STOP=1 -f tests/fixtures/p0_catalog_parent_ledger_protection_addendum_20261102.sql
+          psql -X -v ON_ERROR_STOP=1 -c "SELECT count(*) AS total_fixture_triggers FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.alpha_hunter_snapshots'::regclass,'public.alpha_hunter_symbol_snapshots'::regclass,'public.alpha_hunter_open_position_snapshots'::regclass,'public.alpha_hunter_execution_decision_freezes_v01'::regclass);"
+      - name: No production credentials
+        run: |
+          test -z "$SUPABASE_URL" && test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY" && test -z "$RENDER_API_KEY"
