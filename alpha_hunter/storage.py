@@ -87,6 +87,13 @@ class SupabaseConfig:
 
 
 PARENT_STORAGE_CONTRACT = "snapshot-parent-v0.2"
+# Keep the heavy canonical symbol upsert below the original 15-second HTTP
+# timeout without increasing it. Parent publication remains PENDING until
+# every bounded batch and independent readback have completed.
+# The 31 Oct 2026 incident confirmed repeated 62-row upsert cancellations on
+# the ~1.8 GB symbol table. Limit each statement to eight compact children,
+# without changing the frozen 15s HTTP timeout or any scientific gate.
+CANONICAL_SYMBOL_WRITE_BATCH_SIZE = 8
 
 
 def compact_readiness_record(item: dict[str, Any]) -> dict[str, Any]:
@@ -300,6 +307,11 @@ class SupabaseStorage:
 
         if snapshot.get("_storage_contract") != PARENT_STORAGE_CONTRACT:
             return snapshot
+
+        if snapshot.get("_canonical_publication_state") not in (None, "VERIFIED"):
+            raise SupabaseStorageError(
+                "Canonical snapshot publication is not verified"
+            )
 
         run_id = str(snapshot.get("run_id") or "")
         if not run_id:
@@ -637,6 +649,17 @@ class SupabaseStorage:
         valid_symbols = [item for item in snapshot.get("symbols", []) if "error" not in item]
         error_count = len(snapshot.get("symbols", [])) - len(valid_symbols)
 
+        identity = snapshot.get("validation_identity")
+        canonical_cron = (
+            isinstance(identity, dict)
+            and str(identity.get("run_source") or "").upper() == "RENDER_CRON"
+        )
+        parent_payload = compact_parent_snapshot(snapshot)
+        if canonical_cron:
+            # The parent must precede children because of the run_id foreign key.
+            # An interrupted child write must never publish a usable scan.
+            parent_payload["_canonical_publication_state"] = "PENDING"
+
         parent = [{
             "run_id": run_id,
             "collected_at_utc": snapshot.get("collected_at_utc"),
@@ -644,7 +667,7 @@ class SupabaseStorage:
             "product_type": snapshot.get("product_type"),
             "symbol_count": len(snapshot.get("symbols", [])),
             "error_count": error_count,
-            "payload": compact_parent_snapshot(snapshot),
+            "payload": parent_payload,
         }]
         children = []
         for item in snapshot.get("symbols", []):
@@ -745,7 +768,17 @@ class SupabaseStorage:
             canonical_feature_rows.append(canonical)
 
         self._upsert(self.settings.snapshot_table, parent, "run_id")
-        self._upsert(self.settings.symbol_table, children, "run_id,symbol")
+        if canonical_cron:
+            for offset in range(0, len(children), CANONICAL_SYMBOL_WRITE_BATCH_SIZE):
+                # Each deterministic (run_id, symbol) group is idempotent. If an
+                # intermediate HTTP result is ambiguous, leave parent PENDING.
+                self._upsert(
+                    self.settings.symbol_table,
+                    children[offset:offset + CANONICAL_SYMBOL_WRITE_BATCH_SIZE],
+                    "run_id,symbol",
+                )
+        else:
+            self._upsert(self.settings.symbol_table, children, "run_id,symbol")
         self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
         self._upsert(
             "alpha_hunter_signal_features",
@@ -835,5 +868,146 @@ class SupabaseStorage:
             [*paper_events, *execution_events],
             "event_id",
         )
+        # Capture obligations before exits can remove positions from the open
+        # view. A failed inventory read must not suppress exit reconciliation.
+        monitoring_positions = []
+        monitoring_inventory_error = None
+        if canonical_cron:
+            try:
+                monitoring_positions = self._select_json(
+                    PAPER_PROTECTION_OPEN_VIEW,
+                    {"select": "entry_order_id,decision_id,symbol,direction",
+                     "limit": "1000"},
+                )
+                if len(monitoring_positions) >= 1000:
+                    raise SupabaseStorageError("Monitoring inventory may be truncated")
+            except Exception as exc:
+                monitoring_inventory_error = exc
         self._reconcile_paper_stages(snapshot, run_id)
+        if canonical_cron:
+            if monitoring_inventory_error is not None:
+                raise SupabaseStorageError(
+                    "Canonical publication lacks monitoring inventory"
+                ) from monitoring_inventory_error
+            self._verify_canonical_monitoring(snapshot, run_id, monitoring_positions)
+            # Verify the exact persisted children AFTER independent entry/exit
+            # reconciliation. A 2xx parent response alone proves nothing.
+            expected = {
+                str(row["symbol"])
+                for row in children
+                if isinstance(row.get("symbol"), str) and row["symbol"]
+            }
+            if not children or len(children) > 2000 or len(expected) != len(children):
+                raise SupabaseStorageError(
+                    "Canonical publication rejected invalid expected children"
+                )
+            persisted_children = self._select_json(
+                self.settings.symbol_table,
+                {
+                    "select": "symbol,payload",
+                    "run_id": f"eq.{run_id}",
+                    "order": "symbol.asc",
+                    "limit": "2000",
+                },
+            )
+            actual = {
+                row.get("symbol")
+                for row in persisted_children
+                if isinstance(row.get("symbol"), str)
+                and isinstance(row.get("payload"), dict)
+                and row["payload"].get("symbol") == row["symbol"]
+            }
+            if (
+                len(persisted_children) != len(children)
+                or len(actual) != len(children)
+                or actual != expected
+            ):
+                raise SupabaseStorageError(
+                    "Canonical publication rejected incomplete child evidence"
+                )
+
+            verified_payload = {
+                **parent_payload,
+                "_canonical_publication_state": "VERIFIED",
+            }
+            self._upsert(
+                self.settings.snapshot_table,
+                [{**parent[0], "payload": verified_payload}],
+                "run_id",
+            )
+            published = self._select_json(
+                self.settings.snapshot_table,
+                {
+                    "select": "run_id,symbol_count,payload",
+                    "run_id": f"eq.{run_id}",
+                    "limit": "2",
+                },
+            )
+            if (
+                len(published) != 1
+                or published[0].get("run_id") != run_id
+                or published[0].get("symbol_count") != len(children)
+                or not isinstance(published[0].get("payload"), dict)
+                or published[0]["payload"].get("_canonical_publication_state")
+                != "VERIFIED"
+                or published[0]["payload"].get("validation_identity") != identity
+            ):
+                raise SupabaseStorageError(
+                    "Canonical publication lacks confirmed parent readback"
+                )
         return run_id
+
+    def _verify_canonical_monitoring(self, snapshot, run_id, positions):
+        """Require durable current-run receipts; this is not execution proof.
+
+        Keep this separate from the reconciliation return/HTTP acknowledgement.
+        Empty inventories are valid; missing or malformed inventories are not.
+        Newly filled positions with no later observation remain unpublished
+        rather than manufacturing a same-run monitoring baseline.
+        """
+        expected = {p.get("entry_order_id"): p for p in positions}
+        if len(expected) != len(positions) or any(
+            not isinstance(k, str) or not k for k in expected
+        ):
+            raise SupabaseStorageError("Canonical monitoring inventory invalid")
+        if not expected:
+            return
+        rows = self._select_json(PAPER_EXIT_ATTEMPT_TABLE, {
+            "select": "entry_order_id,decision_id,symbol,direction,source_run_id,"
+                      "observed_at_utc,outcome,blockers,paper_only,exchange_authority,"
+                      "trade_permission,order_path",
+            "source_run_id": f"eq.{run_id}", "limit": "1000",
+        })
+        if len(rows) >= 1000:
+            raise SupabaseStorageError("Canonical monitoring readback may be truncated")
+        def timestamp(value):
+            value = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if value.utcoffset() is None:
+                raise ValueError("timezone required")
+            return value
+        try:
+            scan_at = timestamp(snapshot.get("collected_at_utc"))
+            for order_id, position in expected.items():
+                matches = [r for r in rows if r.get("entry_order_id") == order_id]
+                if len(matches) != 1:
+                    raise ValueError("missing or duplicate receipt")
+                row = matches[0]
+                if any(not position.get(k) or row.get(k) != position[k]
+                       for k in ("decision_id", "symbol", "direction")):
+                    raise ValueError("position identity mismatch")
+                age = (timestamp(row.get("observed_at_utc")) - scan_at).total_seconds()
+                if not 0 <= age <= 2100:
+                    raise ValueError("receipt outside scan observation window")
+                if (row.get("source_run_id") != run_id
+                    or row.get("outcome") not in {"NO_TRIGGER", "STOP_TRIGGERED",
+                                                   "TARGET_TRIGGERED", "HORIZON_CLOSED"}
+                    or row.get("blockers") != []
+                    or row.get("paper_only") is not True
+                    or row.get("exchange_authority") is not False
+                    or row.get("trade_permission") is not False
+                    or row.get("order_path") != "NONE"):
+                    raise ValueError("unusable monitoring receipt")
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise SupabaseStorageError(
+                "Canonical publication lacks usable durable monitoring evidence"
+            ) from exc

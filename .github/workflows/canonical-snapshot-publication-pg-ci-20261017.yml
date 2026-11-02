@@ -1,0 +1,54 @@
+name: Canonical Snapshot Publication PostgreSQL 16-17 CI
+
+on:
+  pull_request:
+    paths:
+      - "alpha_hunter/storage.py"
+      - "tests/test_canonical_snapshot_pg_integration_20261017.py"
+      - ".github/workflows/canonical-snapshot-publication-pg-ci-20261017.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-postgres-fk-and-ambiguous-write:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["16", "17"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ALPHA_HUNTER_ISOLATED_POSTGRES_ACCEPTANCE: "1"
+      AH_ISOLATED_PG_DSN: "host=127.0.0.1 port=5432 user=postgres password=isolated-only dbname=postgres"
+      BITGET_API_KEY: ""
+      BITGET_SECRET_KEY: ""
+      BITGET_API_PASSPHRASE: ""
+      SUPABASE_URL: ""
+      SUPABASE_SERVICE_ROLE_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - name: Install Python runtime, pytest and psycopg client
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements.txt
+          python -m pip install --disable-pip-version-check pytest 'psycopg[binary]>=3.2,<3.4'
+      - name: Test isolated parent FK / child timeout / lost HTTP ack / readback
+        run: |
+          python -m pytest -q tests/test_canonical_snapshot_pg_integration_20261017.py
