@@ -47,7 +47,7 @@ def main():
         if ver//10000 not in (16,17):
             raise RuntimeError("Only PG16/17 ephemeral benchmark accepted")
         report["pg_major"]=ver//10000
-        conn.execute("SET statement_timeout='15000ms'")
+        conn.execute("SET statement_timeout='120000ms'")
         conn.execute("DROP SCHEMA IF EXISTS ah_p0_benchmark_local CASCADE")
         conn.execute("CREATE SCHEMA ah_p0_benchmark_local")
         try:
@@ -84,6 +84,7 @@ def main():
             """)
             conn.execute("ANALYZE ah_p0_benchmark_local.forward_outcomes")
             conn.execute("ANALYZE ah_p0_benchmark_local.history_observations")
+            conn.execute("SET statement_timeout='15000ms'")
             def payoff_query():
                 return conn.execute("""
                    SELECT count(*),
