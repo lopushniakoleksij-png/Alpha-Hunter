@@ -1,0 +1,77 @@
+name: P03 deployed inert successor external HTTPS smoke
+on:
+  push:
+    branches:
+      - candidate/p03-isolated-successor-hold-20261102
+    paths:
+      - '.github/workflows/p03-external-inert-smoke-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  external-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AH_P03_INERT_URL: 'https://alpha-hunter-p03-inert-successor-20261102.onrender.com'
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      DATABASE_URL: ''
+    steps:
+      - name: Public TLS health and fail-closed HTTP checks against isolated service only
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+          import urllib.error
+          import ssl
+          base=os.environ['AH_P03_INERT_URL'].rstrip('/')
+          assert base == 'https://alpha-hunter-p03-inert-successor-20261102.onrender.com'
+          context=ssl.create_default_context()
+          def request(path,method):
+              req=urllib.request.Request(base+path,method=method,headers={'User-Agent':'AH-P03-External-Inert-Smoke/1.0'})
+              try:
+                  with urllib.request.urlopen(req,timeout=25,context=context) as r:
+                      return (r.status,json.loads(r.read(4096)))
+              except urllib.error.HTTPError as e:
+                  return (e.code,json.loads(e.read(4096)))
+          result=None
+          for n in range(6):
+              try:
+                  result=request('/healthz','GET')
+                  if result[0]==200:
+                      break
+              except (OSError,ValueError):
+                  pass
+              time.sleep(4)
+          if result is None or result[0]!=200:
+              raise AssertionError('Inert service did not pass live health: '+str(result))
+          health=result[1]
+          assert health['status']=='NO_GO_INERT_ONLY',health
+          assert health['trading_enabled'] is False,health
+          assert health['deployment_authorized'] is False,health
+          assert health['source_or_position_access'] is False,health
+          negatives={}
+          for path,method,expected in [('/', 'GET',503),('/api/latest','GET',503),
+                                        ('/api/build','GET',503),('/api/order','POST',405)]:
+              resp=request(path,method)
+              if resp[0]!=expected:
+                  raise AssertionError(f'{path} {method} returned {resp}')
+              negatives[method+' '+path]=resp[0]
+          print(json.dumps({'status':'P03_ACTUAL_HTTPS_INERT_ONLY_PASS',
+                            'tls':'verified_by_system_CA','health_http':200,
+                            'health_state':'NO_GO_INERT_ONLY',
+                            'negative_routes':negatives,
+                            'live_order_authorized':False,
+                            'database_writes':False,
+                            'production_release_authorized':False},sort_keys=True))
+          PY
+      - name: Assert no real credentials
+        run: |
+          test -z "$SUPABASE_URL" && test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY" && test -z "$BITGET_SECRET_KEY"
+          test -z "$DATABASE_URL"
