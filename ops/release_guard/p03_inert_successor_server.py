@@ -54,6 +54,7 @@ class InertHandler(BaseHTTPRequestHandler):
         if path in ("/health", "/healthz"):
             self._respond(200, {
                 "status": "NO_GO_INERT_ONLY",
+                "rollback_drill_marker": "P03_CANARY_ISOLATED_ONLY_20261102",
                 "service": "alpha-hunter-p03-successor-candidate",
                 "paper_only": True,
                 "trading_enabled": False,
