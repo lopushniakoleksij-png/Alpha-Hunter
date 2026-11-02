@@ -1,0 +1,63 @@
+name: P0 exact R8 R9 R10 activation guards PG16 PG17
+on:
+  pull_request:
+    paths:
+      - 'tests/fixtures/p0_r8_r9_r10_sealed_guard_isolated_20261102.sql'
+      - 'ops/reviews/phase2_r8_r9_r10_activation_guard_contract_v01.py'
+      - '.github/workflows/p0-r8-r9-r10-activation-guard-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  guard-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AH_P0_ISOLATED_R8R9R10: '1'
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install local PostgreSQL client and driver only
+        run: |
+          command -v psql || (sudo apt-get update -qq && sudo apt-get install -qq -y postgresql-client)
+          python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4'
+      - name: Execute missing, mismatch, match and rollback isolation tests
+        run: python ops/reviews/phase2_r8_r9_r10_activation_guard_contract_v01.py
+      - name: Preserve isolated evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-activation-guard-pg${{ matrix.pg }}
+          path: p0_activation_guard_evidence/report.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: No real credentials
+        run: |
+          test -z "$SUPABASE_URL" && test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY" && test -z "$BITGET_SECRET_KEY"
+          test -z "$RENDER_API_KEY"
