@@ -31,7 +31,10 @@ def fixture():
     fill=dict(order_id="order-1",source_run_id="prior-001",quantity=4.0,
               paper_only=True,exchange_authority=False)
     first=dict(entry_order_id="order-1",decision_id="decision-1",
-               symbol="BTCUSDT",observed_at_utc="2026-11-02T09:41:00Z")
+               symbol="BTCUSDT",observed_at_utc="2026-11-02T09:41:00Z",
+               source_run_id="monitor-2",outcome="NO_TRIGGER",blockers=[],
+               paper_only=True,exchange_authority=False,trade_permission=False,
+               order_path="NONE")
     return dict(fp=fp,parent=parent,children=children,receipt=receipt,
                 pos=pos,fill=fill,first=first)
 
@@ -115,6 +118,19 @@ class SourceCustodyTests(unittest.TestCase):
     def test_first_observation_identity_mismatch(self):
         v=fixture();v["first"]["entry_order_id"]="other"
         self.assertIn("FIRST_OBSERVATION_POSITION_IDENTITY_INVALID",self.baseline(first=v["first"])["blockers"])
+
+
+    def test_ambiguous_first_receipt_is_hard_blocker_even_with_valid_quantities(self):
+        v=fixture()
+        v["first"]["outcome"]="AMBIGUOUS"
+        v["first"]["blockers"]=["ENTRY_AND_EXIT_ORDERING_AMBIGUOUS_SAME_SNAPSHOT"]
+        self.assertIn("FIRST_OBSERVATION_AMBIGUOUS_OR_BLOCKED",self.baseline(first=v["first"])["blockers"])
+
+    def test_initial_receipt_missing_or_nonpaper_authority_is_invalid(self):
+        v=fixture();v["first"].pop("source_run_id")
+        self.assertIn("FIRST_OBSERVATION_SOURCE_UNVERIFIED",self.baseline(first=v["first"])["blockers"])
+        v=fixture();v["first"]["exchange_authority"]=True
+        self.assertIn("FIRST_OBSERVATION_AUTHORITY_UNVERIFIED",self.baseline(first=v["first"])["blockers"])
 
 if __name__ == "__main__":
     unittest.main()
