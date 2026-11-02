@@ -140,16 +140,26 @@ def seed_history(conn, rows):
 
 
 def wait_http_schema():
+    """Require both parent and child endpoints stable across 4 GET probes."""
+    stable=0
     for _ in range(90):
         try:
-            r=requests.get(BASE+"/alpha_hunter_symbol_snapshots",
-                           params={"select":"run_id","limit":"1"},timeout=2)
-            if r.status_code==200:
-                return
+            codes=[
+                requests.get(BASE+"/"+table,
+                             params={"select":"run_id","limit":"1"},
+                             timeout=2).status_code
+                for table in ("alpha_hunter_snapshots","alpha_hunter_symbol_snapshots")
+            ]
         except requests.RequestException:
-            pass
-        time.sleep(0.5)
-    raise RuntimeError("PostgREST schema cache never loaded")
+            codes=[]
+        if codes==[200,200]:
+            stable+=1
+            if stable>=4:
+                return
+        else:
+            stable=0
+        time.sleep(0.3)
+    raise RuntimeError("PostgREST parent/child schema cache never stabilized")
 
 
 def write_run(run):
