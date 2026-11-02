@@ -228,7 +228,7 @@ def test_postgrest_57014_and_ambiguous_ack():
               RAISE EXCEPTION 'local cancellation test only' USING ERRCODE='57014';
             END IF;
             RETURN NEW;
-          END $p0$
+          END; $p0$
         """)
         conn.execute("""
           CREATE TRIGGER ah_local_cancel_57014 BEFORE INSERT OR UPDATE
@@ -279,7 +279,7 @@ def test_postgrest_57014_and_ambiguous_ack():
               PERFORM pg_sleep(0.6);
             END IF;
             RETURN NEW;
-          END $p0$
+          END; $p0$
         """)
         conn.execute("""
           CREATE TRIGGER ah_local_slow_ack BEFORE INSERT
