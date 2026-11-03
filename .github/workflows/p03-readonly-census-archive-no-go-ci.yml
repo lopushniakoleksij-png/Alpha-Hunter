@@ -1,0 +1,45 @@
+name: P0.3 read-only historic census anti-promotion gate
+
+on:
+  push:
+    branches:
+      - research/p03-readonly-historical-census-archive-20261103
+  pull_request:
+    paths:
+      - 'ops/reviews/20261103_p03_readonly_historical_census_no_go.json'
+      - 'ops/reviews/20261103_p03_readonly_historical_census_recheck.sql'
+      - 'tests/test_p03_readonly_census_archive_no_go_v01.py'
+      - '.github/workflows/p03-readonly-census-archive-no-go-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  source-census-no-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+      TRADING_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated signature verifier only
+        run: python -m pip install --disable-pip-version-check 'cryptography==46.0.4'
+      - name: Read-only historical census fail-closed anti-promotion test
+        run: python -m unittest discover -s tests -p 'test_p03_readonly_census_archive_no_go_v01.py' -v
+      - name: Confirm no live credentials or production changes
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"
+          test "$TRADING_ENABLED" = "false"
+          echo 'NOT_SOURCE_AUTHENTICATED - HISTORICAL_EVIDENCE_NO_GO'
