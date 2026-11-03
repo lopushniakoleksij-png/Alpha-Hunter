@@ -5,6 +5,7 @@ on:
       - 'research/successor_atomic_snapshot_v01.sql'
       - 'tests/postgres/successor_atomic_snapshot_pg_integration_v01.sql'
       - 'tests/postgres/successor_atomic_snapshot_timeout_57014_v01.sh'
+      - 'tests/postgres/successor_atomic_snapshot_concurrency_v01.sh'
       - '.github/workflows/successor-atomic-snapshot-pg-research-ci.yml'
   workflow_dispatch:
 permissions:
@@ -49,3 +50,5 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f tests/postgres/successor_atomic_snapshot_pg_integration_v01.sql
       - name: Verify SQLSTATE 57014 cancellation and full rollback
         run: bash tests/postgres/successor_atomic_snapshot_timeout_57014_v01.sh
+      - name: Verify concurrent duplicate-run lock contention and atomicity
+        run: bash tests/postgres/successor_atomic_snapshot_concurrency_v01.sh
