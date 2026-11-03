@@ -182,11 +182,18 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
             faults.append("OBSERVATION_SIGNATURE_INVALID")
         rid = event.get("run_id")
         incoming_ids.append(rid)
+        if not isinstance(rid, str) or not fullmatch(ID, rid):
+            faults.append("UNSCHEDULED_OR_UNVERIFIED_RUN")
+            continue
         if event.get("cohort_id") != cohort_id:
             faults.append("COHORT_CONTAMINATION_OR_REPLAY")
         if event.get("previous_event_sha256") != earlier_chain:
             faults.append("OBSERVATION_CHAIN_BROKEN")
-        earlier_chain = digest(event)
+        try:
+            earlier_chain = digest(event)
+        except (ValueError, TypeError, OverflowError):
+            faults.append("OBSERVATION_EVENT_CANNOT_BE_HASHED")
+            continue
         if index < len(expected_ids) and rid != expected_ids[index]:
             faults.append("SIGNED_SCHEDULE_ORDER_MISMATCH")
         if rid not in expected_times or rid not in expected_sym:
@@ -204,6 +211,7 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
                 or len(children) != len(expected_sym[rid])
                 or any(not isinstance(c, dict) or
                        c.get("run_id") != rid or
+                       not isinstance(c.get("symbol"), str) or
                        c.get("symbol") not in expected_sym[rid] or
                        not isinstance(c.get("payload"), dict) or
                        c["payload"].get("symbol") != c.get("symbol")
