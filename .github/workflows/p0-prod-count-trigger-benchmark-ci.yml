@@ -1,0 +1,63 @@
+name: P0 production-count nested trigger benchmark PG16 PG17 isolated
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/phase2_prod_count_nested_trigger_benchmark_v01.py'
+      - '.github/workflows/p0-prod-count-trigger-benchmark-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-counts:
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AH_LOCAL_PG_BENCH_ONLY: '1'
+      AH_LOCAL_BENCH_PG_DSN: 'host=127.0.0.1 port=5432 dbname=postgres user=postgres password=isolated-only'
+      AH_BENCH_OUTPUT_DIR: 'nested_trigger_evidence'
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install local synthetic PostgreSQL driver only
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4'
+      - name: Seed 453263 synthetic outcomes and 1640424 strategy history rows; run 62 x 10 chain
+        run: python ops/reviews/phase2_prod_count_nested_trigger_benchmark_v01.py
+      - name: Preserve benchmark measurements and model limitations
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-pg${{ matrix.pg }}-synthetic-production-count
+          path: nested_trigger_evidence/benchmark.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Verify absent production credentials
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"

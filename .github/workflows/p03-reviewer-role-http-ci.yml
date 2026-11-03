@@ -1,0 +1,40 @@
+name: P03 reviewer role HTTP contract and live no-key negative
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/p03_independent_actual_supabase_role_http_readonly_v01.py'
+      - 'tests/test_p03_independent_actual_role_http_readonly_v01.py'
+      - '.github/workflows/p03-reviewer-role-http-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reviewer-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AH_P03_EXPLICIT_API_REVIEW: ''
+      AH_P03_PRIVILEGED_READ_AUTHORIZED: ''
+      AH_P03_PUBLISHABLE_KEY: ''
+      AH_P03_AUTH_USER_ACCESS_TOKEN: ''
+      AH_P03_PRIVILEGED_REVIEW_KEY: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_SECRET_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pure offline forged-jwt, unexpected-public-data, secret-handling regressions
+        run: python -m unittest discover -s tests -p 'test_p03_independent_actual_role_http_readonly_v01.py' -v
+      - name: Live external project gateway NO-KEY GET only; never privileged or authenticated
+        run: python ops/reviews/p03_independent_actual_supabase_role_http_readonly_v01.py --role no-key
+      - name: Assert there are zero credential inputs
+        run: |
+          test -z "$AH_P03_PUBLISHABLE_KEY"
+          test -z "$AH_P03_AUTH_USER_ACCESS_TOKEN"
+          test -z "$AH_P03_PRIVILEGED_REVIEW_KEY"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$SUPABASE_SECRET_KEY"

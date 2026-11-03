@@ -1,0 +1,72 @@
+name: P0 effective PostgREST role RLS policy matrix PG16 PG17
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/phase2_real_postgrest_role_authz_v01.py'
+      - 'tests/fixtures/p0_catalog_parent_ledger_protection_addendum_20261102.sql'
+      - '.github/workflows/p0-postgrest-actual-roles-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  role-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      postgrest:
+        image: postgrest/postgrest:v12.2.8
+        env:
+          PGRST_DB_URI: 'postgres://postgres:isolated-only@postgres:5432/postgres'
+          PGRST_DB_SCHEMAS: 'public'
+          PGRST_DB_ANON_ROLE: 'ah_p0_anon'
+          PGRST_JWT_SECRET: 'local-github-p0-fake-jwt-secret-exactly-64-characters-string'
+          PGRST_SERVER_PORT: 3000
+        ports:
+          - 3000:3000
+    env:
+      AH_P0_ISOLATED_RLS_HTTP: '1'
+      AH_P0_PG_MAJOR: '${{ matrix.pg }}'
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated psql and Python driver
+        run: |
+          command -v psql || (sudo apt-get update -qq && sudo apt-get install -qq -y postgresql-client)
+          python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4' requests
+      - name: Test real anonymous/authenticated HTTP RLS deny and writer allow
+        run: python ops/reviews/phase2_real_postgrest_role_authz_v01.py
+      - name: Archive role-grant and policy evidence
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: isolated-postgrest-role-matrix-pg${{ matrix.pg }}
+          path: p0_rls_http_results/report.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: No production secrets
+        run: |
+          test -z "$SUPABASE_URL" && test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY" && test -z "$RENDER_API_KEY"

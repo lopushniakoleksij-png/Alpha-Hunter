@@ -1,0 +1,56 @@
+name: P0 catalog-exact nested trigger fixture PostgreSQL 16 17
+on:
+  pull_request:
+    paths:
+      - 'tests/fixtures/p0_production_catalog_trigger_chain_20261102.sql'
+      - '.github/workflows/p0-catalog-exact-trigger-fixture-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  catalog-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: '127.0.0.1'
+      PGPORT: '5432'
+      PGDATABASE: 'postgres'
+      PGUSER: 'postgres'
+      PGPASSWORD: 'isolated-only'
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: PostgreSQL client prerequisite
+        run: command -v psql || (sudo apt-get update -qq && sudo apt-get install -qq -y postgresql-client)
+      - name: Compile catalog-derived production table/index/check/trigger fixture
+        run: |
+          psql -v ON_ERROR_STOP=1 -f tests/fixtures/p0_production_catalog_trigger_chain_20261102.sql
+          psql -v ON_ERROR_STOP=1 -c "SELECT count(*) AS installed_triggers FROM pg_trigger WHERE NOT tgisinternal AND tgrelid IN ('public.alpha_hunter_symbol_snapshots'::regclass,'public.alpha_hunter_strategy_observations_v01'::regclass,'public.alpha_hunter_strategy_episodes_v01'::regclass,'public.alpha_hunter_shadow_decision_quotes_v01'::regclass);"
+          echo "Synthetic fixture intentionally excludes 7 unresolved dependency trigger functions: not a DBA acceptance."
+      - name: Never contact production
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"

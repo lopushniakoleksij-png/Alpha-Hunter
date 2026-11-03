@@ -248,13 +248,26 @@ def test_real_http_third_chunk_57014_then_idempotent_recovery(real_http_db):
     assert read_child_count(conn, run_id) == 57
 
 
-def insert_local_position(conn):
+def insert_local_position(conn, *, with_prior=True):
     """Synthetic managed paper inventory visible via real isolated PostgREST."""
     conn.execute("""
         INSERT INTO public.alpha_hunter_paper_protection_horizon_open_v09
             (entry_order_id, decision_id, symbol, direction)
         VALUES ('isolated-position-1', 'isolated-decision-1', 'TEST000USDT', 'LONG')
     """)
+    if with_prior:
+        # An actually persisted earlier observation is mandatory evidence.
+        # The new publisher must never infer it from the schedule.
+        conn.execute("""
+            INSERT INTO public.alpha_hunter_paper_exit_attempts_v04
+                (entry_order_id, source_run_id, decision_id, symbol, direction,
+                 observed_at_utc, outcome, blockers, paper_only,
+                 exchange_authority, trade_permission, order_path)
+            VALUES ('isolated-position-1', 'isolated-prior-run',
+                    'isolated-decision-1', 'TEST000USDT', 'LONG',
+                    '2026-10-17T09:20:00Z', 'NO_TRIGGER', '[]'::jsonb,
+                    true, false, false, 'NONE')
+        """)
 
 
 def insert_local_receipt(conn, run_id, *, outcome="NO_TRIGGER"):

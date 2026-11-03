@@ -1,0 +1,78 @@
+name: P0 catalog real-trigger PostgREST concurrency and width PG16 PG17
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/phase2_real_catalog_http_concurrency_benchmark_v01.py'
+      - 'tests/fixtures/p0_production_catalog_trigger_chain_20261102.sql'
+      - '.github/workflows/p0-catalog-http-concurrency-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  catalog-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+      postgrest:
+        image: postgrest/postgrest:v12.2.8
+        env:
+          PGRST_DB_URI: "postgres://postgres:isolated-only@postgres:5432/postgres"
+          PGRST_DB_SCHEMAS: "public"
+          PGRST_DB_ANON_ROLE: "postgres"
+          PGRST_SERVER_PORT: 3000
+          PGRST_DB_POOL: 10
+        ports:
+          - 3000:3000
+    env:
+      AH_P0_ISOLATED_ONLY: '1'
+      AH_P0_HISTORY_ROWS: '1640424'
+      AH_P0_PARENT_LEDGER_COMPLETE: '1'
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Use only local PostgreSQL client and Python database drivers
+        run: |
+          command -v psql || (sudo apt-get update -qq && sudo apt-get install -qq -y postgresql-client)
+          python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4' requests
+      - name: Apply exact production-catalog trigger subset in disposable PostgreSQL
+        run: |
+          python ops/reviews/phase2_real_catalog_http_concurrency_benchmark_v01.py
+      - name: Save non-promotable review metrics
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-http-pg${{ matrix.pg }}-research-only
+          path: catalog_chain_http_results/report.json
+          retention-days: 7
+          if-no-files-found: error
+      - name: Confirm no secrets or production mutation
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"

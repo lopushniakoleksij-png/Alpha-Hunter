@@ -1,0 +1,34 @@
+name: P0.3 independent quote and alert evidence linkage NO-GO
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/phase2_p03_quote_alert_custody_contract_v01.py'
+      - 'tests/test_phase2_p03_quote_alert_custody_contract_v01.py'
+      - '.github/workflows/p03-quote-alert-custody-contract-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  standalone-no-go-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Synthetic independent quote-monitor-alert evidence identity regressions
+        run: python -m unittest discover -s tests -p test_phase2_p03_quote_alert_custody_contract_v01.py -v
+      - name: No production credentials or trading permission
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$BITGET_SECRET_KEY"
+          test -z "$RENDER_API_KEY"

@@ -1,0 +1,33 @@
+name: P0 independent provenance and first-entry baseline (offline)
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/phase2_source_custody_and_baseline_v01.py'
+      - 'tests/test_phase2_source_custody_and_baseline_v01.py'
+      - '.github/workflows/p0-source-custody-baseline-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-source-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test no-credential fail-closed source and baseline contract
+        run: python -m unittest discover -s tests -p 'test_phase2_source_custody_and_baseline_v01.py' -v
+      - name: Confirm no external credentials
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"
