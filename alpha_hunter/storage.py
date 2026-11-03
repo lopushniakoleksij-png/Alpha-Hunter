@@ -227,7 +227,7 @@ class SupabaseStorage:
             "get",
             f"{self.settings.url}/rest/v1/{self.settings.snapshot_table}",
             params={
-                "select": "run_id,collected_at_utc,payload",
+                "select": "run_id,collected_at_utc,symbol_count,payload",
                 "order": "collected_at_utc.desc",
                 "limit": str(limit),
             },
@@ -301,11 +301,17 @@ class SupabaseStorage:
         if snapshot.get("_storage_contract") != PARENT_STORAGE_CONTRACT:
             return snapshot
 
-        run_id = str(snapshot.get("run_id") or "")
-        if not run_id:
-            raise SupabaseStorageError(
-                "Compact snapshot parent is missing run_id"
-            )
+        # A parent row and compact payload must identify the same scan.
+        # Reject inconsistent provenance before fetching any child rows.
+        run_id = row.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
+            raise SupabaseStorageError("Compact canonical parent missing run_id")
+        if snapshot.get("run_id") != run_id:
+            raise SupabaseStorageError("Compact canonical parent/payload run_id mismatch")
+
+        expected = row.get("symbol_count")
+        if type(expected) is not int or expected < 0 or expected > 2000:
+            raise SupabaseStorageError("Compact canonical parent symbol_count invalid")
 
         response = self.request_with_retry(
             "get",
@@ -338,12 +344,26 @@ class SupabaseStorage:
                 "Supabase snapshot hydration returned unexpected shape"
             )
 
-        snapshot["symbols"] = [
-            child.get("payload")
-            for child in rows
-            if isinstance(child, dict)
-            and isinstance(child.get("payload"), dict)
-        ]
+        if len(rows) != expected:
+            raise SupabaseStorageError(
+                f"Compact canonical child count mismatch: expected {expected}, got {len(rows)}"
+            )
+        symbols = []
+        seen = set()
+        for child in rows:
+            if not isinstance(child, dict):
+                raise SupabaseStorageError("Compact canonical child row invalid")
+            symbol = child.get("symbol")
+            item = child.get("payload")
+            if (
+                not isinstance(symbol, str) or not symbol
+                or symbol in seen or not isinstance(item, dict)
+                or item.get("symbol") != symbol
+            ):
+                raise SupabaseStorageError("Compact canonical child identity invalid")
+            seen.add(symbol)
+            symbols.append(item)
+        snapshot["symbols"] = symbols
         return snapshot
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
