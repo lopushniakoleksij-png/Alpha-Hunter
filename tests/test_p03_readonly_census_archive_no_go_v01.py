@@ -10,6 +10,14 @@ from pathlib import Path
 import re
 import unittest
 
+# This isolated verifier needs optional cryptography. Normal production CI
+# intentionally does not install it; skip at collection rather than fail.
+try:
+    import cryptography
+except ImportError:
+    import pytest
+    pytest.skip("isolated source-census verifier needs cryptography", allow_module_level=True)
+
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
