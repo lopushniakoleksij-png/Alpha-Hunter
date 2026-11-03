@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from typing import Any
 
 
@@ -12,8 +13,9 @@ def _float(value: Any) -> float | None:
     try:
         if value is None:
             return None
-        return float(value)
-    except (TypeError, ValueError):
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else None
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
