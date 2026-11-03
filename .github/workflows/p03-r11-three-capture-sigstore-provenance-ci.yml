@@ -77,7 +77,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Offline negative tests: incomplete children, altered schedule and missing position receipts
+      - name: "Offline negative tests: incomplete children, altered schedule and missing position receipts"
         run: python -m unittest discover -s tests -p 'test_p03_r11_attested_forward_3scan_pilot_v01.py' -v
       - name: Retrieve attested forward schedule from separate preparation job
         uses: actions/download-artifact@v4
