@@ -240,6 +240,11 @@ def _sqlite_connect(path):
 
 
 def collect(schedule_path, output):
+    # Do not trust a mere Boolean from a caller as human independence. The
+    # workflow must first verify the externally issued Sigstore attestation.
+    # This env gate is scope defense, not cryptographic verification itself.
+    if os.getenv("AH_SCHEDULE_SIGSTORE_VERIFIED") != "1":
+        raise EvidenceNoGo("SCHEDULE_EXTERNAL_PROVENANCE_NOT_VERIFIED")
     if any(os.getenv(x) for x in ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
                                   "BITGET_API_KEY", "BITGET_SECRET_KEY",
                                   "BITGET_API_PASSPHRASE", "RENDER_API_KEY")):
