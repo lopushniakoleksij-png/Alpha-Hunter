@@ -679,6 +679,16 @@ def latest_test_engine_status() -> dict[str, Any]:
         repair = rows[0] if rows and isinstance(rows[0], dict) else {}
     except (requests.RequestException, RuntimeError, ValueError):
         repair = {}
+    # Optional repair views can return missing, null, textual, negative or
+    # boolean counters during a schema/cast regression. None is evidence of
+    # zero unresolved positions. Fail closed as REVIEW_REQUIRED rather than
+    # crashing the dashboard or implying that repair coverage is complete.
+    required_repair_counts = ("unresolved_entry_orders", "open_positions_over_24h")
+    if repair and any(
+        type(repair.get(name)) is not int or repair[name] < 0
+        for name in required_repair_counts
+    ):
+        repair = {}
     if not repair:
         blockers.append("REPAIR_DIAGNOSTICS_UNAVAILABLE")
     else:
