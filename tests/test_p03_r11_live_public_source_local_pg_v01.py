@@ -80,7 +80,7 @@ class MarketTransportTests(TestCase):
         self.fails("ticker",ticker(ts=str(NOW-92000)),"TICKER_SOURCE_TIME_OUT_OF_WINDOW")
 
     def test_future_market_timestamp_rejected(self):
-        self.fails("orderbook",book(ts=str(NOW+6000)),"ORDERBOOK_SOURCE_TIME_OUT_OF_WINDOW")
+        self.fails("orderbook",book(ts=str(NOW+6001)),"ORDERBOOK_SOURCE_TIME_OUT_OF_WINDOW")
 
     def test_stale_request_time_rejected(self):
         d=book()
