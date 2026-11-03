@@ -4,6 +4,7 @@ on:
     paths:
       - 'research/successor_atomic_snapshot_v01.sql'
       - 'tests/postgres/successor_atomic_snapshot_pg_integration_v01.sql'
+      - 'tests/postgres/successor_atomic_snapshot_timeout_57014_v01.sh'
       - '.github/workflows/successor-atomic-snapshot-pg-research-ci.yml'
   workflow_dispatch:
 permissions:
@@ -46,3 +47,5 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
       - name: Exercise real PG transaction rollback with synthetic data
         run: psql -X -v ON_ERROR_STOP=1 -f tests/postgres/successor_atomic_snapshot_pg_integration_v01.sql
+      - name: Verify SQLSTATE 57014 cancellation and full rollback
+        run: bash tests/postgres/successor_atomic_snapshot_timeout_57014_v01.sh
