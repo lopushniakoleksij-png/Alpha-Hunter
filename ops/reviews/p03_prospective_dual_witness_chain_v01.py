@@ -107,6 +107,27 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
     except (ValueError, TypeError):
         genesis_at = None
         faults.append("GENESIS_TIMESTAMP_INVALID")
+    # Signed pre-run inventory: each exposed paper position must be accounted
+    # for on every scheduled observation since its independently stated entry.
+    positions = schedule.get("active_positions")
+    if not isinstance(positions, list):
+        return verdict(faults + ["SIGNED_POSITION_INVENTORY_MISSING"], 0)
+    position_entry = {}
+    for position in positions:
+        if not isinstance(position, dict):
+            faults.append("SIGNED_POSITION_ROW_INVALID")
+            continue
+        pid = position.get("entry_order_id")
+        if not isinstance(pid, str) or not fullmatch(ID, pid) or pid in position_entry:
+            faults.append("SIGNED_POSITION_ID_INVALID_OR_DUPLICATE")
+            continue
+        try:
+            entry = utc(position.get("entry_at_utc"))
+            if genesis_at is None or entry <= genesis_at:
+                faults.append("LEGACY_OR_PRE_GENESIS_POSITION_FORBIDDEN")
+            position_entry[pid] = entry
+        except (TypeError, ValueError):
+            faults.append("SIGNED_POSITION_ENTRY_TIME_INVALID")
     expected = schedule.get("expected_runs")
     if (not isinstance(expected, list) or not expected or len(expected) > 250
             or len(event_envelopes) > 250):
@@ -147,6 +168,7 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
         faults.append("OBSERVATION_RUN_COUNT_MISMATCH")
     incoming_ids = []
     earlier_chain = "GENESIS"
+    # A complete signed inventory is distinct from individually recorded receipts.
     receipt_history = {}
     for index, envelope in enumerate(event_envelopes):
         if not isinstance(envelope, dict):
@@ -194,6 +216,10 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
             faults.append("PROSPECTIVE_RECEIPTS_MISSING")
             continue
         seen = set()
+        required_position_ids = {
+            pid for pid, entry in position_entry.items()
+            if entry <= expected_times[rid]
+        }
         for receipt in receipts:
             if not isinstance(receipt, dict):
                 faults.append("PROSPECTIVE_RECEIPT_INVALID")
@@ -203,6 +229,8 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
                 faults.append("PROSPECTIVE_RECEIPT_DUPLICATE_OR_MISSING")
                 continue
             seen.add(pid)
+            if pid not in required_position_ids:
+                faults.append("UNSCHEDULED_POSITION_RECEIPT")
             if (receipt.get("source_run_id") != rid
                     or receipt.get("outcome") not in {
                         "NO_TRIGGER", "STOP_TRIGGERED",
@@ -218,6 +246,9 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
                 t = utc(receipt.get("observed_at_utc"))
                 if not 0 <= (t - expected_times[rid]).total_seconds() <= MAX_SECONDS:
                     faults.append("PROSPECTIVE_RECEIPT_OUTSIDE_WINDOW")
+                if pid in position_entry and pid not in receipt_history:
+                    if not 0 < (t - position_entry[pid]).total_seconds() <= MAX_SECONDS:
+                        faults.append("FIRST_ENTRY_ORIGIN_GAP_OR_AMBIGUITY")
                 if pid in receipt_history:
                     gap = (t - receipt_history[pid]).total_seconds()
                     if not 0 < gap <= MAX_SECONDS:
@@ -225,6 +256,8 @@ def validate_forward_history(*, schedule, schedule_signature_b64,
                 receipt_history[pid] = t
             except (ValueError, TypeError):
                 faults.append("PROSPECTIVE_RECEIPT_TIME_INVALID")
+        if seen != required_position_ids:
+            faults.append("PROSPECTIVE_POSITION_RECEIPT_COVERAGE_FAILED")
     if incoming_ids != expected_ids:
         faults.append("SIGNED_SCHEDULE_RUNS_NOT_FULLY_OBSERVED")
     return verdict(faults, len(incoming_ids))
