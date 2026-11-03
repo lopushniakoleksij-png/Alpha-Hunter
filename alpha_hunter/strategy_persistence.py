@@ -101,9 +101,17 @@ def annotate_strategy_persistence(
             and same_direction
         )
 
+        # Prior scan counters are persisted evidence, not trusted input. A
+        # malformed or nonpositive counter cannot prove consecutive scans.
+        prior_count = previous_persistence.get("consecutive_scans")
+        valid_prior_count = (
+            type(prior_count) is int and prior_count >= 1
+        )
+        continuing = continuing and valid_prior_count
+
         if continuing:
             state = "CONTINUING"
-            consecutive = int(previous_persistence.get("consecutive_scans") or 1) + 1
+            consecutive = prior_count + 1
             first_seen = str(
                 previous_persistence.get("first_seen_at_utc")
                 or observed_at
