@@ -1,0 +1,95 @@
+name: R11 live public-source witness / isolated PostgreSQL 16-17 (research only)
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/p03_r11_live_public_source_local_pg_v01.py'
+      - 'tests/test_p03_r11_live_public_source_local_pg_v01.py'
+      - '.github/workflows/p03-r11-live-source-isolated-pg-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r11-prospective-public-witness
+  cancel-in-progress: true
+
+jobs:
+  public-source-local-postgrest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['16', '17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      postgrest:
+        image: postgrest/postgrest:v12.2.8
+        env:
+          PGRST_DB_URI: "postgres://postgres:isolated-only@postgres:5432/postgres"
+          PGRST_DB_SCHEMAS: "public"
+          PGRST_DB_ANON_ROLE: "postgres"
+          PGRST_SERVER_PORT: 3000
+        ports:
+          - 3000:3000
+    env:
+      AH_LOCAL_POSTGREST_ONLY: '1'
+      AH_LOCAL_PG_DSN: 'host=127.0.0.1 port=5432 dbname=postgres user=postgres password=isolated-only'
+      AH_R11_WITNESS_OUTPUT: r11_public_market_witness
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+      TRADING_ENABLED: 'false'
+      PAPER_ONLY: 'true'
+      ORDER_PATH: 'NONE'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install disposable local PostgreSQL driver
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4'
+      - name: Check frozen research boundaries
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$BITGET_SECRET_KEY"
+          test -z "$RENDER_API_KEY"
+          test "$TRADING_ENABLED" = "false"
+          test "$PAPER_ONLY" = "true"
+          test "$ORDER_PATH" = "NONE"
+      - name: Offline no-order source parser regressions
+        run: python -m unittest discover -s tests -p 'test_p03_r11_live_public_source_local_pg_v01.py' -v
+      - name: ONE-SHOT actual HTTPS public source -> local PG -> local PostgREST
+        run: python ops/reviews/p03_r11_live_public_source_local_pg_v01.py
+      - name: Preserve raw provider responses and local custody readback
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r11-public-source-local-pg${{ matrix.postgres }}
+          path: r11_public_market_witness/
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Declare scope
+        if: success()
+        run: |
+          echo 'REAL_PUBLIC_HTTPS_TRANSPORT_AND_DISPOSABLE_DB_PASS'
+          echo 'NOT_EXCHANGE_SIGNED_NOT_HUMAN_REVIEWED_NOT_CONTINUOUS'
+          echo 'NO_POSITION_NO_TRADE_NO_PRODUCTION_RELEASE'
