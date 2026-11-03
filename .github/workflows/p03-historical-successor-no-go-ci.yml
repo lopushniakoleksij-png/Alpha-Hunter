@@ -1,0 +1,52 @@
+name: P0 successor historical evidence fail-closed (isolated)
+
+on:
+  push:
+    branches:
+      - research/p03-historical-evidence-safeguard-20261103
+  pull_request:
+    paths:
+      - 'ops/reviews/p03_historical_successor_fail_closed_v01.py'
+      - 'tests/test_p03_historical_successor_fail_closed_v01.py'
+      - '.github/workflows/p03-historical-successor-no-go-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p03-historical-only-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  historical-no-go-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+      TRADING_ENABLED: 'false'
+      PAPER_ONLY: 'true'
+      ORDER_PATH: 'NONE'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile standalone historical safeguard
+        run: python -m py_compile ops/reviews/p03_historical_successor_fail_closed_v01.py tests/test_p03_historical_successor_fail_closed_v01.py
+      - name: Run secret-free synthetic continuity and publication regression tests
+        run: python -m unittest discover -s tests -p 'test_p03_historical_successor_fail_closed_v01.py' -v
+      - name: No credentials, orders, producer or live deployment
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"
+          test "$TRADING_ENABLED" = "false"
+          test "$PAPER_ONLY" = "true"
+          test "$ORDER_PATH" = "NONE"
+          echo 'ISOLATED_HISTORY_ONLY_NO_PRODUCTION_AUTHORITY'
