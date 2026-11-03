@@ -323,6 +323,7 @@ def test_compact_parent_snapshot_hydrates_from_symbol_rows():
         200,
         payload=[{
             "run_id": "run-1",
+            "symbol_count": 2,
             "collected_at_utc": "2026-09-25T12:00:00+00:00",
             "payload": {
                 "version": "0.7.1",
