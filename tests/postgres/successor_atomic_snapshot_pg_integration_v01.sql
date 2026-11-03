@@ -29,9 +29,9 @@ $$;
 create function pg_temp.children_for(p_run text) returns jsonb language sql as $$
  select jsonb_build_array(
  jsonb_build_object('run_id',p_run,'symbol','BTCUSDT','collected_at_utc','2026-11-03T00:00:00Z',
- 'trade_permission',false,'payload',jsonb_build_object('symbol','BTCUSDT')),
+ 'state_changed',false,'trade_permission',false,'payload',jsonb_build_object('symbol','BTCUSDT')),
  jsonb_build_object('run_id',p_run,'symbol','ETHUSDT','collected_at_utc','2026-11-03T00:00:00Z',
- 'trade_permission',false,'payload',jsonb_build_object('symbol','ETHUSDT')))
+ 'state_changed',false,'trade_permission',false,'payload',jsonb_build_object('symbol','ETHUSDT')))
 $$;
 
 -- Real PG execution: complete insert and exact count.
