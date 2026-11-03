@@ -178,6 +178,14 @@ class ProspectiveWitnessTests(unittest.TestCase):
         self.assert_blocked("PROSPECTIVE_RECEIPT_UNUSABLE",
                             lambda s,e: e[0]["position_receipts"][0].update(trade_permission=True))
 
+    def test_bad_signed_run_id_is_no_go_not_exception(self):
+        self.assert_blocked("UNSCHEDULED_OR_UNVERIFIED_RUN",
+                            lambda s,e: e[0].update(run_id=["not-a-string"]))
+
+    def test_bad_signed_child_symbol_is_no_go_not_exception(self):
+        self.assert_blocked("PROSPECTIVE_CHILD_CENSUS_INCOMPLETE",
+                            lambda s,e: e[0]["persisted_children"][0].update(symbol=["invalid"]))
+
     def test_missing_witness_keys_fails(self):
         schedule, events = fixture()
         result = guard.validate_forward_history(
