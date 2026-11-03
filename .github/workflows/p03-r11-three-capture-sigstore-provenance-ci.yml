@@ -1,0 +1,134 @@
+name: R11 isolated prospective 3-scan Sigstore witness pilot
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/p03_r11_attested_forward_3scan_pilot_v01.py'
+      - 'tests/test_p03_r11_attested_forward_3scan_pilot_v01.py'
+      - '.github/workflows/p03-r11-three-capture-sigstore-provenance-ci.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  signed-forward-schedule:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      RENDER_API_KEY: ''
+      PAPER_ONLY: 'true'
+      TRADING_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate boundary and create strictly future schedule
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"
+          test "$TRADING_ENABLED" = "false"
+          python ops/reviews/p03_r11_attested_forward_3scan_pilot_v01.py schedule signed_schedule/schedule.json
+      - name: Request externally issued Sigstore/GitHub OIDC provenance identity
+        uses: actions/attest@v4
+        with:
+          subject-path: signed_schedule/schedule.json
+      - name: Verify external CA attestation before schedule handoff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify signed_schedule/schedule.json -R lopushniakoleksij-png/Alpha-Hunter
+      - name: Preserve attested prospective plan (90-day research only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: r11-sigstore-provenance-signed-future-schedule
+          path: signed_schedule/
+          retention-days: 90
+          if-no-files-found: error
+
+  three-real-source-observations:
+    needs: signed-forward-schedule
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+      PAPER_ONLY: 'true'
+      TRADING_ENABLED: 'false'
+      ORDER_PATH: 'NONE'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: "Offline negative tests: incomplete children, altered schedule and missing position receipts"
+        run: python -m unittest discover -s tests -p 'test_p03_r11_attested_forward_3scan_pilot_v01.py' -v
+      - name: Retrieve attested forward schedule from separate preparation job
+        uses: actions/download-artifact@v4
+        with:
+          name: r11-sigstore-provenance-signed-future-schedule
+          path: signed_schedule/
+      - name: Verify signer identity and exact original forward schedule
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify signed_schedule/schedule.json -R lopushniakoleksij-png/Alpha-Hunter
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$BITGET_SECRET_KEY"
+          test -z "$RENDER_API_KEY"
+          test "$PAPER_ONLY" = "true"
+          test "$TRADING_ENABLED" = "false"
+          test "$ORDER_PATH" = "NONE"
+          echo 'AUTOMATED_GITHUB_SIGSTORE_ORIGIN_ONLY_NOT_INDEPENDENT_HUMAN'
+      - name: Capture 3 distinct future public-source real observations and diagnostic receipts
+        env:
+          AH_SCHEDULE_SIGSTORE_VERIFIED: '1'
+        run: |
+          python ops/reviews/p03_r11_attested_forward_3scan_pilot_v01.py collect signed_schedule/schedule.json r11_proof
+          python ops/reviews/p03_r11_attested_forward_3scan_pilot_v01.py replay signed_schedule/schedule.json r11_proof
+      - name: Seal public raw bytes, exact events and local diagnostic receipt DB
+        run: tar -czf r11-3scan-source-evidence.tar.gz -C r11_proof .
+      - name: Request separate Sigstore-issued observation bundle provenance identity
+        uses: actions/attest@v4
+        with:
+          subject-path: r11-3scan-source-evidence.tar.gz
+      - name: Verify observation bundle external signer provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify r11-3scan-source-evidence.tar.gz -R lopushniakoleksij-png/Alpha-Hunter
+      - name: Preserve the validated short pilot raw source archive for 90 days
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r11-sigstore-attested-three-real-public-observations
+          path: |
+            r11-3scan-source-evidence.tar.gz
+            r11_proof/results.json
+            signed_schedule/schedule.json
+          retention-days: 90
+          if-no-files-found: error
+      - name: Fail-closed contract boundary
+        if: success()
+        run: |
+          echo '3_REAL_PUBLIC_CAPTURES_PLUS_SYNTHETIC_MONITORING_PROBE'
+          echo 'SCHEDULE_AND_BUNDLE_PROVENANCE_EXTERNALLY_SIGSTORE_ATTESTED'
+          echo 'NO_INDEPENDENT_HUMAN_SIGNER;NO_REAL_PAPER_POSITION;NO_LONG_TERM_CONTINUITY'
+          echo 'NO_PRODUCTION_RELEASE;HISTORICAL_NO_GO'
