@@ -1,0 +1,82 @@
+name: R11 captured evidence archival replay (90 day research-only)
+
+on:
+  pull_request:
+    paths:
+      - 'ops/reviews/p03_r11_source_artifact_replay_90day_v01.py'
+      - 'tests/test_p03_r11_source_artifact_replay_90day_v01.py'
+      - '.github/workflows/p03-r11-archive-original-public-90day-ci.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  replay-and-preserve-original-raw-bytes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+      ORDER_PATH: 'NONE'
+      PAPER_ONLY: 'true'
+      TRADING_ENABLED: 'false'
+    steps:
+      - name: Read-only branch checkout
+        uses: actions/checkout@v4
+      - name: Python no-credential archival verifier
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: No production credentials or trades
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"
+          test "$PAPER_ONLY" = "true"
+          test "$TRADING_ENABLED" = "false"
+          test "$ORDER_PATH" = "NONE"
+      - name: Offline pinned-hash mutation and missing-evidence regression tests
+        run: python -m unittest discover -s tests -p 'test_p03_r11_source_artifact_replay_90day_v01.py' -v
+      - name: Download historical PG16 public-only evidence from verified 2026-11-03 run
+        uses: actions/download-artifact@v4
+        with:
+          name: r11-public-source-local-pg16
+          path: combined_archive/pg16
+          run-id: 41624614011
+          repository: lopushniakoleksij-png/Alpha-Hunter
+          github-token: ${{ github.token }}
+      - name: Download historical PG17 public-only evidence from verified 2026-11-03 run
+        uses: actions/download-artifact@v4
+        with:
+          name: r11-public-source-local-pg17
+          path: combined_archive/pg17
+          run-id: 41624614011
+          repository: lopushniakoleksij-png/Alpha-Hunter
+          github-token: ${{ github.token }}
+      - name: Verify exact historic bytes, immutable pinned SHA256 and no promotion
+        run: >-
+          python ops/reviews/p03_r11_source_artifact_replay_90day_v01.py
+          combined_archive/pg16
+          combined_archive/pg17
+          combined_archive/replay_report.json
+      - name: Preserve both original public datasets + verified replay for 90 days
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r11-public-source-originals-and-replay-90day
+          path: combined_archive/
+          retention-days: 90
+          if-no-files-found: error
+      - name: Confirm non-admission
+        if: success()
+        run: |
+          echo 'SOURCE_BYTES_AND_REPLAY_VERIFIED'
+          echo 'NOT_ORIGINALLY_EXCHANGE_SIGNED'
+          echo 'NOT_HUMAN_REVIEWED_OR_INDEPENDENTLY_SCHEDULED'
+          echo 'NO_CONTINUITY_NO_POSITIONS_NO_PRODUCTION_RELEASE'
