@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 import sys
@@ -90,7 +91,7 @@ def replay_one(directory: Path, pg_version: str):
 
     for key, expected in (
         ("schema", "ah-r11-external-market-transport-custody-v01"),
-        ("github_run_id", SOURCE_RUN), ("github_sha", SOURCE_SHA),
+        ("github_run_id", SOURCE_RUN),
         ("cohort_id", SOURCE_COHORT), ("run_id", SOURCE_ID),
         ("market_source", SOURCE_MARKET), ("symbol", "BTCUSDT"),
         ("category", "USDT-FUTURES"), ("paper_only", True),
@@ -106,6 +107,13 @@ def replay_one(directory: Path, pg_version: str):
         ("new_paper_positions_created", 0),
     ):
         _fail_if_wrong(key.upper(), manifest.get(key), expected)
+
+    # GITHUB_SHA on pull_request is a temporary test-merge commit, not the
+    # repository PR head SHA recorded by the Actions run metadata. The exact
+    # manifest SHA256 is separately pinned, preserving its actual value.
+    recorded_git_sha = manifest.get("github_sha")
+    if not isinstance(recorded_git_sha, str) or not re.fullmatch(r"[a-f0-9]{40}", recorded_git_sha):
+        raise ReplayRejected("GITHUB_TEST_MERGE_SHA_INVALID")
 
     for kind, raw, doc in (("ticker", tick_raw, tick),
                            ("orderbook", depth_raw, depth)):
@@ -162,7 +170,9 @@ def replay_one(directory: Path, pg_version: str):
         "source_artifact_id": info["artifact_id"],
         "source_archive_zip_digest_from_github_metadata": info["original_zip_digest_sha256"],
         "pg_version": pg_version,
-        "source_github_run": SOURCE_RUN, "source_capture_run_id": SOURCE_ID,
+        "source_github_run": SOURCE_RUN, "source_pr_head_sha": SOURCE_SHA,
+        "captured_github_test_merge_sha": recorded_git_sha,
+        "source_capture_run_id": SOURCE_ID,
         "ticker_sha256": sha(tick_raw), "orderbook_sha256": sha(depth_raw),
         "manifest_sha256": sha(canonical(manifest)),
         "source_transport_and_local_roundtrip_replay_pass": True,
