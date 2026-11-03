@@ -531,9 +531,16 @@ def _hydrate_dashboard_snapshot(
     if snapshot.get("_storage_contract") != "snapshot-parent-v0.2":
         return snapshot
 
-    run_id = str(snapshot.get("run_id") or "")
-    if not run_id:
+    run_id = snapshot.get("run_id")
+    parent_run_id = row.get("run_id")
+    # A valid-looking child set must never be rebound to a different parent
+    # scan. The persisted parent and its compact payload have one identity.
+    if not isinstance(parent_run_id, str) or not parent_run_id:
+        raise RuntimeError("Compact canonical parent missing run_id")
+    if not isinstance(run_id, str) or not run_id:
         raise RuntimeError("Compact canonical snapshot is missing run_id")
+    if run_id != parent_run_id:
+        raise RuntimeError("Compact canonical run_id mismatch between parent and payload")
 
     children = supabase_get_rows(
         "alpha_hunter_symbol_snapshots",
