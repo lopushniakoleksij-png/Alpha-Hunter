@@ -632,6 +632,23 @@ class SupabaseStorage:
             )
 
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
+        # Preflight the complete child identity set before any parent write.
+        # A malformed or duplicate child otherwise can fail its upsert after
+        # the parent has already been persisted, leaving a false complete run.
+        symbols = snapshot.get("symbols", [])
+        if not isinstance(symbols, list):
+            raise SupabaseStorageError("Invalid canonical symbol batch: expected list")
+        seen_symbols: set[str] = set()
+        for item in symbols:
+            if not isinstance(item, dict):
+                raise SupabaseStorageError("Invalid canonical symbol row")
+            symbol = item.get("symbol")
+            if not isinstance(symbol, str) or not symbol or symbol != symbol.strip():
+                raise SupabaseStorageError("Invalid canonical symbol identity")
+            if symbol in seen_symbols:
+                raise SupabaseStorageError("Duplicate canonical symbol identity")
+            seen_symbols.add(symbol)
+
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
         valid_symbols = [item for item in snapshot.get("symbols", []) if "error" not in item]
