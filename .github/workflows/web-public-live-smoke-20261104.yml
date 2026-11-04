@@ -1,4 +1,5 @@
 name: Web-only live public endpoint smoke 2026-11-04
+# Second observation after the canonical scan's publishing grace window.
 on:
   push:
     branches:
