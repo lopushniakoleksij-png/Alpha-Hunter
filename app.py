@@ -594,17 +594,21 @@ def _hydrate_dashboard_snapshot(
         ):
             raise RuntimeError("Invalid or duplicate compact child symbol evidence")
         by_symbol[symbol] = detail
-    if isinstance(parent_stubs, list):
-        parent_symbols = [
-            stub.get("symbol") if isinstance(stub, dict) else None
-            for stub in parent_stubs
-        ]
-        if (
-            len(parent_symbols) != expected_count
-            or any(not isinstance(symbol, str) for symbol in parent_symbols)
-            or set(parent_symbols) != set(by_symbol)
-        ):
-            raise RuntimeError("Compact canonical parent and child symbol mismatch")
+    # Compact parent stubs are part of the canonical evidence contract.
+    # Missing, malformed or duplicated stubs cannot establish child completeness.
+    if not isinstance(parent_stubs, list):
+        raise RuntimeError("Compact canonical parent symbol stubs are missing")
+    parent_symbols = [
+        stub.get("symbol") if isinstance(stub, dict) else None
+        for stub in parent_stubs
+    ]
+    if (
+        len(parent_symbols) != expected_count
+        or any(not isinstance(symbol, str) or not symbol for symbol in parent_symbols)
+        or len(set(parent_symbols)) != len(parent_symbols)
+        or set(parent_symbols) != set(by_symbol)
+    ):
+        raise RuntimeError("Compact canonical parent and child symbol mismatch")
     snapshot["symbols"] = [by_symbol[symbol] for symbol in sorted(by_symbol)]
     return snapshot
 
