@@ -18,6 +18,7 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 from alpha_hunter.services.statistics import StatisticsService
+from alpha_hunter.web_history_summary import archived_storage_summary
 from performance_page import PERFORMANCE_PAGE
 
 
@@ -2588,9 +2589,71 @@ DASHBOARD_INCOMPLETE_PAGE = (
 )
 
 
+# Historical-only research summary: deliberately separate from /api/latest,
+# which must keep blocking invalid canonical evidence.
+ARCHIVED_RESEARCH_CARD = """
+    <div class="card" aria-label="Historical Alpha Hunter research status">
+      <h2 style="margin:0 0 8px;font-size:21px">Last stored complete scan</h2>
+      <p class="muted" style="margin:0 0 12px">Historical research status only. This does not indicate that the latest scan succeeded, and no historical pair can be traded from this panel.</p>
+      <div id="historical-data-status" class="muted" role="status" aria-live="polite">Checking recent verified storage records…</div>
+      <div id="historical-data-details" class="muted" style="margin-top:12px"></div>
+      <p class="muted" style="font-size:13px">All trade and exchange permissions remain disabled. No entry, target, stop or current trading signal is supplied.</p>
+    </div>
+    <script>
+    (async function () {
+      const status = document.getElementById("historical-data-status");
+      const details = document.getElementById("historical-data-details");
+      if (!status || !details) return;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 9500);
+      try {
+        const response = await fetch("/api/historical-status", {cache:"no-store", signal:controller.signal});
+        if (!response.ok) throw new Error("Archive status unavailable");
+        const data = await response.json();
+        if (data.mode !== "HISTORICAL_STORAGE_STATUS_ONLY" ||
+            data.historical_only !== true ||
+            data.trade_permission !== false ||
+            data.verified_live_trade_signal !== false ||
+            data.source_run_not_substituted !== true) {
+          throw new Error("Archive status did not prove its non-trading scope");
+        }
+        status.textContent = "Latest reported scan: " + new Date(data.latest_reported_scan_at_utc).toLocaleString()
+          + " — " + data.latest_reported_declared_symbols + " symbols reported (not proof of saving).";
+        const archived = data.historical_completed_scan;
+        if (!archived) {
+          details.textContent = "No fully persisted scan was verified in the recent historical window. Live Alpha Hunter signals remain unavailable.";
+          return;
+        }
+        const collected = new Date(archived.collected_at_utc);
+        if (!Number.isFinite(collected.getTime()) ||
+            archived.storage_integrity !== "MATCHING_PARENT_CHILD_FEATURE_COUNTS" ||
+            archived.declared_symbols !== archived.persisted_symbols ||
+            archived.declared_symbols !== archived.persisted_features) {
+          throw new Error("Archive counts or timestamps were not complete");
+        }
+        const age = Math.max(0, Math.round((Date.now() - collected.getTime()) / 60000));
+        details.textContent = "Previous complete stored scan: " + collected.toLocaleString()
+          + " (" + age + " minutes old). "
+          + archived.persisted_symbols + "/" + archived.declared_symbols + " symbol rows and "
+          + archived.persisted_features + "/" + archived.declared_symbols + " feature rows were found. "
+          + "HISTORICAL ONLY — NOT A CURRENT TRADE SIGNAL.";
+      } catch (_) {
+        status.textContent = "Historical research verification is temporarily unavailable.";
+        details.textContent = "No stored information is presented as a current Alpha Hunter signal.";
+      } finally {
+        clearTimeout(timer);
+      }
+    }());
+    </script>
+"""
+ARCHIVE_INSERT_ANCHOR = '    <div class="card" aria-label="Bitget public reference market">'
+def _attach_historical_status(page: str) -> str:
+    return page.replace(ARCHIVE_INSERT_ANCHOR, ARCHIVED_RESEARCH_CARD + ARCHIVE_INSERT_ANCHOR, 1)
+
+
 def _dashboard_publishing_response():
     response = app.make_response((render_template_string(
-        DASHBOARD_PUBLISHING_PAGE, build=build_identity(),
+        _attach_historical_status(DASHBOARD_PUBLISHING_PAGE), build=build_identity(),
     ), 202))
     response.headers["Cache-Control"] = "no-store"
     response.headers["Retry-After"] = "10"
@@ -2602,7 +2665,7 @@ def _dashboard_incomplete_response():
     # never look like an operationally healthy signal endpoint. The JSON API
     # still returns 503 and monitoring can inspect this explicit header.
     response = app.make_response((render_template_string(
-        DASHBOARD_INCOMPLETE_PAGE, build=build_identity(),
+        _attach_historical_status(DASHBOARD_INCOMPLETE_PAGE), build=build_identity(),
     ), 200))
     response.headers["Cache-Control"] = "no-store"
     response.headers["X-Alpha-Hunter-Evidence-State"] = "INCOMPLETE"
@@ -2638,6 +2701,54 @@ def dashboard():
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
         return _dashboard_recovery_response()
+
+
+# Web-only bounded GET cache. Refresh no more than once per 60 seconds even
+# while iPhone browsers reload the safe recovery page every 10 seconds.
+_HISTORICAL_STATUS_LOCK = threading.Lock()
+_HISTORICAL_STATUS_UNTIL = 0.0
+_HISTORICAL_STATUS_CACHE: dict[str, Any] | None = None
+
+
+def cached_historical_status() -> dict[str, Any]:
+    global _HISTORICAL_STATUS_CACHE, _HISTORICAL_STATUS_UNTIL
+    with _HISTORICAL_STATUS_LOCK:
+        now = time.monotonic()
+        if now < _HISTORICAL_STATUS_UNTIL:
+            if _HISTORICAL_STATUS_CACHE is None:
+                raise RuntimeError("Historical source unavailable during bounded recovery")
+            return dict(_HISTORICAL_STATUS_CACHE)
+        token = _DASHBOARD_READ_DEADLINE.set(time.monotonic() + 8.0)
+        try:
+            result = archived_storage_summary(supabase_get_rows, now_utc=datetime.now(timezone.utc))
+        except Exception:
+            _HISTORICAL_STATUS_CACHE = None
+            _HISTORICAL_STATUS_UNTIL = time.monotonic() + 15.0
+            raise
+        finally:
+            _DASHBOARD_READ_DEADLINE.reset(token)
+        _HISTORICAL_STATUS_CACHE = result
+        _HISTORICAL_STATUS_UNTIL = time.monotonic() + 60.0
+        return dict(result)
+
+
+@app.get("/api/historical-status")
+def api_historical_status():
+    try:
+        result = cached_historical_status()
+    except Exception:
+        # Do not disclose database/HTTP tracebacks or expose stale fallback
+        # claims when source verification cannot be completed.
+        return jsonify({
+            "error": "historical_storage_evidence_unavailable",
+            "historical_only": True,
+            "trade_permission": False,
+            "verified_live_trade_signal": False,
+        }), 503, {"Cache-Control": "no-store", "Retry-After": "15"}
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Alpha-Hunter-Evidence-State"] = "HISTORICAL_ONLY"
+    return response
 
 
 @app.get("/api/latest")
