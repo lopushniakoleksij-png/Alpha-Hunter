@@ -8,6 +8,7 @@ on:
       - 'tests/postgres/successor_atomic_snapshot_concurrency_v01.sh'
       - 'tests/postgres/successor_atomic_snapshot_client_disconnect_v01.sh'
       - 'tests/postgres/successor_atomic_snapshot_inflight_commit_v01.sh'
+      - 'tests/postgres/successor_atomic_snapshot_unknown_ack_reconcile_v01.sh'
       - '.github/workflows/successor-atomic-snapshot-pg-research-ci.yml'
   workflow_dispatch:
 permissions:
@@ -60,3 +61,6 @@ jobs:
 
       - name: Verify in-flight COMMIT client disconnect resolves atomically
         run: bash tests/postgres/successor_atomic_snapshot_inflight_commit_v01.sh
+
+      - name: Verify unknown-ack exact-run reconciliation and duplicate fail-closed
+        run: bash tests/postgres/successor_atomic_snapshot_unknown_ack_reconcile_v01.sh
