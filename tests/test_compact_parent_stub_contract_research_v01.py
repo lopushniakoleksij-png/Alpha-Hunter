@@ -35,7 +35,7 @@ def test_invalid_parent_stubs_fail_closed(monkeypatch, stubs):
         calls.append((table, params))
         return CHILDREN
     monkeypatch.setattr(dashboard, "supabase_get_rows", fake_read)
-    with pytest.raises(RuntimeError, match="parent symbol"):
+    with pytest.raises(RuntimeError, match=r"(?:parent symbol|parent and child symbol mismatch)"):
         dashboard._hydrate_dashboard_snapshot(parent(stubs), payload(stubs))
     assert len(calls) == 1
     assert calls[0][0] == "alpha_hunter_symbol_snapshots"
