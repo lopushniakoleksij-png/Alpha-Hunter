@@ -22,8 +22,7 @@ BEGIN
  FOR iteration IN 1..5 LOOP
   FOREACH mode IN ARRAY ARRAY['baseline','capture'] LOOP
    IF mode='capture' THEN
-     CREATE TRIGGER capture AFTER INSERT OR UPDATE OF payload ON symbols
-       FOR EACH ROW EXECUTE FUNCTION pg_temp.capture_observations();
+     EXECUTE 'CREATE TRIGGER capture AFTER INSERT OR UPDATE OF payload ON symbols FOR EACH ROW EXECUTE FUNCTION pg_temp.capture_observations()';
    END IF;
    t:=clock_timestamp();
    INSERT INTO symbols(run_id,symbol,payload)
@@ -31,9 +30,9 @@ BEGIN
      FROM generate_series(1,61) g
    ON CONFLICT(run_id,symbol) DO UPDATE SET payload=EXCLUDED.payload;
    INSERT INTO timings VALUES(mode,iteration,extract(epoch from clock_timestamp()-t)*1000);
-   IF mode='capture' THEN DROP TRIGGER capture ON symbols; END IF;
+   IF mode='capture' THEN EXECUTE 'DROP TRIGGER capture ON symbols'; END IF;
    SELECT count(*) INTO n FROM observations WHERE run_id=mode||'-'||iteration;
-   IF n <> CASE WHEN mode='capture' THEN 610 ELSE 0 END THEN
+   IF n <> (CASE WHEN mode='capture' THEN 610 ELSE 0 END) THEN
      RAISE EXCEPTION 'Observation count mismatch: mode %, got %',mode,n;
    END IF;
   END LOOP;
