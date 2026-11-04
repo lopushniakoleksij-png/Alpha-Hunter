@@ -219,7 +219,8 @@ def test_archive_api_returns_aggregates_only_and_no_store(monkeypatch):
     assert p["trade_permission"] is False
     assert p["historical_only"] is True
     assert "ranked_research_only" not in p
-    assert "symbols" not in str(p)
+    assert "BTCUSDT" not in str(p) and "ETHUSDT" not in str(p)
+    assert "entry_price" not in str(p) and "target_price" not in str(p)
 
 
 def test_archive_api_fails_safely_without_data(monkeypatch):
