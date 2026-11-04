@@ -3,8 +3,10 @@ on:
   pull_request:
     paths:
       - 'alpha_hunter/hourly_shadow_score.py'
+      - 'alpha_hunter/hourly_shadow_readback.py'
       - 'ops/reviews/p0_hourly_shadow_score_cli_v01.py'
       - 'tests/test_hourly_shadow_score_persistence_v01.py'
+      - 'tests/test_hourly_shadow_readback_v01.py'
       - '.github/workflows/p0-hourly-shadow-scoring-ci.yml'
   workflow_dispatch:
 
@@ -30,7 +32,7 @@ jobs:
       - name: Install minimum offline test dependencies
         run: python -m pip install --disable-pip-version-check 'pytest>=8,<9' 'requests>=2.31,<3'
       - name: Exact-run 0/61 and profile failure regressions
-        run: python -m pytest -q tests/test_hourly_shadow_score_persistence_v01.py
+        run: python -m pytest -q tests/test_hourly_shadow_score_persistence_v01.py tests/test_hourly_shadow_readback_v01.py
       - name: Strict no-production-credential assertion
         run: |
           test -z "$SUPABASE_URL"
