@@ -1,0 +1,42 @@
+name: P0 synthetic observation trigger latency PG16 PG17
+on:
+  pull_request:
+    paths:
+      - 'tests/postgres/p0_synthetic_observation_trigger_latency_20261104.sql'
+      - '.github/workflows/p0-observation-trigger-latency-pg-20261104.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16', '17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: isolated_only
+          POSTGRES_DB: isolated_research
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d isolated_research"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: isolated_only
+      PGDATABASE: isolated_research
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Run synthetic 61-symbol 10-strategy latency and retry assertions
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/postgres/p0_synthetic_observation_trigger_latency_20261104.sql
