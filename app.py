@@ -200,7 +200,7 @@ def supabase_get_rows(table: str, params: dict[str, str]) -> list[dict[str, Any]
 
         response.raise_for_status()
         rows = response.json()
-        if not isinstance(rows, list):
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise RuntimeError("Unexpected Supabase response shape")
         return rows
 
