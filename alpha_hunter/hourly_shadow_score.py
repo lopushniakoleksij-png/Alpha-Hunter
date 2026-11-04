@@ -90,8 +90,12 @@ def make_profile_bundle(
         "trade_permission": False,
         "profile_source": "offline_pre_expansion_python_research_v0.1",
     }
-    _parse_profile_bundle({**data, "digest_sha256": _hash_payload(data)})
-    return {**data, "digest_sha256": _hash_payload(data)}
+    # asdict preserves tuple fields; canonical JSON artifacts contain lists.
+    # Validate the wire-format representation, not an in-memory Python tuple.
+    data = json.loads(json.dumps(data, allow_nan=False))
+    artifact = {**data, "digest_sha256": _hash_payload(data)}
+    _parse_profile_bundle(artifact)
+    return artifact
 
 
 def _parse_profile_bundle(bundle: dict[str, Any]) -> tuple[dict[str, DirectionalSignature], datetime, datetime]:
