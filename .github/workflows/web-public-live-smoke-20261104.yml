@@ -1,0 +1,83 @@
+name: Web-only live public endpoint smoke 2026-11-04
+on:
+  push:
+    branches:
+      - ops/web-public-smoke-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safe-public-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify live deployment commit and fail-closed public responses
+        env:
+          ALPHA_HOST: https://alpha-hunter-j5i3.onrender.com
+          EXPECTED_SHA: bdd30fd5f5cc73eee7e84940c3635e2f477db5ee
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          base = os.environ["ALPHA_HOST"]
+          expected = os.environ["EXPECTED_SHA"]
+          def get(path):
+              request = urllib.request.Request(
+                  base + path,
+                  headers={"Accept": "application/json, text/html;q=0.9", "Cache-Control": "no-cache",
+                           "User-Agent": "AlphaHunterPublicReadOnlySmoke/20261104"},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=12) as response:
+                      return response.status, dict(response.headers), response.read(150000)
+              except urllib.error.HTTPError as e:
+                  return e.code, dict(e.headers), e.read(150000)
+
+          status, headers, raw = get("/api/build")
+          assert status == 200, f"/api/build returned HTTP {status}"
+          build = json.loads(raw)
+          actual = str(build.get("git_commit") or "")
+          print("public /api/build:", status, "commit:", actual[:12], "branch:", build.get("git_branch"))
+          assert actual == expected, f"unexpected live commit: {actual!r}"
+          assert build.get("git_branch") == "repair/web-only-canonical-integrity-availability-20261104", "unexpected live branch"
+
+          status, headers, raw = get("/")
+          content = raw.decode("utf-8", errors="replace")
+          state = headers.get("X-Alpha-Hunter-Evidence-State") or headers.get("X-Alpha-Hunter-Evidence-State".lower())
+          print("public /: status", status, "integrity state", state or "not-marked")
+          assert status in (200, 202, 503), f"unexpected dashboard status {status}"
+          assert "Alpha Hunter" in content, "dashboard is not an Alpha Hunter page"
+          if state == "INCOMPLETE":
+              assert status == 200 and "LATEST CANONICAL SCAN INCOMPLETE" in content
+              assert "No trade signals or execution recommendations" in content
+          elif status == 202:
+              assert "LATEST SCAN IS PUBLISHING" in content
+          elif status == 503:
+              assert "LIVE DATA TEMPORARILY UNAVAILABLE" in content
+          else:
+              assert status == 200
+
+          status, headers, raw = get("/api/latest")
+          print("public /api/latest: status", status)
+          assert status in (200, 503), "invalid JSON API response status"
+          assert "no-store" in headers.get("Cache-Control", "").lower(), "missing no-store safety header"
+          data = json.loads(raw)
+          if status == 503:
+              reason = data.get("error")
+              print("canonical evidence gating:", reason)
+              assert reason in ("canonical_scan_incomplete", "canonical_scan_publishing", "live_data_unavailable")
+              assert "symbols" not in data, "unverified symbol payload leaked on 503"
+              if reason == "canonical_scan_incomplete":
+                  assert data.get("signals_available") is False
+                  assert data.get("trade_permission") is False
+          else:
+              print("latest canonical payload available: keys", sorted(data.keys())[:25])
+              assert isinstance(data, dict), "expected JSON object"
+              assert data.get("trade_permission") is not True, "unexpected top-level execution permission"
+          print("PASS: verified live web commit, browser response and fail-closed latest API status")
+          PY
