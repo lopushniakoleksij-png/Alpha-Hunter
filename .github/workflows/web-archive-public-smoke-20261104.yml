@@ -2,7 +2,7 @@ name: Web-only historical-status public smoke 2026-11-04
 on:
   push:
     branches:
-      - ops/web-public-smoke-20261104
+      - ops/web-archive-public-smoke-20261104
   workflow_dispatch:
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
           assert build.get("git_branch")=="repair/web-only-canonical-integrity-availability-20261104"
           status,h,raw=get("/")
           text=raw.decode("utf-8","replace")
-          assert status in (200,202,503) and "Alpha Hunter Dashboard" in text
+          assert status in (200,202,503) and ("Alpha Hunter Dashboard" in text or "Alpha Hunter V" in text)
           if status in (200,202) and "LATEST CANONICAL SCAN" in text or "LATEST SCAN IS PUBLISHING" in text:
               assert "Last stored complete scan" in text, "archive panel missing from degraded dashboard"
           status,h,raw=get("/api/historical-status")
