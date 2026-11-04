@@ -350,12 +350,26 @@ class SupabaseStorage:
                 "Supabase snapshot hydration returned unexpected shape"
             )
 
-        snapshot["symbols"] = [
-            child.get("payload")
-            for child in rows
-            if isinstance(child, dict)
-            and isinstance(child.get("payload"), dict)
-        ]
+        # A successful HTTP response is not proof that every child belongs to
+        # the requested symbol. Reject corrupt/mismatched evidence rather than
+        # silently dropping rows or presenting another symbol's payload.
+        symbols = []
+        seen = set()
+        for child in rows:
+            if not isinstance(child, dict) or not isinstance(child.get("payload"), dict):
+                raise SupabaseStorageError("Compact child hydration returned malformed row")
+            symbol = child.get("symbol")
+            payload_symbol = child["payload"].get("symbol")
+            if (
+                not isinstance(symbol, str)
+                or not symbol
+                or payload_symbol != symbol
+                or symbol in seen
+            ):
+                raise SupabaseStorageError("Compact child hydration symbol identity mismatch")
+            seen.add(symbol)
+            symbols.append(child["payload"])
+        snapshot["symbols"] = symbols
         return snapshot
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
