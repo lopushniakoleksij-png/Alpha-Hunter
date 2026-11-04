@@ -3553,6 +3553,18 @@ def print_report(
     print()
 
 
+# Isolated successor-only operational gate: a canonical RENDER_CRON run must
+# never report OS-level success when its durable Supabase evidence failed.
+# This changes only the process status; paper/science/source evidence is unchanged.
+def canonical_persistence_exit_code(snapshot: dict[str, Any], cloud_status: str) -> int:
+    identity = snapshot.get("validation_identity")
+    if not isinstance(identity, dict):
+        return 0
+    if str(identity.get("run_source") or "").upper() != "RENDER_CRON":
+        return 0
+    return 0 if cloud_status == "SAVED" else 2
+
+
 # =========================================================
 # MAIN
 # =========================================================
@@ -4223,7 +4235,14 @@ def main() -> int:
         f"{private_status}"
     )
 
-    return 0
+    exit_code = canonical_persistence_exit_code(snapshot, cloud_status)
+    if exit_code:
+        print(
+            "CANONICAL PERSISTENCE INCOMPLETE: fail closed; no verified durable "
+            "scan publication (scanner evidence must not be promoted).",
+            flush=True,
+        )
+    return exit_code
 
 
 if __name__ == "__main__":
