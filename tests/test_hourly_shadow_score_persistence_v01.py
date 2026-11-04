@@ -193,6 +193,7 @@ def test_mature_training_window_and_profile_age_gate():
     a = inputs()
     a["now_utc"] = SOURCE + timedelta(minutes=1)
     a["profile_bundle"]["trained_at_utc"] = "2026-11-03T00:00:00+00:00"
+    a["profile_bundle"]["training_end_utc"] = "2026-11-01T16:00:00+00:00"
     from alpha_hunter.hourly_shadow_score import _hash_payload
     a["profile_bundle"]["digest_sha256"] = _hash_payload({
         k: v for k, v in a["profile_bundle"].items() if k != "digest_sha256"
