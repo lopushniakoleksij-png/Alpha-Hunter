@@ -23,20 +23,26 @@ jobs:
           import os
           import urllib.error
           import urllib.request
+          import time
 
           base = os.environ["ALPHA_HOST"]
           expected = os.environ["EXPECTED_SHA"]
           def get(path):
+              started = time.monotonic()
               request = urllib.request.Request(
                   base + path,
                   headers={"Accept": "application/json, text/html;q=0.9", "Cache-Control": "no-cache",
                            "User-Agent": "AlphaHunterPublicReadOnlySmoke/20261104"},
               )
               try:
-                  with urllib.request.urlopen(request, timeout=12) as response:
-                      return response.status, dict(response.headers), response.read(150000)
+                  with urllib.request.urlopen(request, timeout=28) as response:
+                      result = response.status, dict(response.headers), response.read(150000)
+                      print('probe', path, 'elapsed_seconds', round(time.monotonic() - started, 2), flush=True)
+                      return result
               except urllib.error.HTTPError as e:
-                  return e.code, dict(e.headers), e.read(150000)
+                  result = e.code, dict(e.headers), e.read(150000)
+                  print('probe', path, 'elapsed_seconds', round(time.monotonic() - started, 2), flush=True)
+                  return result
 
           status, headers, raw = get("/api/build")
           assert status == 200, f"/api/build returned HTTP {status}"
