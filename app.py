@@ -18,6 +18,7 @@ import requests
 from flask import Flask, jsonify, render_template_string, request
 
 from alpha_hunter.services.statistics import StatisticsService
+from alpha_hunter.web_history_summary import archived_storage_summary
 from performance_page import PERFORMANCE_PAGE
 
 
@@ -520,6 +521,10 @@ class CanonicalSnapshotPublishing(RuntimeError):
     """A newly visible scan parent is still waiting for its child evidence."""
 
 
+class CanonicalSnapshotIncomplete(RuntimeError):
+    """A canonical parent is visible, but its evidence is not safe to display."""
+
+
 def _hydrate_dashboard_snapshot(
     row: dict[str, Any],
     payload: dict[str, Any],
@@ -533,7 +538,11 @@ def _hydrate_dashboard_snapshot(
 
     run_id = str(snapshot.get("run_id") or "")
     if not run_id:
-        raise RuntimeError("Compact canonical snapshot is missing run_id")
+        raise CanonicalSnapshotIncomplete("Compact canonical snapshot is missing run_id")
+    if row.get("run_id") and row["run_id"] != run_id:
+        raise CanonicalSnapshotIncomplete("Compact canonical parent identity mismatch")
+    if row.get("error_count") not in (None, 0):
+        raise CanonicalSnapshotIncomplete("Canonical scanner reported source errors")
 
     children = supabase_get_rows(
         "alpha_hunter_symbol_snapshots",
@@ -556,7 +565,7 @@ def _hydrate_dashboard_snapshot(
         or isinstance(expected_count, bool)
         or not (1 <= expected_count <= 2000)
     ):
-        raise RuntimeError("Compact canonical parent symbol_count is invalid")
+        raise CanonicalSnapshotIncomplete("Compact canonical parent symbol_count is invalid")
     if len(children) != expected_count:
         # Canonical scanner persists the parent before the child batch. A
         # short-lived, incomplete newest parent is a publishing state, not a
@@ -577,12 +586,12 @@ def _hydrate_dashboard_snapshot(
             raise CanonicalSnapshotPublishing(
                 "Canonical scan child evidence is still publishing"
             )
-        raise RuntimeError("Incomplete compact canonical snapshot child evidence")
+        raise CanonicalSnapshotIncomplete("Incomplete compact canonical snapshot child evidence")
 
     by_symbol: dict[str, dict[str, Any]] = {}
     for child in children:
         if not isinstance(child, dict):
-            raise RuntimeError("Invalid compact canonical snapshot child row")
+            raise CanonicalSnapshotIncomplete("Invalid compact canonical snapshot child row")
         symbol = child.get("symbol")
         detail = child.get("payload")
         if (
@@ -592,7 +601,7 @@ def _hydrate_dashboard_snapshot(
             or detail.get("symbol") != symbol
             or symbol in by_symbol
         ):
-            raise RuntimeError("Invalid or duplicate compact child symbol evidence")
+            raise CanonicalSnapshotIncomplete("Invalid or duplicate compact child symbol evidence")
         by_symbol[symbol] = detail
     if isinstance(parent_stubs, list):
         parent_symbols = [
@@ -604,7 +613,7 @@ def _hydrate_dashboard_snapshot(
             or any(not isinstance(symbol, str) for symbol in parent_symbols)
             or set(parent_symbols) != set(by_symbol)
         ):
-            raise RuntimeError("Compact canonical parent and child symbol mismatch")
+            raise CanonicalSnapshotIncomplete("Compact canonical parent and child symbol mismatch")
     snapshot["symbols"] = [by_symbol[symbol] for symbol in sorted(by_symbol)]
     return snapshot
 
@@ -2542,9 +2551,10 @@ def bounded_dashboard_payload() -> dict[str, Any]:
         if time.monotonic() >= _DASHBOARD_READ_DEADLINE.get():
             raise RuntimeError("Dashboard Supabase read budget exhausted")
         return dashboard_payload(snapshot, test_status, lifecycle_status)
-    except CanonicalSnapshotPublishing:
-        # Do not arm the 75-second outage circuit for a normal scanner
-        # parent-then-children commit; next 10-second refresh must recheck.
+    except (CanonicalSnapshotPublishing, CanonicalSnapshotIncomplete):
+        # The database responded, but the latest canonical evidence is not
+        # publishable. Do not arm the 75-second transport outage circuit;
+        # a later complete scan must be able to recover immediately.
         raise
     except Exception:
         _record_dashboard_read_failure()
@@ -2565,11 +2575,101 @@ DASHBOARD_PUBLISHING_PAGE = (
 )
 
 
+DASHBOARD_INCOMPLETE_PAGE = (
+    DASHBOARD_RECOVERY_PAGE
+    .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST CANONICAL SCAN INCOMPLETE")
+    .replace(
+        "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
+        "The scanner reported a canonical run, but its verified symbol evidence did not finish publishing. No trade signals or execution recommendations are available from this run.",
+    )
+    .replace(
+        "Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.",
+        "Alpha Hunter signals are withheld. The public reference prices below are not verified trading signals, and no earlier scan is substituted as current.",
+    )
+)
+
+
+# Historical-only research summary: deliberately separate from /api/latest,
+# which must keep blocking invalid canonical evidence.
+ARCHIVED_RESEARCH_CARD = """
+    <div class="card" aria-label="Historical Alpha Hunter research status">
+      <h2 style="margin:0 0 8px;font-size:21px">Last stored complete scan</h2>
+      <p class="muted" style="margin:0 0 12px">Historical research status only. This does not indicate that the latest scan succeeded, and no historical pair can be traded from this panel.</p>
+      <div id="historical-data-status" class="muted" role="status" aria-live="polite">Checking recent verified storage records…</div>
+      <div id="historical-data-details" class="muted" style="margin-top:12px"></div>
+      <p class="muted" style="font-size:13px">All trade and exchange permissions remain disabled. No entry, target, stop or current trading signal is supplied.</p>
+    </div>
+    <script>
+    (async function () {
+      const status = document.getElementById("historical-data-status");
+      const details = document.getElementById("historical-data-details");
+      if (!status || !details) return;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 9500);
+      try {
+        const response = await fetch("/api/historical-status", {cache:"no-store", signal:controller.signal});
+        if (!response.ok) throw new Error("Archive status unavailable");
+        const data = await response.json();
+        if (data.mode !== "HISTORICAL_STORAGE_STATUS_ONLY" ||
+            data.historical_only !== true ||
+            data.trade_permission !== false ||
+            data.verified_live_trade_signal !== false ||
+            data.source_run_not_substituted !== true) {
+          throw new Error("Archive status did not prove its non-trading scope");
+        }
+        status.textContent = "Latest reported scan: " + new Date(data.latest_reported_scan_at_utc).toLocaleString()
+          + " — " + data.latest_reported_declared_symbols + " symbols reported (not proof of saving).";
+        const archived = data.historical_completed_scan;
+        if (!archived) {
+          details.textContent = "No fully persisted scan was verified in the recent historical window. Live Alpha Hunter signals remain unavailable.";
+          return;
+        }
+        const collected = new Date(archived.collected_at_utc);
+        if (!Number.isFinite(collected.getTime()) ||
+            archived.storage_integrity !== "MATCHING_PARENT_CHILD_FEATURE_COUNTS" ||
+            archived.declared_symbols !== archived.persisted_symbols ||
+            archived.declared_symbols !== archived.persisted_features) {
+          throw new Error("Archive counts or timestamps were not complete");
+        }
+        const age = Math.max(0, Math.round((Date.now() - collected.getTime()) / 60000));
+        details.textContent = "Previous complete stored scan: " + collected.toLocaleString()
+          + " (" + age + " minutes old). "
+          + archived.persisted_symbols + "/" + archived.declared_symbols + " symbol rows and "
+          + archived.persisted_features + "/" + archived.declared_symbols + " feature rows were found. "
+          + "HISTORICAL ONLY — NOT A CURRENT TRADE SIGNAL.";
+      } catch (_) {
+        status.textContent = "Historical research verification is temporarily unavailable.";
+        details.textContent = "No stored information is presented as a current Alpha Hunter signal.";
+      } finally {
+        clearTimeout(timer);
+      }
+    }());
+    </script>
+"""
+ARCHIVE_INSERT_ANCHOR = '    <div class="card" aria-label="Bitget public reference market">'
+def _attach_historical_status(page: str) -> str:
+    return page.replace(ARCHIVE_INSERT_ANCHOR, ARCHIVED_RESEARCH_CARD + ARCHIVE_INSERT_ANCHOR, 1)
+
+
 def _dashboard_publishing_response():
     response = app.make_response((render_template_string(
-        DASHBOARD_PUBLISHING_PAGE, build=build_identity(),
+        _attach_historical_status(DASHBOARD_PUBLISHING_PAGE), build=build_identity(),
     ), 202))
     response.headers["Cache-Control"] = "no-store"
+    response.headers["Retry-After"] = "10"
+    return response
+
+
+def _dashboard_incomplete_response():
+    # A working status page is useful during an incomplete scan, but must
+    # never look like an operationally healthy signal endpoint. The JSON API
+    # still returns 503 and monitoring can inspect this explicit header.
+    response = app.make_response((render_template_string(
+        _attach_historical_status(DASHBOARD_INCOMPLETE_PAGE), build=build_identity(),
+    ), 200))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Alpha-Hunter-Evidence-State"] = "INCOMPLETE"
+    response.headers["X-Robots-Tag"] = "noindex"
     response.headers["Retry-After"] = "10"
     return response
 
@@ -2595,9 +2695,60 @@ def dashboard():
     except CanonicalSnapshotPublishing:
         app.logger.info("Newest canonical scan is publishing child evidence")
         return _dashboard_publishing_response()
+    except CanonicalSnapshotIncomplete:
+        app.logger.warning("Newest canonical scan failed evidence-integrity checks")
+        return _dashboard_incomplete_response()
     except Exception:
         app.logger.exception("Dashboard live-data read failed")
         return _dashboard_recovery_response()
+
+
+# Web-only bounded GET cache. Refresh no more than once per 60 seconds even
+# while iPhone browsers reload the safe recovery page every 10 seconds.
+_HISTORICAL_STATUS_LOCK = threading.Lock()
+_HISTORICAL_STATUS_UNTIL = 0.0
+_HISTORICAL_STATUS_CACHE: dict[str, Any] | None = None
+
+
+def cached_historical_status() -> dict[str, Any]:
+    global _HISTORICAL_STATUS_CACHE, _HISTORICAL_STATUS_UNTIL
+    with _HISTORICAL_STATUS_LOCK:
+        now = time.monotonic()
+        if now < _HISTORICAL_STATUS_UNTIL:
+            if _HISTORICAL_STATUS_CACHE is None:
+                raise RuntimeError("Historical source unavailable during bounded recovery")
+            return dict(_HISTORICAL_STATUS_CACHE)
+        token = _DASHBOARD_READ_DEADLINE.set(time.monotonic() + 8.0)
+        try:
+            result = archived_storage_summary(supabase_get_rows, now_utc=datetime.now(timezone.utc))
+        except Exception:
+            _HISTORICAL_STATUS_CACHE = None
+            _HISTORICAL_STATUS_UNTIL = time.monotonic() + 15.0
+            raise
+        finally:
+            _DASHBOARD_READ_DEADLINE.reset(token)
+        _HISTORICAL_STATUS_CACHE = result
+        _HISTORICAL_STATUS_UNTIL = time.monotonic() + 60.0
+        return dict(result)
+
+
+@app.get("/api/historical-status")
+def api_historical_status():
+    try:
+        result = cached_historical_status()
+    except Exception:
+        # Do not disclose database/HTTP tracebacks or expose stale fallback
+        # claims when source verification cannot be completed.
+        return jsonify({
+            "error": "historical_storage_evidence_unavailable",
+            "historical_only": True,
+            "trade_permission": False,
+            "verified_live_trade_signal": False,
+        }), 503, {"Cache-Control": "no-store", "Retry-After": "15"}
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Alpha-Hunter-Evidence-State"] = "HISTORICAL_ONLY"
+    return response
 
 
 @app.get("/api/latest")
@@ -2613,6 +2764,19 @@ def api_latest():
             })
             response.status_code = 503
             response.headers["Cache-Control"] = "no-store"
+            response.headers["Retry-After"] = "10"
+            return response
+        except CanonicalSnapshotIncomplete:
+            response = jsonify({
+                "error": "canonical_scan_incomplete",
+                "retry_after_seconds": 10,
+                "signals_available": False,
+                "trade_permission": False,
+                "build": build_identity(),
+            })
+            response.status_code = 503
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Alpha-Hunter-Evidence-State"] = "INCOMPLETE"
             response.headers["Retry-After"] = "10"
             return response
         except Exception:
