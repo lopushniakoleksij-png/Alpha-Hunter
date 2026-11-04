@@ -1,0 +1,71 @@
+name: Web-only historical-status public smoke 2026-11-04
+on:
+  push:
+    branches:
+      - ops/web-public-smoke-20261104
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-historical-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Verify published web build, archived evidence status and live signal safeguards
+        env:
+          HOST: https://alpha-hunter-j5i3.onrender.com
+          EXPECTED_COMMIT: 4b07f76f4b67b454ee7f6d3cd650fdf983ea6a29
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          base=os.environ["HOST"]
+          expected=os.environ["EXPECTED_COMMIT"]
+          def get(path, timeout=28):
+              request=urllib.request.Request(base+path,headers={
+                  "Cache-Control":"no-cache","User-Agent":"AlphaHunterReadOnlyArchivePublicSmoke/20261104"})
+              begin=time.monotonic()
+              try:
+                  with urllib.request.urlopen(request,timeout=timeout) as r:
+                      result=r.status,dict(r.headers),r.read(250000)
+              except urllib.error.HTTPError as e:
+                  result=e.code,dict(e.headers),e.read(250000)
+              print(path,"HTTP",result[0],"elapsed",round(time.monotonic()-begin,2),flush=True)
+              return result
+          status,h,raw=get("/api/build")
+          assert status==200
+          build=json.loads(raw)
+          assert build.get("git_commit")==expected, "incorrect web build deployed"
+          assert build.get("git_branch")=="repair/web-only-canonical-integrity-availability-20261104"
+          status,h,raw=get("/")
+          text=raw.decode("utf-8","replace")
+          assert status in (200,202,503) and "Alpha Hunter Dashboard" in text
+          if status in (200,202) and "LATEST CANONICAL SCAN" in text or "LATEST SCAN IS PUBLISHING" in text:
+              assert "Last stored complete scan" in text, "archive panel missing from degraded dashboard"
+          status,h,raw=get("/api/historical-status")
+          assert status==200, "historical status endpoint not operational"
+          a=json.loads(raw)
+          assert a.get("mode")=="HISTORICAL_STORAGE_STATUS_ONLY"
+          assert a.get("historical_only") is True
+          assert a.get("verified_live_trade_signal") is False
+          assert a.get("trade_permission") is False
+          assert a.get("source_run_not_substituted") is True
+          assert "no-store" in h.get("Cache-Control","").lower()
+          history=a.get("historical_completed_scan")
+          assert isinstance(history,dict), "no complete archival evidence in recent canonical scans"
+          n=history.get("declared_symbols")
+          assert isinstance(n,int) and n>0
+          assert history.get("persisted_symbols")==n
+          assert history.get("persisted_features")==n
+          assert history.get("storage_integrity")=="MATCHING_PARENT_CHILD_FEATURE_COUNTS"
+          assert "BTCUSDT" not in raw.decode() and "ETHUSDT" not in raw.decode(),"pair-specific output leaked"
+          print("historical complete scan",history.get("collected_at_utc"),"symbols",n,flush=True)
+          status,h,raw=get("/api/latest")
+          assert status in (200,503)
+          if status==503:
+              data=json.loads(raw)
+              assert data.get("error") in ("canonical_scan_incomplete","canonical_scan_publishing","live_data_unavailable")
+              assert "symbols" not in data
+          print("PASS: read-only live web archive verifies history but does not grant live signals",flush=True)
+          PY
