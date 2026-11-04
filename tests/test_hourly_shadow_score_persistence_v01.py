@@ -207,3 +207,39 @@ def test_producer_does_not_call_network(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *_a, **_k: pytest.fail("network used"))
     monkeypatch.setattr(requests, "post", lambda *_a, **_k: pytest.fail("network used"))
     assert len(score_verified_hourly(**inputs())["ranked_research_only"]) == 4
+
+
+def test_offline_cli_writes_research_results_only_after_complete_evidence(tmp_path, monkeypatch):
+    import json
+    import sys
+    from ops.reviews import p0_hourly_shadow_score_cli_v01 as cli
+
+    fixture = tmp_path / "offline.json"
+    good = inputs()
+    good["now_utc"] = None
+    fixture.write_text(json.dumps({
+        "parent": good["parent"],
+        "children": good["children"],
+        "feature_rows": good["feature_rows"],
+        "profile_bundle": good["profile_bundle"],
+        "universe_scan_config": good["universe_scan_config"],
+        "expected_scientific_fingerprint": good["expected_scientific_fingerprint"],
+    }), encoding="utf-8")
+    output = tmp_path / "research.json"
+    monkeypatch.setattr(sys, "argv", [
+        "offline-scorer", "--input", str(fixture), "--output", str(output),
+        "--as-of-utc", AT.isoformat(),
+    ])
+    assert cli.main() == 0
+    doc = json.loads(output.read_text(encoding="utf-8"))
+    assert doc["trade_permission"] is False
+    assert doc["production_promotion_permitted"] is False
+    assert len(doc["ranked_research_only"]) == 4
+
+    output.unlink()
+    broken = json.loads(fixture.read_text(encoding="utf-8"))
+    broken["children"] = []
+    fixture.write_text(json.dumps(broken), encoding="utf-8")
+    with pytest.raises(HourlyScoringBlocked, match="incomplete canonical child"):
+        cli.main()
+    assert not output.exists()
