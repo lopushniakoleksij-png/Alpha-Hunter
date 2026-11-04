@@ -50,14 +50,14 @@ def _required_utc(value: Any, label: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _finite_positive(value: Any, label: str, *, zero_allowed: bool = False) -> float:
+def _finite_positive(value: Any, label: str, *, signed: bool = False, zero_allowed: bool = False) -> float:
     if isinstance(value, bool):
         raise HourlyScoringBlocked(f"{label}: invalid boolean number")
     try:
         n = float(value)
     except (ValueError, TypeError) as exc:
         raise HourlyScoringBlocked(f"{label}: invalid number") from exc
-    if not isfinite(n) or n < 0 or (not zero_allowed and n == 0):
+    if not isfinite(n) or (not signed and n < 0) or (not signed and not zero_allowed and n == 0):
         raise HourlyScoringBlocked(f"{label}: invalid range")
     return n
 
@@ -143,7 +143,7 @@ def _parse_profile_bundle(bundle: dict[str, Any]) -> tuple[dict[str, Directional
             if not isinstance(f, dict) or not isinstance(f.get("name"), str) or not f["name"] or f["name"] in names:
                 raise HourlyScoringBlocked("malformed or repeated profile feature")
             names.add(f["name"])
-            fields = {name: _finite_positive(f.get(name), name, zero_allowed=name in ("mover_median","control_median")) for name in (
+            fields = {name: _finite_positive(f.get(name), name, signed=name in ("mover_median","control_median")) for name in (
                 "mover_median", "control_median", "mover_scale", "control_scale", "separation", "coverage", "weight"
             )}
             if fields["coverage"] > 1:
