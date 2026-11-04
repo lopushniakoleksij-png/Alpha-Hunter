@@ -1,0 +1,42 @@
+name: P0 Hourly Shadow Scoring Exact-Source Offline CI
+on:
+  pull_request:
+    paths:
+      - 'alpha_hunter/hourly_shadow_score.py'
+      - 'alpha_hunter/hourly_shadow_readback.py'
+      - 'ops/reviews/p0_hourly_shadow_score_cli_v01.py'
+      - 'tests/test_hourly_shadow_score_persistence_v01.py'
+      - 'tests/test_hourly_shadow_readback_v01.py'
+      - '.github/workflows/p0-hourly-shadow-scoring-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-no-secret:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      BITGET_SECRET_KEY: ''
+      BITGET_API_PASSPHRASE: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install minimum offline test dependencies
+        run: python -m pip install --disable-pip-version-check 'pytest>=8,<9' 'requests>=2.31,<3'
+      - name: Exact-run 0/61 and profile failure regressions
+        run: python -m pytest -q tests/test_hourly_shadow_score_persistence_v01.py tests/test_hourly_shadow_readback_v01.py
+      - name: Strict no-production-credential assertion
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$BITGET_SECRET_KEY"
+          test -z "$RENDER_API_KEY"
