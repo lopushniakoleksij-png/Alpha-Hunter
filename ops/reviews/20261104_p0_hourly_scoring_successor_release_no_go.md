@@ -9,6 +9,7 @@
 ## New successor implementation
 
 - `alpha_hunter/hourly_shadow_score.py`: small deterministic engine using **previously learned, digest-checked LONG and SHORT Python research signature profiles**, exact canonical `RENDER_CRON` parent, all persisted child symbols, and the *same run's* complete signal feature rows. It calls existing `build_live_candidates` and `rank_candidates` without training or contacting Bitget/Render/Supabase.
+- `alpha_hunter/hourly_shadow_readback.py`: injectable **GET-only stable-latest** query contract, exact run ID and bounded child/feature reads; rereads newest canonical parent after fetching to reject concurrent head changes. No fallback to an older complete run, no database credentials or network logic in the module. Actual runtime reader authentication remains untested.
 - `ops/reviews/p0_hourly_shadow_score_cli_v01.py`: read a local JSON fixture and write a research-only output **only after** every source-evidence gate succeeds. Does not read environment keys or call network.
 - `tests/test_hourly_shadow_score_persistence_v01.py`: synthetic failure injection for zero/partial/duplicate child writes, cross-run data, incomplete features, stale source, scientific identity drift, training maturity, artifact tampering and no trading permission.
 
@@ -41,7 +42,8 @@ The CLI intentionally has no public/live credentials, automatic hourly schedule,
 
 - [ ] Full exact-commit GitHub Actions and offline test pass, with reproducible fixtures and no network.
 - [ ] Real six-hour SQL-v0.2 profile export/custody provenance, or separately preregistered non-equivalent research model approval; version/fingerprint matching; no look-ahead.
-- [ ] Read-only exact-source adapter with bounded query pagination proving 1:1 parent/children/features from latest run, 0/61 injected failures rejected, no ambiguous ACK acceptance; verify matching runtime source/identity.
+- [x] Offline read-only exact latest-source query contract and synthetic head-change/failure tests; parent/children/features retrieval is GET-only and no old-run fallback.
+- [ ] Independently authenticated production read-only adapter, real PostgREST pagination/roles and exact-source runtime validation under load; 0/61 failures and ambiguous ACK fail-closed in real isolated HTTP integration.
 - [ ] Full paired PG16/PG17 + PostgREST fault, contention and latency tests from isolated #378/#406/#407; verify baseline alerts and <=35-minute monitoring continuity.
 - [ ] Test scoring against independently archived forward/out-of-sample observations; check source timestamp, feature availability, LONG/SHORT direction, net execution costs, no hindsight and no claimed profit until sealed evidence.
 - [ ] DBA, security, source-custody approvals; rollback tested on separate deployment; user approval for exact non-main release; NEVER merge to main while Render cron auto-deploy is on.
