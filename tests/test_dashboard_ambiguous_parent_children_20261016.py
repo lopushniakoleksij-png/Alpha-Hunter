@@ -69,5 +69,13 @@ def test_incomplete_snapshot_endpoint_is_retryable_503(monkeypatch):
             return []
         pytest.fail(f"unexpected read: {table}")
     monkeypatch.setattr(dashboard, "supabase_get_rows", fake_rows)
-    assert dashboard.app.test_client().get("/").status_code == 503
-    assert dashboard.app.test_client().get("/api/latest").get_json()["error"] == "live_data_unavailable"
+    # Browser stays usable as an explicitly non-trading status page.
+    browser = dashboard.app.test_client().get("/")
+    assert browser.status_code == 200
+    assert browser.headers["X-Alpha-Hunter-Evidence-State"] == "INCOMPLETE"
+    assert "LATEST CANONICAL SCAN INCOMPLETE" in browser.get_data(as_text=True)
+    # Actionable JSON remains unavailable; no stale parent is substituted.
+    api = dashboard.app.test_client().get("/api/latest")
+    assert api.status_code == 503
+    assert api.get_json()["error"] == "canonical_scan_incomplete"
+    assert api.get_json()["trade_permission"] is False
