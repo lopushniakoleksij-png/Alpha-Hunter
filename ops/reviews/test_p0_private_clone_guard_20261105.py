@@ -45,6 +45,24 @@ class PrivateCloneGuardTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             bench.validate_fixture(v,3)
 
+    def test_refuse_parent_trade_permission_true(self):
+        v=fixture()
+        v["p_parent"]["trade_permission"]=True
+        with self.assertRaisesRegex(RuntimeError,"non-false trade permission"):
+            bench.validate_fixture(v,3)
+
+    def test_refuse_nested_payload_trade_permission_true(self):
+        v=fixture()
+        v["p_parent"]["payload"]["settings"]={"trade_permission":True}
+        with self.assertRaisesRegex(RuntimeError,"non-false trade permission"):
+            bench.validate_fixture(v,3)
+
+    def test_refuse_nested_null_trade_permission(self):
+        v=fixture()
+        v["p_parent"]["payload"]["settings"]={"trade_permission":None}
+        with self.assertRaisesRegex(RuntimeError,"non-false trade permission"):
+            bench.validate_fixture(v,3)
+
     def test_refuse_inconsistent_stage_symbol_sets(self):
         v=fixture()
         v["p_children"][0]["symbol"]="MISMATCHUSDT"
