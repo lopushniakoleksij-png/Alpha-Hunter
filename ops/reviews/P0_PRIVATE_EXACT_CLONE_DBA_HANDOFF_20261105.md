@@ -95,3 +95,20 @@ The script measures PostgreSQL direct SQL/RPC round-trip time; it does **not** m
 **Measurement boundary:** The per-function p50/p95/p99 represent distribution of total *per-scan function self-time*, **not** percentiles of individual trigger invocations when the function fires multiple times per scan. The DBA must separately capture per-invocation trigger timing if the original acceptance criterion requires it (for example an approved `auto_explain` nested-call analysis on the clone). `pg_stat_xact_user_functions` excludes untracked/inlined functions, and transaction rollback cannot prove external nontransactional side effects did not occur. If any generated private table cannot be traced by run_id or signal_id, or the function stats are missing, the runner fails closed.
 
 **Required additional acceptance outside this runner:** full original owner/role parity; security-reviewed JWT gateway/RLS checks and truncated-grant risk; independent concurrent multi-client 61/62/63 benchmarking; SQLSTATE/timeout/fault cases and paper-order reconciliation; verified dynamic function/trigger dependency closure; external-side-effect checks; DBA signature and a different independent security signature. The script reports **PRODUCTION NO-GO even when successful** and is not allowed to self-approve.
+
+
+## 7. Full Alpha Hunter schema inventory completeness floor (read-only source evidence)
+
+On 2026-11-05, a read-only PostgreSQL 17.6 production catalog count found the **following exact alpha_hunter_ inventory**. This is only a *coverage floor*, not a proof of full schema/trigger equivalence:
+
+| Schema | Relations | Tables | Views | Enabled non-internal trigger hooks |
+| --- | ---: | ---: | ---: | ---: |
+| `public` | 282 | 128 | 154 | 131 |
+| `private` | 47 | 34 | 13 | 0 |
+| **Total** | **329** | **162** | **167** | **131** |
+
+`p0_verify_isolated_production_catalog_clone_20261105.py` now compares these counts exactly before its earlier selected-schema/trigger fingerprint checks. A clone carrying only the earlier 22 public lexical candidates or 20 public/private DML candidates must fail. Any new production schema drift also fails closed until a qualified reviewer updates the source custody baseline.
+
+**Limitations:** Two databases can have equal counts yet different table/index/constraint definitions, grants or dynamic code paths. The existing checker fingerprints a selected set, and the full 329-object inventory is **count-only**. Even if both tests succeed, the status remains `CATALOG_FINGERPRINT_MATCH_ONLY`—never independently validated full graph, real workload acceptance, or deploy authority.
+
+DBA must independently verify full relation identity/definitions, cross-schema function owners, dependent views/extensions, trigger operation ordering, nested function and dynamic SQL dependencies, actual permission matrices and paper-order side effects. The full private schema-only source export is restricted to approved private custody; never upload it to public GitHub or the hosted CI matrix.
