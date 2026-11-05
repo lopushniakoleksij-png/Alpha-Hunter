@@ -76,6 +76,12 @@ def main():
                     assert dimensions["root"] <= width + 1 and dimensions["body"] <= width + 1, (
                         f"{browser_name} {width}px horizontal overflow: {dimensions}"
                     )
+                    if width < 900:
+                        safe_nav = page.locator(".v8-bottom-nav")
+                        bottom_padding = safe_nav.evaluate(
+                            "(e) => Number.parseFloat(getComputedStyle(e).paddingBottom)"
+                        )
+                        assert bottom_padding >= 24, f"iPhone safe area nav lacks clearance: {bottom_padding}"
                     audit_with_axe(page, f"{browser_name}-{width}-overview", axe_js)
                     nav = ".v8-bottom-nav" if width < 900 else ".v8-rail"
                     page.locator(f'{nav} [data-v8-tab="research"]').click()
@@ -135,6 +141,7 @@ def main():
                 assert page.get_by_role("link", name="Check latest canonical scan again").is_visible()
                 button = page.locator("#v8-auto-retry")
                 assert button.inner_text() == "Enable auto retry"
+                assert button.get_attribute("data-v8-retry-ms") == "60000"
                 assert button.get_attribute("aria-pressed") == "false"
                 audit_with_axe(page, f"{browser_name}-390-incomplete-source", axe_js)
                 disclosure = page.locator(".v8-recovery-details")
