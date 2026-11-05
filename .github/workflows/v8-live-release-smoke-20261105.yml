@@ -1,0 +1,110 @@
+name: Alpha Hunter V8 Live Web-Only Release Smoke
+on:
+  push:
+    branches:
+      - ops/web-archive-public-smoke-20261104
+    paths:
+      - '.github/workflows/v8-live-release-smoke-20261105.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  independent-public-read-only-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      ALPHA_HUNTER_WEB: https://alpha-hunter-j5i3.onrender.com
+      APPROVED_V8_SHA: 0b1c7feabec34258c0308b43e5d046c7340ad1e1
+      APPROVED_BRANCH: design/v8-frontend-20261105
+    steps:
+      - name: Check public V8 exact deployment and signal integrity
+        run: |
+          python - <<'PY'
+          import json, os, time, urllib.request, urllib.error
+          base=os.environ["ALPHA_HUNTER_WEB"]
+          expected=os.environ["APPROVED_V8_SHA"]
+          branch=os.environ["APPROVED_BRANCH"]
+
+          def request(path, method="GET"):
+              h={"User-Agent": "AlphaHunterV8ExactCommitIndependentSmoke/20261105",
+                 "Cache-Control":"no-cache",
+                 "Accept":"application/json,text/html;q=0.9"}
+              data=b"{}" if method=="POST" else None
+              if method=="POST": h["Content-Type"]="application/json"
+              r=urllib.request.Request(base+path,data=data,headers=h,method=method)
+              start=time.monotonic()
+              try:
+                  with urllib.request.urlopen(r,timeout=28) as f:
+                      result=(f.status,dict(f.headers),f.read(300000))
+              except urllib.error.HTTPError as e:
+                  result=(e.code,dict(e.headers),e.read(300000))
+              print(method,path,"HTTP",result[0],"seconds",round(time.monotonic()-start,2),flush=True)
+              return result
+
+          status,h,raw=request("/api/build")
+          assert status==200, f"build identity unavailable: {status}"
+          build=json.loads(raw)
+          assert build.get("git_commit")==expected, f"unsafe deploy mismatch: {build.get('git_commit')!r}"
+          assert build.get("git_branch")==branch, f"wrong live branch: {build.get('git_branch')!r}"
+          print("EXACT V8 SHA verified:",expected,flush=True)
+
+          for path,expected_type in (("/static/v8.css","css"),("/static/v8.js","javascript")):
+              s,hh,data=request(path)
+              assert s==200 and expected_type in hh.get("Content-Type",""),f"V8 asset missing {path}"
+
+          status,h,html=request("/")
+          assert status in (200,202,503),f"unexpected browser response {status}"
+          page=html.decode("utf-8","replace")
+          assert "Alpha Hunter" in page and "V8" in page, "unexpected or previous web UI"
+          if status==200 and "v8-workspace" in page:
+              assert "v8-search" in page and "v8-mobile-cards" in page
+              assert 'runScanButton' not in page
+              print("full responsive V8 dashboard served",flush=True)
+          else:
+              print("V8 served an explicit guarded recovery status",status,flush=True)
+              assert "LATEST" in page or "LIVE DATA TEMPORARILY UNAVAILABLE" in page
+
+          status,h,raw=request("/api/latest")
+          assert status in (200,503),f"unexpected canonical API status {status}"
+          data=json.loads(raw)
+          assert "no-store" in h.get("Cache-Control","").lower(),"API must not cache trading data"
+          if status==503:
+              assert data.get("error") in (
+                  "canonical_scan_incomplete","canonical_scan_publishing","live_data_unavailable"
+              ),f"unknown fail-closed error: {data.get('error')}"
+              assert "symbols" not in data,"invalid signal payload exposed on incomplete source"
+              assert data.get("trade_permission") is not True
+              print("canonical API correctly withholding unsafe current data",flush=True)
+          else:
+              assert data.get("trade_permission") is not True,"real-order authority unexpectedly enabled"
+              print("canonical API available without real-order authority",flush=True)
+
+          status,h,raw=request("/api/historical-status")
+          assert status in (200,503)
+          hist=json.loads(raw)
+          assert hist.get("trade_permission") is False
+          assert hist.get("verified_live_trade_signal") is False
+          if status==200:
+              assert hist.get("historical_only") is True
+              assert hist.get("source_run_not_substituted") is True
+          print("historical status is non-executable",flush=True)
+
+          # DANGEROUS LEGACY ROUTE PROBE — gated behind exact build SHA!
+          # The V8 implementation MUST return 403, NEVER launch run.py.
+          status,h,raw=request("/api/run-scan",method="POST")
+          assert status==403, f"security regression: public scanner request returned {status}"
+          rejection=json.loads(raw)
+          assert rejection.get("error")=="manual_web_scanning_disabled",rejection
+          assert rejection.get("scanner_started") is False
+          assert rejection.get("trade_permission") is False
+          assert rejection.get("order_path")=="NONE"
+          print("manual web scanner endpoint is safely disabled",flush=True)
+
+          for path in ("/performance","/control-tower"):
+              status,h,data=request(path)
+              assert status in (200,503),f"existing route unexpected status {path}: {status}"
+
+          print("PASS: Alpha Hunter V8 deployed exact SHA, research UI, canonical integrity, web-scan 403, no order permission",flush=True)
+          PY
