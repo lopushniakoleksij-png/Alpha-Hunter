@@ -226,7 +226,7 @@
     filteredRows = matchRows();
     for (const rec of allRows) rec.tr.hidden = !filteredRows.includes(rec);
     if (resultCount) resultCount.textContent =
-      filteredRows.length + " research observations · " + allRows.length +
+      filteredRows.length + " research " + (filteredRows.length === 1 ? "observation" : "observations") + " · " + allRows.length +
       " total · No real-money execution permission";
     if (activeDetails >= 0 && !filteredRows.some(r => r.index === activeDetails)) {
       activeDetails = -1;
