@@ -93,7 +93,48 @@ def main():
                     audit_with_axe(page, f"{browser_name}-{width}-system", axe_js)
                     page.close()
                 browser.close()
-            print("PASS: Chromium + WebKit responsive navigation and WCAG A/AA at 390 and 1280px")
+            # Independently verify the incomplete-current-source screen. Any
+            # public reference fetches are replaced with synthetic responses;
+            # this harness must never request live Bitget or Supabase services.
+            def source_incomplete():
+                raise alpha.CanonicalSnapshotIncomplete("synthetic incomplete scan")
+            alpha.bounded_dashboard_payload = source_incomplete
+            alpha.public_market_reference = lambda: {
+                "quotes": [], "canonical_evidence": False,
+                "paper_test_evidence": False, "trade_permission": False
+            }
+            alpha.cached_historical_status = lambda: {
+                "mode": "HISTORICAL_STORAGE_STATUS_ONLY",
+                "historical_only": True, "trade_permission": False,
+                "verified_live_trade_signal": False,
+                "source_run_not_substituted": True,
+                "latest_reported_scan_at_utc": "2026-11-05T00:55:00+00:00",
+                "latest_reported_declared_symbols": 2,
+                "historical_completed_scan": None,
+            }
+            for browser_name in ("chromium", "webkit"):
+                browser = getattr(p, browser_name).launch(headless=True)
+                page = browser.new_page(viewport={"width": 390, "height": 860})
+                response = page.goto(origin, wait_until="networkidle", timeout=30000)
+                assert response.status == 200
+                assert response.headers.get("x-alpha-hunter-evidence-state") == "INCOMPLETE"
+                assert "LATEST CANONICAL SCAN INCOMPLETE" in page.locator("body").inner_text()
+                assert page.get_by_role("link", name="Check latest canonical scan again").is_visible()
+                button = page.get_by_role("button", name="Enable auto retry")
+                assert button.get_attribute("aria-pressed") == "false"
+                audit_with_axe(page, f"{browser_name}-390-incomplete-source", axe_js)
+                button.click()
+                assert button.get_attribute("aria-pressed") == "true"
+                button.click()
+                assert button.get_attribute("aria-pressed") == "false"
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+                latest = page.request.get(origin + "/api/latest", timeout=15000)
+                assert latest.status == 503
+                assert latest.json().get("trade_permission") is False
+                page.close()
+                browser.close()
+            print("PASS: Chromium and WebKit WCAG A/AA for all four views and incomplete-source recovery")
+
     finally:
         server.shutdown()
 
