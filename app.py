@@ -1843,6 +1843,12 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 .run-button{border:1px solid #1f6a50;background:#123b2d;color:var(--green);padding:10px 14px;border-radius:10px;font-weight:800;cursor:pointer}.run-button:disabled{opacity:.5}.status{padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:12px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.side-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #142431;font-size:12px}.empty{color:var(--muted);padding:16px 0}.warning{color:var(--amber)}
 @media(max-width:1000px){.cards{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.action-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:650px){.wrap{padding:12px}.top{align-items:flex-start;flex-direction:column}.cards{grid-template-columns:1fr 1fr}.action-grid{grid-template-columns:1fr 1fr}table{display:block;overflow-x:auto}h1{font-size:24px}}
+.v8-overview-preview .v8-preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.v8-overview-preview .v8-preview-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #294155;min-width:0;overflow-wrap:anywhere}
+.v8-overview-preview .v8-preview-item:last-child{border-bottom:0}
+.v8-overview-preview .v8-preview-meta{text-align:right;color:#ffca6c;font-size:14px}
+.v8-overview-preview .v8-preview-meta .small{color:#b2c6d5}
+@media(max-width:430px){.v8-overview-preview .v8-preview-item{align-items:flex-start;flex-direction:column;gap:5px}.v8-overview-preview .v8-preview-meta{text-align:left}}
 </style>
 <link rel="stylesheet" href="{{ url_for('static', filename='v8.css') }}">
 </head>
@@ -1870,7 +1876,6 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   <div class="v8-workspace" id="v8-workspace">
     <section id="v8-view-overview" class="v8-view" aria-labelledby="v8-overview-title">
       <div class="v8-view-heading"><h2 id="v8-overview-title">Overview</h2><p>Source health and market context</p></div>
-      <div class="v8-overview-preview" id="v8-overview-preview" aria-label="Top current research observations"></div>
     </section>
     <section id="v8-view-research" class="v8-view" aria-labelledby="v8-research-title" hidden>
       <div class="v8-view-heading"><h2 id="v8-research-title">Research watchlist</h2><p>WATCH and shadow evidence are not trading instructions</p></div>
@@ -1964,6 +1969,22 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       <div class="reason">A discovery symbol is not a trade recommendation. The protected scanner runs independently; a paper candidate may appear only after the final evidence gates are satisfied.</div>
     </div>
   {% endif %}
+
+  <section class="v8-overview-preview panel" data-v8-section="overview" aria-label="Top research observations">
+    <div class="v8-preview-heading">
+      <h2 style="margin:0">Top research observations</h2>
+      <button class="v8-reset" type="button" data-v8-tab="research">View all research</button>
+    </div>
+    <p class="small muted">Research observations from the accepted canonical scan. WATCH never authorises exchange execution or proves profitability.</p>
+    {% for s in data.strategy_shadow[:3] %}
+    <div class="v8-preview-item">
+      <div><strong>{{ s.symbol|symbol_label }}</strong><div class="small muted">{{ s.strategy_id }} {{ s.strategy_name }}</div></div>
+      <div class="v8-preview-meta"><strong>{{ s.status }}</strong><div class="small">Direction {{ s.direction or '—' }} · Raw R:R {{ '%.2f'|format(s.rr) if s.rr is not none else '—' }}</div></div>
+    </div>
+    {% else %}
+    <p class="small muted">No strategy research observations in this accepted snapshot.</p>
+    {% endfor %}
+  </section>
 
   <div class="panel v8-strategy-panel" data-v8-section="research">
     <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
