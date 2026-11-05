@@ -20,15 +20,15 @@ class FakeResponse:
 def test_v8_recovery_rate_limits_auto_reload_without_changing_server_circuit():
     # The browser must respect degraded source state and never aggressively
     # poll during a 75s read circuit. Canonical incomplete remains fail closed.
-    assert 'data-v8-retry-ms="75000"' in dashboard.DASHBOARD_RECOVERY_PAGE
-    assert 'data-v8-retry-ms="60000"' in dashboard.DASHBOARD_INCOMPLETE_PAGE
-    assert 'data-v8-retry-ms="15000"' in dashboard.DASHBOARD_PUBLISHING_PAGE
-    assert "75 seconds" in dashboard.DASHBOARD_RECOVERY_PAGE
-    assert "60 seconds" in dashboard.DASHBOARD_INCOMPLETE_PAGE
-    assert "15 seconds" in dashboard.DASHBOARD_PUBLISHING_PAGE
-    assert "const retryMs" in dashboard.DASHBOARD_RECOVERY_PAGE
-    assert "setTimeout(() => location.reload(), retryMs)" in dashboard.DASHBOARD_RECOVERY_PAGE
-    assert dashboard.DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS == 75.0
+    assert 'data-v8-retry-ms="75000"' in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert 'data-v8-retry-ms="60000"' in dashboard_app.DASHBOARD_INCOMPLETE_PAGE
+    assert 'data-v8-retry-ms="15000"' in dashboard_app.DASHBOARD_PUBLISHING_PAGE
+    assert "75 seconds" in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert "60 seconds" in dashboard_app.DASHBOARD_INCOMPLETE_PAGE
+    assert "15 seconds" in dashboard_app.DASHBOARD_PUBLISHING_PAGE
+    assert "const retryMs" in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert "setTimeout(() => location.reload(), retryMs)" in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert dashboard_app.DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS == 75.0
 
 
 def test_supabase_get_rows_retries_transient_then_succeeds(monkeypatch):
