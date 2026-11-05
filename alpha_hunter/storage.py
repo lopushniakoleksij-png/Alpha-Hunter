@@ -363,19 +363,88 @@ class SupabaseStorage:
                 f"Supabase upsert failed for {table}: HTTP {response.status_code}: {body}"
             )
 
+    def _readback_canonical_child_identities(
+        self,
+        run_id: str,
+        expected_children: list[dict[str, Any]],
+        *,
+        allow_prior_batches: bool = False,
+    ) -> None:
+        """Verify exact run identity, timestamps and basic source/evidence fields.
+
+        The narrow run-scoped SELECT deliberately does not read heavy JSONB.
+        This proves structural storage custody, not complete scientific or
+        profitable trading validity. No source rows are modified by readback.
+        """
+        rows = self._select_json(
+            self.settings.symbol_table,
+            {
+                "select": "run_id,symbol,collected_at_utc,state,error,trade_permission",
+                "run_id": f"eq.{run_id}",
+                "order": "symbol.asc",
+                "limit": "2001",
+            },
+        )
+        if len(rows) > 2000:
+            raise SupabaseStorageError("Canonical child readback exceeded bound")
+        expected = {child["symbol"]: child for child in expected_children}
+        actual: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            symbol = row.get("symbol")
+            if (row.get("run_id") != run_id or
+                    not isinstance(symbol, str) or not symbol or
+                    symbol in actual):
+                raise SupabaseStorageError("Canonical child run identity not verified")
+            actual[symbol] = row
+        if allow_prior_batches:
+            if not set(expected).issubset(actual):
+                raise SupabaseStorageError(
+                    "Canonical child batch commit not verified: "
+                    f"expected_subset={len(expected)} present={len(set(expected) & set(actual))}"
+                )
+        elif set(actual) != set(expected):
+            raise SupabaseStorageError(
+                "Canonical compact child write not verified: "
+                f"expected={len(expected)}, observed={len(actual)}"
+            )
+        for symbol, child in expected.items():
+            saved = actual[symbol]
+            try:
+                observed_at = datetime.fromisoformat(
+                    str(child.get("collected_at_utc")).replace("Z", "+00:00")
+                )
+                stored_at = datetime.fromisoformat(
+                    str(saved.get("collected_at_utc")).replace("Z", "+00:00")
+                )
+            except (ValueError, TypeError) as exc:
+                raise SupabaseStorageError(
+                    "Canonical child evidence timestamp invalid"
+                ) from exc
+            if (
+                observed_at.tzinfo is None
+                or stored_at.tzinfo is None
+                or observed_at != stored_at
+                or saved.get("state") != child.get("state")
+                or saved.get("error") != child.get("error")
+                or saved.get("trade_permission") is not child.get("trade_permission")
+            ):
+                raise SupabaseStorageError(
+                    f"Canonical child readback mismatch for {symbol}"
+                )
+
     def _persist_verified_symbol_children(
         self, run_id: str, children: list[dict[str, Any]],
     ) -> None:
-        """Bound the size of each JSONB write, then verify all child identities.
+        """Persist 8-row immutable batches and check exact-run custody.
 
-        Production incident 2026-10-27: large single-request child upserts
-        repeatedly hit PostgREST SQLSTATE 57014, leaving compact parent rows
-        with zero symbol details. Chunking lowers each statement's work without
-        increasing the fixed HTTP timeout or the protected scan cadence.
+        On an ambiguous timed-out POST, do not re-fire UPDATE triggers against
+        previously committed rows. Conflict-ignore preserves original evidence.
+        If transport fails but the batch has committed, independently prove its
+        presence and source fields by bounded readback. Any uncertain outcome
+        remains a failure; later stages cannot be promoted.
         """
         if not (1 <= len(children) <= 2000):
             raise SupabaseStorageError("Canonical child count out of bounds")
-
         expected: set[str] = set()
         for child in children:
             symbol = child.get("symbol")
@@ -386,37 +455,27 @@ class SupabaseStorage:
                 or symbol in expected
                 or not isinstance(child.get("payload"), dict)
                 or child["payload"].get("symbol") != symbol
+                or not isinstance(child.get("trade_permission"), bool)
             ):
                 raise SupabaseStorageError("Invalid canonical symbol child identity")
             expected.add(symbol)
-
-        # Keep the existing idempotent (run_id,symbol) upsert and retry policy.
-        # Bounded batches prevent one large expensive JSONB upsert statement.
-        batch_size = 8
-        for offset in range(0, len(children), batch_size):
-            self._upsert(
-                self.settings.symbol_table,
-                children[offset:offset + batch_size],
-                "run_id,symbol",
-            )
-
-        # A 2xx write response is insufficient to establish end-to-end custody.
-        # Read only narrow indexed identifiers; never re-read bulky JSONB here.
-        verified = self._select_json(
-            self.settings.symbol_table,
-            {
-                "select": "symbol",
-                "run_id": f"eq.{run_id}",
-                "order": "symbol.asc",
-                "limit": "2000",
-            },
-        )
-        actual = [row.get("symbol") for row in verified]
-        if len(actual) != len(children) or set(actual) != expected:
-            raise SupabaseStorageError(
-                "Canonical compact child write not verified: "
-                f"expected={len(children)}, observed={len(actual)}"
-            )
+        for offset in range(0, len(children), 8):
+            batch = children[offset:offset + 8]
+            try:
+                self._insert_immutable(
+                    self.settings.symbol_table, batch, "run_id,symbol"
+                )
+            except SupabaseStorageError as exc:
+                try:
+                    self._readback_canonical_child_identities(
+                        run_id, batch, allow_prior_batches=True
+                    )
+                except SupabaseStorageError as failure:
+                    raise SupabaseStorageError(
+                        "Canonical child batch unverified after REST failure; "
+                        f"offset={offset}, size={len(batch)}: {failure}"
+                    ) from exc
+        self._readback_canonical_child_identities(run_id, children)
 
     def _insert_immutable(
         self,
