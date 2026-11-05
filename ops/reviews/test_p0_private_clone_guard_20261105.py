@@ -61,6 +61,25 @@ class PrivateCloneGuardTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             bench.validate_fixture(v,3)
 
+    def test_wrong_postgresql_major_refused_before_any_writes(self):
+        class FakeCursor:
+            def __init__(self,value):
+                self.value=value
+            def fetchone(self):
+                return (self.value,)
+        class FakeWrongVersion:
+            def execute(self,query,params=None):
+                q=str(query)
+                if "SHOW session_replication_role" in q:
+                    return FakeCursor("origin")
+                if "SELECT current_database()" in q:
+                    return FakeCursor("isolated_research")
+                if "SHOW server_version_num" in q:
+                    return FakeCursor(180000)
+                raise AssertionError("Unexpected operation after version rejection")
+        with self.assertRaisesRegex(RuntimeError,"major version 17"):
+            bench.check_clone_preflight(FakeWrongVersion(),{})
+
     def test_missing_clone_only_sentinel_fails_before_any_writes(self):
         class SafeCursor:
             def __init__(self, value):
