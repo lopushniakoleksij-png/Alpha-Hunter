@@ -61,6 +61,29 @@ class PrivateCloneGuardTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             bench.validate_fixture(v,3)
 
+    def test_missing_clone_only_sentinel_fails_before_any_writes(self):
+        class SafeCursor:
+            def __init__(self, value):
+                self.value = value
+
+            def fetchone(self):
+                return (self.value,)
+
+        class FakeReadonlyClone:
+            def execute(self, query, params=None):
+                value = str(query)
+                if "SHOW session_replication_role" in value:
+                    return SafeCursor("origin")
+                if "SELECT current_database()" in value:
+                    return SafeCursor("isolated_research")
+                if "SHOW server_version_num" in value:
+                    return SafeCursor(170000)
+                if "to_regclass('ah_p0_isolated.clone_attestation')" in value:
+                    return SafeCursor(None)
+                raise AssertionError("Unexpected SQL past missing-sentinel gate")
+        with self.assertRaisesRegex(RuntimeError,"sentinel absent"):
+            bench.check_clone_preflight(FakeReadonlyClone(),{})
+
     def test_refuse_missing_approval_before_any_connection(self):
         with patch.dict(os.environ,{
             "AH_P0_PRIVATE_CLONE_APPROVED":"",
