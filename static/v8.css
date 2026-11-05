@@ -161,6 +161,33 @@ body.v8-body {
 .v8-copy {min-height:44px;padding:8px 12px;border-radius:9px;border:1px solid #36546b;background:#163049;color:var(--v8-text);cursor:pointer;font-size:13px}
 .v8-detail-top {display:flex;justify-content:space-between;align-items:center;gap:12px}
 .v8-mobile-cards,.v8-load-more {display:none}
+
+/* Product due-diligence panel: present limitations with equal visual weight to features. */
+.v8-trust-panel {
+  padding:20px; margin:10px 0 18px; min-width:0;
+  border:1px solid var(--v8-border);border-radius:16px;
+  background:linear-gradient(130deg,#10293a,#101e2c 63%);
+}
+.v8-trust-head h3 {font-size:clamp(19px,1.8vw,23px);line-height:1.25;margin:6px 0 8px;letter-spacing:-.3px}
+.v8-trust-head p {margin:0;max-width:80ch;color:var(--v8-muted);font-size:14px}
+.v8-trust-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}
+.v8-trust-item {min-width:0;padding:14px;border:1px solid #355167;border-radius:12px;background:#0b2030}
+.v8-trust-item h4 {color:var(--v8-text);margin:0 0 7px;font-size:15px}
+.v8-trust-item p {margin:0;color:var(--v8-muted);font-size:13px;line-height:1.55}
+.v8-share-tools {display:flex;flex-wrap:wrap;align-items:center;gap:11px;margin-top:18px}
+.v8-share-tools button {flex:none}
+.v8-share-feedback {flex:1 1 230px;min-width:0;margin:0;color:var(--v8-muted);font-size:13px;overflow-wrap:anywhere}
+.v8-share-input {display:block;flex:1 1 100%;min-width:0;min-height:44px;padding:9px 10px;
+  background:#071724;border:1px solid #46718c;border-radius:9px;color:var(--v8-text);font-size:13px}
+.v8-share-input[hidden]{display:none!important}
+@media(max-width:1100px){.v8-trust-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:899px){
+  .v8-trust-panel{padding:15px;margin:10px 0 16px}
+  .v8-trust-grid{grid-template-columns:1fr;gap:9px;margin-top:13px}
+  .v8-share-tools{align-items:stretch;flex-direction:column;gap:10px}
+  .v8-share-tools button,.v8-share-input{width:100%}
+}
+
 .v8-system-links {display:flex;flex-wrap:wrap;gap:10px;margin:0 0 18px}
 .v8-system-links a {border:1px solid #36546b;background:#10283b;border-radius:10px;padding:12px;min-height:44px;display:inline-flex;align-items:center;font-size:14px}
 .v8-body .v8-ops-table-scroll {max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
