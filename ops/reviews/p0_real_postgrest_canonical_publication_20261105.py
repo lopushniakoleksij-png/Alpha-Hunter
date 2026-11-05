@@ -230,6 +230,29 @@ def create_schema(dsn):
                 for table in TABLES
             ]
             if statuses == [200] * len(TABLES):
+                # Schema reload is asynchronous; require the POST contract to
+                # be visible, not merely a GET response while refreshing.
+                time.sleep(1.0)
+                pre = CaptureSchema()
+                pre.save_snapshot(snapshot("http-diagnostic-preflight"))
+                sample = pre.captured["alpha_hunter_snapshots"]
+                reply = requests.post(
+                    BASE + "/alpha_hunter_snapshots",
+                    params={"on_conflict": "run_id"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Prefer": "resolution=merge-duplicates,return=minimal",
+                    },
+                    data=json.dumps(sample, separators=(",", ":")),
+                    timeout=5,
+                )
+                print("DIRECT_PGRST_PREFLIGHT", reply.status_code,
+                      repr(reply.text[:300]),
+                      dict(reply.headers), flush=True)
+                if reply.status_code not in (200,201,204):
+                    raise AssertionError(
+                        "Local PostgREST cannot write verified parent fixture"
+                    )
                 return
         except requests.RequestException:
             pass
