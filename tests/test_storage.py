@@ -617,3 +617,144 @@ def test_open_order_quote_capture_skips_bitget_when_snapshot_quote_exists():
 
     assert quotes == {}
     assert client.calls == []
+
+
+# Isolated successor: fault-inject the 61-symbol canonical publication path.
+# No real HTTP, database, scanner, paper trade or active scheduler is contacted.
+def _synthetic_canonical_snapshot(count=61):
+    row = sample_snapshot()["symbols"][0]
+    snapshot = sample_snapshot()
+    snapshot["symbols"] = [
+        {**row, "symbol": f"TEST{i:02d}USDT", "last_price": 1 + i / 100.0}
+        for i in range(count)
+    ]
+    return snapshot
+
+
+def test_sixty_one_canonical_symbols_written_in_immutable_bounded_batches():
+    session = FakeSession()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="test-only"),
+        session=session,
+    )
+    run_id = storage.save_snapshot(_synthetic_canonical_snapshot())
+    writes = [
+        json.loads(call["data"])
+        for url, call in session.calls
+        if url.endswith("/alpha_hunter_symbol_snapshots") and "data" in call
+    ]
+    assert [len(batch) for batch in writes] == [8, 8, 8, 8, 8, 8, 8, 5]
+    assert session.inserted_children == 61
+    assert len(session.child_rows) == 61
+    assert all(row["run_id"] == run_id for batch in writes for row in batch)
+    reads = [
+        call for url, call in session.calls
+        if url.endswith("/alpha_hunter_symbol_snapshots") and "data" not in call
+    ]
+    assert len(reads) == 1
+    assert reads[0]["params"]["run_id"] == f"eq.{run_id}"
+
+
+def test_timed_out_child_post_that_committed_is_not_rewritten():
+    class CommittedButTimedOut(FakeSession):
+        def post(self, url, **kwargs):
+            result = super().post(url, **kwargs)
+            if url.endswith("/alpha_hunter_symbol_snapshots"):
+                rows = json.loads(kwargs["data"])
+                if rows[0]["symbol"] == "TEST00USDT":
+                    # All three retry HTTP responses are lost after COMMIT.
+                    raise requests.ReadTimeout("synthetic response lost after commit")
+            return result
+
+    session = CommittedButTimedOut()
+    settings = SupabaseConfig(
+        url="https://example.supabase.co", key="test-only",
+        retry_backoff_seconds=0,
+    )
+    run_id = SupabaseStorage(settings, session=session).save_snapshot(
+        _synthetic_canonical_snapshot(17)
+    )
+    assert len(session.child_rows) == 17
+    assert session.inserted_children == 17
+    assert len([
+        1 for url, call in session.calls
+        if url.endswith("/alpha_hunter_symbol_snapshots") and "data" in call
+        and json.loads(call["data"])[0]["symbol"] == "TEST00USDT"
+    ]) == 3
+    assert all(saved["run_id"] == run_id for saved in session.child_rows.values())
+
+
+def test_child_timeout_without_commit_fails_before_signals():
+    class NeverCommitted(FakeSession):
+        def post(self, url, **kwargs):
+            if url.endswith("/alpha_hunter_symbol_snapshots"):
+                self.calls.append((url, kwargs))
+                raise requests.ReadTimeout("synthetic write not committed")
+            return super().post(url, **kwargs)
+
+    session = NeverCommitted()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="test-only",
+                       retry_backoff_seconds=0),
+        session=session,
+    )
+    with pytest.raises(SupabaseStorageError, match="unverified after REST failure"):
+        storage.save_snapshot(_synthetic_canonical_snapshot(17))
+    assert session.inserted_children == 0
+    assert not any(url.endswith("/alpha_hunter_signals") for url, _ in session.calls)
+
+
+def test_successful_http_without_all_symbol_rows_fails_closed():
+    class OneMissing(FakeSession):
+        def post(self, url, **kwargs):
+            result = super().post(url, **kwargs)
+            if url.endswith("/alpha_hunter_symbol_snapshots"):
+                rows = json.loads(kwargs["data"])
+                if rows and rows[-1]["symbol"] == "TEST16USDT":
+                    self.child_rows.pop((rows[-1]["run_id"], "TEST16USDT"), None)
+            return result
+
+    session = OneMissing()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="test-only"),
+        session=session,
+    )
+    with pytest.raises(SupabaseStorageError, match="not verified"):
+        storage.save_snapshot(_synthetic_canonical_snapshot(17))
+    assert not any(url.endswith("/alpha_hunter_signals") for url, _ in session.calls)
+
+
+def test_mismatched_child_source_state_cannot_pass_count_based_readback():
+    class WrongState(FakeSession):
+        def get(self, url, **kwargs):
+            response = super().get(url, **kwargs)
+            if response._payload:
+                response._payload[0]["state"] = "FABRICATED_STATE"
+            return response
+
+    session = WrongState()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="test-only"),
+        session=session,
+    )
+    with pytest.raises(SupabaseStorageError, match="readback mismatch"):
+        storage.save_snapshot(_synthetic_canonical_snapshot(17))
+    assert not any(url.endswith("/alpha_hunter_signals") for url, _ in session.calls)
+
+
+def test_mismatched_child_timestamp_cannot_be_claimed_verified():
+    class WrongTimestamp(FakeSession):
+        def get(self, url, **kwargs):
+            response = super().get(url, **kwargs)
+            if response._payload:
+                response._payload[0]["collected_at_utc"] = "2020-01-01T00:00:00Z"
+            return response
+
+    session = WrongTimestamp()
+    storage = SupabaseStorage(
+        SupabaseConfig(url="https://example.supabase.co", key="test-only"),
+        session=session,
+    )
+    with pytest.raises(SupabaseStorageError, match="readback mismatch"):
+        storage.save_snapshot(_synthetic_canonical_snapshot(8))
+    assert not any(url.endswith("/alpha_hunter_signals") for url, _ in session.calls)
