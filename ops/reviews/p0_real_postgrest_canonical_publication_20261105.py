@@ -13,6 +13,7 @@ import time
 import base64
 import hashlib
 import hmac
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -682,6 +683,118 @@ def test_atomic_rpc_lost_ack_readback(conn, report):
         "production_network_fault_reproduced": False,
     }
 
+
+def _p0_sample_percentile(values: list[float], pct: float) -> float:
+    """Linear sample interpolation, NOT a production confidence interval."""
+    values = sorted(values)
+    assert values and 0 <= pct <= 100
+    index = (len(values) - 1) * pct / 100.0
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    return round(values[lower] * (upper - index)
+                 + values[upper] * (index - lower), 3)
+
+
+def _p0_rpc_benchmark_post(size: int, label: str) -> tuple[float, str]:
+    capture = CaptureSchema()
+    capture.save_snapshot(snapshot(label, size))
+    payload = {
+        "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+        "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+        "p_signals": capture.captured["alpha_hunter_signals"],
+        "p_features": capture.captured["alpha_hunter_signal_features"],
+        "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+    }
+    start = time.perf_counter()
+    r = requests.post(BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+                      json=payload, timeout=15)
+    ms = (time.perf_counter() - start) * 1000.0
+    assert r.status_code == 200, (r.status_code, r.text[:350])
+    assert r.json()["status"] == "VERIFIED", r.text[:350]
+    return round(ms, 3), label
+
+
+def test_disposable_latency_and_concurrency(conn, report):
+    """Measured HTTP time; fixture triggers are synthetic, not production."""
+    results = {}
+    sample_count = 30
+    for size in (61, 62, 63):
+        # Warming a local PostgREST service makes the sampling conditions
+        # explicit, while retaining individual samples for independent audit.
+        for i in range(2):
+            _, label = _p0_rpc_benchmark_post(size, f"bench-{size}-warm-{i}")
+            assert_counts(conn, label, parent=1, child=size, signal=size,
+                          feature=size, readiness=size, obs=size * 10)
+        durations = []
+        for i in range(sample_count):
+            ms, label = _p0_rpc_benchmark_post(size, f"bench-{size}-{i:03d}")
+            assert_counts(conn, label, parent=1, child=size, signal=size,
+                          feature=size, readiness=size, obs=size * 10)
+            durations.append(ms)
+        results[str(size)] = {
+            "sample_count":len(durations),
+            "p50_ms":_p0_sample_percentile(durations, 50),
+            "p95_ms":_p0_sample_percentile(durations, 95),
+            "p99_ms":_p0_sample_percentile(durations, 99),
+            "max_ms":round(max(durations), 3),
+            "mean_ms":round(sum(durations) / len(durations), 3),
+            "samples_ms":durations,
+        }
+
+    # Concurrent distinct run IDs, HTTP through same disposable PostgREST.
+    # Retain all latencies: no fabricated, theoretical or live timing.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(_p0_rpc_benchmark_post, 61, f"bench-concurrent-{i}")
+                   for i in range(8)]
+        measured = [f.result() for f in futures]
+    for ms, label in measured:
+        assert_counts(conn, label, parent=1, child=61, signal=61,
+                      feature=61, readiness=61, obs=610)
+    concurrent_ms = [x[0] for x in measured]
+
+    # Two simultaneous requests for the same run ID must not publish
+    # anything twice; a duplicate can fail at the unique constraint.
+    duplicated = "bench-duplicate-concurrent"
+    def race():
+        capture = CaptureSchema()
+        capture.save_snapshot(snapshot(duplicated, 61))
+        args = {
+            "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+            "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+            "p_signals": capture.captured["alpha_hunter_signals"],
+            "p_features": capture.captured["alpha_hunter_signal_features"],
+            "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+        }
+        res = requests.post(BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+                            json=args, timeout=15)
+        return res.status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        status_codes = list(pool.map(lambda _: race(), range(2)))
+    assert sorted(x < 300 for x in status_codes) == [False, True], status_codes
+    assert_counts(conn, duplicated, parent=1, child=61, signal=61,
+                  feature=61, readiness=61, obs=610)
+    report["diagnostic_fixture_http_performance"] = {
+        "production_trigger_performance_valid":False,
+        "cloned_production_trigger_graph":False,
+        "postgresql_server_version":report["pg_version"],
+        "samples_per_size":sample_count,
+        "requests_measured_via":"local PostgREST HTTP round trip",
+        "synthetic_observations_per_symbol":10,
+        "sizes":results,
+        "concurrency": {
+            "workers":4,
+            "distinct_run_samples":len(concurrent_ms),
+            "samples_ms":concurrent_ms,
+            "p95_ms":_p0_sample_percentile(concurrent_ms, 95),
+            "max_ms":round(max(concurrent_ms), 3),
+            "duplicate_same_run_status_codes":status_codes,
+            "exact_single_commit_verified":True,
+        },
+        "client_timeout_seconds":15,
+        "release_slo_or_signoff_proven":False,
+    }
+
+
 def main():
     dsn = assert_disposable()
     disable_unrelated_paper_stage()
@@ -703,6 +816,7 @@ def main():
         test_atomic_five_stage_rpc(conn, report)
         test_atomic_rpc_lost_ack_readback(conn, report)
         test_real_http_role_matrix(conn, report)
+        test_disposable_latency_and_concurrency(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
