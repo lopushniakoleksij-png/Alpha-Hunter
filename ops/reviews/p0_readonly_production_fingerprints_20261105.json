@@ -1,0 +1,127 @@
+{
+  "title": "ALPHA HUNTER P0 — READ-ONLY PRODUCTION CATALOG FINGERPRINT",
+  "observed_date_utc": "2026-11-05",
+  "source": "read-only Supabase pg_catalog on active production PostgreSQL 17.6",
+  "classification": "metadata only, no source bodies, secrets, customer rows, credentials or production mutation",
+  "scope": "five atomic canonical tables plus seven first-order hooks; NOT the full transitive graph",
+  "release_decision": "NO-GO",
+  "restrictions": [
+    "Research-only",
+    "No merge",
+    "No production migration or RPC",
+    "No live scanner or trading changes",
+    "Requires independent DBA/security/operations signatures"
+  ],
+  "canonical_tables": [
+    {
+      "table": "alpha_hunter_readiness_observations_v01",
+      "column_count": 18,
+      "columns_sha256": "764e0b102392dcb621cef579449d912ba1f28de4172f5ae8983832c4be902230",
+      "index_count": 3,
+      "indexes_sha256": "bf32f79a1a6103d58687c5283bd74026a5531575b51c57b09bf863ec66e8056a",
+      "rls_enabled": true,
+      "policy_count": 0
+    },
+    {
+      "table": "alpha_hunter_signal_features",
+      "column_count": 38,
+      "columns_sha256": "e6f5726888a10e700a0e11e924709ee8340345f776f7c621fb7b87d523e468cc",
+      "index_count": 8,
+      "indexes_sha256": "b581299aeb59252d85b17610effda66bbd50a912e082fa359b73b415415a2cb8",
+      "rls_enabled": true,
+      "policy_count": 0
+    },
+    {
+      "table": "alpha_hunter_signals",
+      "column_count": 16,
+      "columns_sha256": "e8ca1d96f901b71ab9217a21587bc9b8e1ebaaa2dfd607f3e80231b12b6b5c13",
+      "index_count": 4,
+      "indexes_sha256": "cc6f89123340ae4e5f63d1df23158c469f3f1c63b4f6dc483afbeddbf7305481",
+      "rls_enabled": true,
+      "policy_count": 0
+    },
+    {
+      "table": "alpha_hunter_snapshots",
+      "column_count": 8,
+      "columns_sha256": "81a571cfdf8f537a17d7bdde8fcc366726bd5b27226df28e348e1176cec57e22",
+      "index_count": 3,
+      "indexes_sha256": "709d1ca590645a55e509fd0aeff847b077487323c4bb09809aa770197ca913fe",
+      "rls_enabled": true,
+      "policy_count": 0
+    },
+    {
+      "table": "alpha_hunter_symbol_snapshots",
+      "column_count": 16,
+      "columns_sha256": "e3f4e86cc4266234562222eb1fa1ca8c36a2eb70014219b8532b3288c6aab595",
+      "index_count": 4,
+      "indexes_sha256": "bf8c9f9202800c23f6b71a47ecbaee8a7076a4cf5a98b9c08a7b454866bbfc52",
+      "rls_enabled": true,
+      "policy_count": 0
+    }
+  ],
+  "first_order_triggers": [
+    {
+      "table": "alpha_hunter_signal_features",
+      "trigger": "trg_ah_enrich_signal_feature_geometry_context_v01",
+      "function_name": "private.alpha_hunter_enrich_signal_feature_geometry_context_v01",
+      "function_sha256": "1f961cca136f5ec520ee41ec5ee0a90b2c98c0f1aee22b8db5be46c7ee38ef55",
+      "trigger_sha256": "8216c1717ae62f551765736dc3a71cc40443f2c7dce5941869dfb4bfe7c50718"
+    },
+    {
+      "table": "alpha_hunter_signals",
+      "trigger": "trg_ah_create_paper_order_v01",
+      "function_name": "private.alpha_hunter_create_paper_order_v01",
+      "function_sha256": "9eddf491b17069c5430fd093f79d21cca4cc3328b0e22b9d38bc931595d12d1a",
+      "trigger_sha256": "49f7f67f9a54cb06dfb7099214f1a0e0f05ab8b2c1b19bac7f6eb40e6f5b2f9d"
+    },
+    {
+      "table": "alpha_hunter_snapshots",
+      "trigger": "trg_ah_capture_snapshot_slim_v01",
+      "function_name": "private.alpha_hunter_capture_snapshot_slim_v01",
+      "function_sha256": "7ddb3b54e9ae36ab0fead40138ce871347fba01392ebed2fdc847014421a000c",
+      "trigger_sha256": "89ba5df35bce167913e7a030dd016b2e1b9a3a6462ae2d4831e28674dcee5543"
+    },
+    {
+      "table": "alpha_hunter_snapshots",
+      "trigger": "trg_ah_materialize_account_ledger_from_snapshot",
+      "function_name": "private.alpha_hunter_materialize_account_ledger_from_snapshot",
+      "function_sha256": "c777a9a35626a4212ab15c35be9db98222c41d84a5c070b7ad651fe2f328af26",
+      "trigger_sha256": "d344501591997ff37b5fdd2aabf6929e717642d0a6766cc79a6e69e16ffff9dc"
+    },
+    {
+      "table": "alpha_hunter_strategy_observations_v01",
+      "trigger": "trg_ah_capture_shadow_decision_quote_v01",
+      "function_name": "private.alpha_hunter_capture_shadow_decision_quote_v01",
+      "function_sha256": "53a4eb0caab9833e6a51ac0af80b0ed687f0a305b551341b5a8f2ba349113ae6",
+      "trigger_sha256": "48ec8bf5c157dfa9a7c7731e68385aee46fbfbc576454e8d5563728ed92824e7"
+    },
+    {
+      "table": "alpha_hunter_strategy_observations_v01",
+      "trigger": "trg_ah_strategy_obs_append_only_v01",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "function_sha256": "cea2235d42b5dd4b28f456d7f3ea3a4e38d975beb2b8e9297f4cd0a95db3a912",
+      "trigger_sha256": "158309c8975d6ab15a5ac9bae75fddbd18590ccd7e648e6e2db4486f69555719"
+    },
+    {
+      "table": "alpha_hunter_symbol_snapshots",
+      "trigger": "trg_ah_capture_strategy_observations_v01",
+      "function_name": "private.alpha_hunter_capture_strategy_observations_v01",
+      "function_sha256": "e33aff41f09ab0ced0041c736efffe6094111d336e70f32d335a4482359c80f3",
+      "trigger_sha256": "e04e2ef7ccf7305cc13b214867511c901df5e8f42ae33cfb86f96ca75d67ec78"
+    }
+  ],
+  "hash_recipe": {
+    "column": "sha256(UTF8(string_agg(attname||':'||format_type(atttypid,atttypmod)||':'||attnotnull||':'||coalesce(pg_get_expr(adbin,adrelid),''),';' ORDER BY attnum)))",
+    "index": "sha256(UTF8(string_agg(pg_get_indexdef(indexrelid),';' ORDER BY pg_get_indexdef(indexrelid))))",
+    "function": "sha256(UTF8(pg_get_functiondef(function_oid)))",
+    "trigger": "sha256(UTF8(pg_get_triggerdef(trigger_oid,true)))"
+  },
+  "required_independent_next_steps": [
+    "Privately export sanitized schema and function bodies through authorised DBA; do NOT commit raw private sources to public GitHub",
+    "Reconstruct all downstream function/table/trigger dependencies reached by one five-stage run, including paper-only, account, strategy, quote and episode side effects",
+    "Verify fingerprints on isolated PG17 and document PG16 rendering differences",
+    "Measure with actual cloned triggers and representative 61/62/63 payloads under concurrency, without prod credentials",
+    "Test anon/authenticated JWT denial and server-only positive path on approved local gateway plus review SQL grants and bypassrls",
+    "Sign DBA/security/operations/owner approvals tied to exact commit SHA and rollback proof"
+  ]
+}
