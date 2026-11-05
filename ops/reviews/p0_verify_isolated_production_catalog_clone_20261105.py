@@ -57,8 +57,9 @@ def isolated_connection():
     connection.execute("SET TRANSACTION READ ONLY")
     if connection.execute("SELECT current_database()").fetchone()[0] != "isolated_research":
         raise RuntimeError("Unexpected database")
-    if int(connection.execute("SHOW server_version_num").fetchone()[0]) < 170000:
-        raise RuntimeError("This exact production fingerprint was taken on PostgreSQL 17")
+    version = int(connection.execute("SHOW server_version_num").fetchone()[0])
+    if not 170000 <= version < 180000:
+        raise RuntimeError("Exact catalog fingerprint requires PostgreSQL major version 17")
     return connection
 
 
