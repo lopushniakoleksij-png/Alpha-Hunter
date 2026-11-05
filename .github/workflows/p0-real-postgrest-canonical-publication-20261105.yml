@@ -24,6 +24,7 @@ on:
       - research/p0-atomic-rpc-lost-ack-20261105-0544
       - research/p0-production-schema-atomic-review-20261105
       - research/p0-clone-dsn-strict-20261105-1142
+      - research/p0-private-clone-fixture-permission-guard-20261105-1347
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'

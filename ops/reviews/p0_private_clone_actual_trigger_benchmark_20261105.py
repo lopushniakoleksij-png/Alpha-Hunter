@@ -61,7 +61,20 @@ def private_dir(value, *, require_permissions=False):
     return path
 
 
+def reject_enabled_trade_permission(value):
+    """Fail closed on nested trade-permission overrides in private fixtures."""
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if key == "trade_permission" and child is not False:
+                raise RuntimeError("Private fixture contains non-false trade permission")
+            reject_enabled_trade_permission(child)
+    elif isinstance(value, list):
+        for child in value:
+            reject_enabled_trade_permission(child)
+
+
 def validate_fixture(data, size):
+    reject_enabled_trade_permission(data)
     if not isinstance(data, dict) or set(data) != set(GROUPS):
         raise RuntimeError("Private fixture has invalid five-stage shape")
     parent = data["p_parent"]
