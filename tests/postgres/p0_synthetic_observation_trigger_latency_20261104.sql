@@ -56,3 +56,54 @@ SELECT mode,count(*) AS batches,
  round(percentile_cont(0.99) WITHIN GROUP (ORDER BY elapsed_ms)::numeric,3) AS p99_ms
  FROM timings GROUP BY mode ORDER BY mode;
 -- Synthetic measurement only: not actual production trigger, PostgREST, RLS or concurrency.
+
+-- Failure-injection contract: an AFTER trigger exception must atomically roll back
+-- the parent write and its child observations. Entirely disposable local SQL.
+DROP TRIGGER capture ON symbols;
+CREATE FUNCTION pg_temp.capture_then_fail() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ INSERT INTO observations(run_id,symbol,strategy)
+ VALUES(NEW.run_id,NEW.symbol,'injected-before-failure')
+ ON CONFLICT DO NOTHING;
+ RAISE EXCEPTION 'synthetic observation persistence failure' USING ERRCODE='P0001';
+END $$;
+CREATE TRIGGER capture_fail AFTER INSERT OR UPDATE OF payload ON symbols
+ FOR EACH ROW EXECUTE FUNCTION pg_temp.capture_then_fail();
+DO $$
+DECLARE caught boolean := false;
+BEGIN
+ BEGIN
+  INSERT INTO symbols(run_id,symbol,payload)
+  VALUES('fault-insert','SYM1','{"value":"uncommitted"}'::jsonb);
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN
+  caught := true;
+ END;
+ IF NOT caught THEN RAISE EXCEPTION 'Fault-insert trigger did not fail'; END IF;
+ IF EXISTS(SELECT 1 FROM symbols WHERE run_id='fault-insert')
+    OR EXISTS(SELECT 1 FROM observations WHERE run_id='fault-insert') THEN
+  RAISE EXCEPTION 'Fault-insert leaked parent or child records';
+ END IF;
+END $$;
+DROP TRIGGER capture_fail ON symbols;
+INSERT INTO symbols(run_id,symbol,payload)
+ VALUES('fault-update','SYM1','{"value":"original"}'::jsonb);
+CREATE TRIGGER capture_fail AFTER INSERT OR UPDATE OF payload ON symbols
+ FOR EACH ROW EXECUTE FUNCTION pg_temp.capture_then_fail();
+DO $$
+DECLARE caught boolean := false;
+BEGIN
+ BEGIN
+  UPDATE symbols SET payload='{"value":"mutated"}'::jsonb
+  WHERE run_id='fault-update' AND symbol='SYM1';
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN
+  caught := true;
+ END;
+ IF NOT caught THEN RAISE EXCEPTION 'Fault-update trigger did not fail'; END IF;
+ IF (SELECT payload FROM symbols WHERE run_id='fault-update' AND symbol='SYM1')
+      IS DISTINCT FROM '{"value":"original"}'::jsonb
+    OR EXISTS(SELECT 1 FROM observations WHERE run_id='fault-update') THEN
+  RAISE EXCEPTION 'Fault-update leaked mutated parent or child records';
+ END IF;
+END $$;
+DROP TRIGGER capture_fail ON symbols;
+-- This checks PostgreSQL statement atomicity, NOT PostgREST timeout/commit ambiguity.
