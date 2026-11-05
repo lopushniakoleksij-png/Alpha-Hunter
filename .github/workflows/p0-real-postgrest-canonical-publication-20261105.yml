@@ -8,6 +8,7 @@ on:
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
       - 'ops/reviews/p0_readonly_production_fingerprints_20261105.json'
       - 'ops/reviews/p0_production_trigger_dependency_candidates_20261105.json'
+      - 'ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json'
       - 'ops/reviews/P0_ISOLATED_BENCHMARK_AND_TRIGGER_GRAPH_20261105.md'
       - 'ops/reviews/P0_INDEPENDENT_DBA_SECURITY_ACCEPTANCE_PACKET_20261105.md'
       - 'research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql'
@@ -22,6 +23,7 @@ on:
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
       - 'ops/reviews/p0_readonly_production_fingerprints_20261105.json'
       - 'ops/reviews/p0_production_trigger_dependency_candidates_20261105.json'
+      - 'ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json'
       - 'ops/reviews/P0_ISOLATED_BENCHMARK_AND_TRIGGER_GRAPH_20261105.md'
       - 'ops/reviews/P0_INDEPENDENT_DBA_SECURITY_ACCEPTANCE_PACKET_20261105.md'
       - 'research/p0_successor_atomic_canonical_v02_DISPOSABLE_ONLY.sql'
@@ -102,11 +104,18 @@ jobs:
           p = Path("ops/reviews")
           first = json.loads((p / "p0_readonly_production_fingerprints_20261105.json").read_text())
           graph = json.loads((p / "p0_production_trigger_dependency_candidates_20261105.json").read_text())
+          cross = json.loads((p / "p0_cross_schema_write_candidate_graph_20261105.json").read_text())
           assert len(first["canonical_tables"]) == 5
           assert len(first["first_order_triggers"]) == 7
           assert len(graph["relations"]) == 22
           assert len(graph["trigger_metadata"]) == 31
           assert len(graph["lexical_candidate_edges"]) == 26
+          assert len(cross["relations"]) == 20
+          assert sum(x["qualified_name"].startswith("private.") for x in cross["relations"]) == 6
+          assert len(cross["reachable_hooks"]) == 21
+          assert len(cross["reachable_write_candidates"]) == 15
+          assert any(x["qualified_name"] == "private.alpha_hunter_paper_orders_v01" for x in cross["relations"])
+          assert cross["verdict"].endswith("PRODUCTION NO-GO")
           assert graph["release_decision"] == "PRODUCTION NO-GO"
           assert any("calibrated_paper_order" in x["trigger"] for x in graph["trigger_metadata"])
           print("PASS metadata integrity only, not exact production clone")
