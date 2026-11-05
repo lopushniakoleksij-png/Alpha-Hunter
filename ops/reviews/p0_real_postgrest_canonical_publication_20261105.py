@@ -80,10 +80,16 @@ class LocalSession(requests.Session):
     def request(self, method, url, *args, **kwargs):
         if not url.startswith(BASE + "/rest/v1/"):
             raise AssertionError("Refusing non-local PostgREST URL")
-        return super().request(
-            method, url.replace(BASE + "/rest/v1/", BASE + "/", 1),
-            *args, **kwargs,
-        )
+        resolved = url.replace(BASE + "/rest/v1/", BASE + "/", 1)
+        response = super().request(method, resolved, *args, **kwargs)
+        if response.status_code >= 400:
+            print(
+                "LOCAL_HTTP_DIAGNOSTIC",
+                method, response.url, response.status_code,
+                repr(response.text[:500]),
+                flush=True,
+            )
+        return response
 
 
 class LostAckSession(LocalSession):
