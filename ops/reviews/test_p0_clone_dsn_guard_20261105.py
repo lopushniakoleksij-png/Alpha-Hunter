@@ -25,6 +25,36 @@ class CloneDsnGuardTests(unittest.TestCase):
             with self.subTest(dsn=dsn), self.assertRaises(RuntimeError):
                 module.validate_isolated_dsn(dsn)
 
+    def test_complete_public_private_inventory_counts(self):
+        exact = {
+            schema: dict(expected)
+            for schema, expected in module.EXPECTED_INVENTORY.items()
+        }
+        self.assertEqual(module.inventory_failures(exact), [])
+
+    def test_reject_only_22_public_relation_candidate_clone(self):
+        incomplete = {
+            "public": {"relations": 22, "tables": 22,
+                       "views": 0, "enabled_hooks": 31},
+            "private": {"relations": 6, "tables": 6,
+                        "views": 0, "enabled_hooks": 0},
+        }
+        issues = module.inventory_failures(incomplete)
+        self.assertTrue(any("public.relations" in x for x in issues))
+        self.assertTrue(any("private.relations" in x for x in issues))
+        self.assertTrue(any("public.enabled_hooks" in x for x in issues))
+
+    def test_fail_closed_on_missing_schema_or_extra_hooks(self):
+        partial = {"public": dict(module.EXPECTED_INVENTORY["public"])}
+        self.assertNotEqual(module.inventory_failures(partial), [])
+        with_extra = {
+            schema: dict(expected)
+            for schema, expected in module.EXPECTED_INVENTORY.items()
+        }
+        with_extra["public"]["enabled_hooks"] += 1
+        self.assertTrue(any("public.enabled_hooks" in x
+                            for x in module.inventory_failures(with_extra)))
+
     def test_wrong_port_and_database_rejected(self):
         for dsn in ("host=127.0.0.1 port=6543 dbname=isolated_research",
                     "host=127.0.0.1 dbname=production"):
