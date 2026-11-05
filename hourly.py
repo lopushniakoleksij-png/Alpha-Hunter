@@ -338,6 +338,7 @@ def run_render_cron_burst(
     successful_scan_this_burst = False
     attempted_scans = 0
     missed_boundaries = 0
+    initial_scan_skipped = False
 
     if should_run_initial_burst_scan(
         burst_started_at,
@@ -352,6 +353,7 @@ def run_render_cron_burst(
         )
         successful_scan_this_burst = overall_code == 0
     else:
+        initial_scan_skipped = True
         overall_code = 0
         print(
             "Render cron burst skipped late immediate scan; "
@@ -424,8 +426,13 @@ def run_render_cron_burst(
         print("Canonical scan absent: no scanner attempt executed; evidence UNKNOWN.",
               file=sys.stderr, flush=True)
         return 4
+    if initial_scan_skipped:
+        print("Canonical scan cadence incomplete: initial scan skipped late; "
+              "no backfill.", file=sys.stderr, flush=True)
+        if overall_code == 0:
+            overall_code = 4
     if missed_boundaries:
-        print(f"Canonical scan cadence incomplete: {missed_boundaries} missed "
+        print(f"Canonical scan cadence incomplete: {missed_boundaries} missed 
               "aligned boundary/boundaries; no backfill.", file=sys.stderr, flush=True)
         if overall_code == 0:
             return 4
