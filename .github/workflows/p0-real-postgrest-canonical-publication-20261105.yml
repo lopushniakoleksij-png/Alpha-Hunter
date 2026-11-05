@@ -127,6 +127,32 @@ jobs:
           PY
       - name: Actual HTTP canonical parent-child-signal-feature-readiness fault matrix
         run: PYTHONPATH=. python ops/reviews/p0_real_postgrest_canonical_publication_20261105.py
+      - name: Synthetic PG17 fixture MUST fail the exact-production clone gate
+        if: matrix.postgres == '17'
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          result = subprocess.run(
+              [sys.executable, "ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py"],
+              capture_output=True, text=True, check=False, timeout=30,
+          )
+          assert result.returncode == 2, (
+              "DANGER: simplified synthetic schema was wrongly accepted as production clone",
+              result.returncode, result.stdout[-500:], result.stderr[-500:],
+          )
+          try:
+              report = json.loads(result.stdout.strip().splitlines()[-1])
+          except Exception as exc:
+              raise AssertionError("Clone rejection did not yield inspectable JSON") from exc
+          assert report["status"] == "CATALOG_MISMATCH_NO_GO", report
+          assert report["release_decision"] == "PRODUCTION NO-GO"
+          assert report["transitive_production_graph_verified"] is False
+          assert report["independent_DBA_security_approval"] is False
+          assert len(report["issues"]) > 0
+          print("PASS negative gate: synthetic PG17 schema rejected; production release remains NO-GO")
+          PY
       - name: Archive isolated-only HTTP publication evidence
         if: success()
         uses: actions/upload-artifact@v4
