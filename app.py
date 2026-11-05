@@ -1999,6 +1999,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       <label class="v8-filter-wrap">Research status<select id="v8-status"><option value="">All statuses</option></select></label>
       <label class="v8-filter-wrap">Direction<select id="v8-side"><option value="">All sides</option></select></label>
       <label class="v8-filter-wrap">Strategy<select id="v8-strategy"><option value="">All strategies</option></select></label>
+      <label class="v8-filter-wrap">Sort research<select id="v8-sort"><option value="canonical">Canonical order</option><option value="symbol">Symbol A–Z</option><option value="rr">Raw R:R (highest)</option><option value="persistence">Consecutive scans (highest)</option></select></label>
       <button class="v8-reset" id="v8-reset" type="button">Reset filters</button>
     </div>
     <span class="v8-count" id="v8-result-count" role="status" aria-live="polite"></span>
