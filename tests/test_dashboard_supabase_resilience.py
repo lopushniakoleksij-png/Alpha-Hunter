@@ -58,7 +58,12 @@ def test_dashboard_fails_closed_with_recovery_page(monkeypatch):
     body = response.get_data(as_text=True)
     assert "LIVE DATA TEMPORARILY UNAVAILABLE" in body
     assert "Trading actions are intentionally hidden" in body
-    assert 'http-equiv="refresh" content="10"' in body
+    # V8 provides controlled recovery rather than an unpausable timed redirect.
+    assert 'http-equiv="refresh"' not in body
+    assert 'id="v8-auto-retry"' in body
+    assert "Enable auto retry" in body
+    assert "Check latest scan" in body
+    assert 'aria-pressed="false"' in body
     assert "database unavailable" not in body
 
 
