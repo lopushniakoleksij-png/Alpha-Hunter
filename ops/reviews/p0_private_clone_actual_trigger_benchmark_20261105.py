@@ -258,7 +258,8 @@ def measure(params, fixtures, evidence, stats):
     report = {
         "result":"DIAGNOSTIC_ONLY_PRODUCTION_NO_GO",
         "mode":"DBA_PRIVATE_PG17_EXACT_CATALOG_FINGERPRINT_REQUIRED",
-        "canonical_schema_code_matched":True,
+        "selected_catalog_fingerprint_match_only":True,
+        "entire_public_private_schema_equivalence_verified":False,
         "authenticated_gateway_security_review_approved":False,
         "network_egress_isolated_attested_not_technically_proven":True,
         "full_runtime_dynamic_trigger_graph_verified":False,
@@ -266,6 +267,8 @@ def measure(params, fixtures, evidence, stats):
         "side_effects_outside_transaction_excluded":False,
         "clone_row_estimates":stats,
         "sample_count_each_size":30,
+        "p99_estimate_low_sample_confidence":True,
+        "schema_catalog_drift_check_is_partial":True,
         "sizes":{},
     }
     for size in SIZES:
