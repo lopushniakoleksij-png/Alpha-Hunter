@@ -214,7 +214,8 @@ body.v8-body {
   .v8-body .action-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .v8-body .layout{grid-template-columns:1fr}
   .v8-workspace.v8-enhanced .v8-view-heading h2{font-size:22px}
-  .v8-strategy-table {display:none!important}
+  .v8-body.v8-enhanced .v8-strategy-table {display:none!important}
+  .v8-body:not(.v8-enhanced) .v8-strategy-table {display:block;max-width:100%;overflow-x:auto}
   .v8-mobile-cards {display:block}
   .v8-mobile-card {border:1px solid var(--v8-border);border-radius:14px;background:#0d1c2b;margin:0 0 10px;overflow:hidden;max-width:100%}
   .v8-card-toggle {border:0;background:none;color:var(--v8-text);width:100%;text-align:left;min-height:105px;padding:15px;cursor:pointer}
