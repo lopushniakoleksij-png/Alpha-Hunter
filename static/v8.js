@@ -32,6 +32,7 @@
   const statusFilter = byId("v8-status");
   const sideFilter = byId("v8-side");
   const strategyFilter = byId("v8-strategy");
+  const sortFilter = byId("v8-sort");
   const reset = byId("v8-reset");
   const detailPanel = byId("v8-detail-panel");
 
@@ -165,12 +166,26 @@
     const status = statusFilter?.value || "";
     const side = sideFilter?.value || "";
     const strategy = strategyFilter?.value || "";
-    return allRows.filter(rec =>
+    const matching = allRows.filter(rec =>
       (!query || (rec.symbol + " " + rec.strategy).toLowerCase().includes(query)) &&
       (!status || rec.status === status) &&
       (!side || rec.side === side) &&
       (!strategy || rec.strategy === strategy)
     );
+    const sortBy = sortFilter?.value || "canonical";
+    if (sortBy === "symbol") {
+      matching.sort((a, b) => a.symbol.localeCompare(b.symbol) || a.index - b.index);
+    } else if (sortBy === "rr") {
+      matching.sort((a, b) => {
+        const aa = Number(a.rr), bb = Number(b.rr);
+        const validA = a.rr && Number.isFinite(aa), validB = b.rr && Number.isFinite(bb);
+        if (validA !== validB) return validA ? -1 : 1;
+        return (validB ? bb : 0) - (validA ? aa : 0) || a.index - b.index;
+      });
+    } else if (sortBy === "persistence") {
+      matching.sort((a, b) => (Number(b.scans) || 0) - (Number(a.scans) || 0) || a.index - b.index);
+    }
+    return matching;
   }
 
   function mobileCard(rec) {
@@ -225,6 +240,12 @@
   function applyFilters() {
     filteredRows = matchRows();
     for (const rec of allRows) rec.tr.hidden = !filteredRows.includes(rec);
+    // DOM ordering only; the canonical dataset and original values are unchanged.
+    if (matrix) {
+      const tbody = matrix.querySelector("tbody");
+      for (const rec of filteredRows) tbody?.appendChild(rec.tr);
+      for (const rec of allRows) if (!filteredRows.includes(rec)) tbody?.appendChild(rec.tr);
+    }
     if (resultCount) resultCount.textContent =
       filteredRows.length + " research " + (filteredRows.length === 1 ? "observation" : "observations") + " · " + allRows.length +
       " total · No real-money execution permission";
@@ -235,13 +256,14 @@
     visibleLimit = pageSize;
     renderMobile();
   }
-  for (const input of [statusFilter, sideFilter, strategyFilter]) {
+  for (const input of [statusFilter, sideFilter, strategyFilter, sortFilter]) {
     input?.addEventListener("change", applyFilters);
   }
   search?.addEventListener("input", applyFilters);
   reset?.addEventListener("click", () => {
     if (search) search.value = "";
     for (const el of [statusFilter, sideFilter, strategyFilter]) if (el) el.value = "";
+    if (sortFilter) sortFilter.value = "canonical";
     applyFilters();
     search?.focus();
   });
