@@ -1,4 +1,23 @@
-# Alpha Hunter V1 — Proper Core v0.3.0
+# Alpha Hunter — Research Intelligence Platform
+
+> **Current product status (5 November 2026):** Responsive V8 web terminal is a **draft, isolated web-design proposal** in [PR #413](https://github.com/lopushniakoleksij-png/Alpha-Hunter/pull/413). Underlying research engine is labelled V7.2. The V8 user interface is **not deployed to production**, and real-order authority is disabled. Passing synthetic tests does not establish live profitability, customer revenue, independent security certification, or software transfer rights.
+
+## Current V8 product and commercial evaluation
+
+- [V8 UI implementation and browser verification — PR #413](https://github.com/lopushniakoleksij-png/Alpha-Hunter/pull/413)
+- [Plan A — Evidence-led investor-readiness brief](docs/ALPHA_HUNTER_INVESTOR_READINESS_V8_20261105.md)
+- [Plan B — Potential software/IP asset-sale brief](docs/ALPHA_HUNTER_BUYER_ASSET_BRIEF_V8_20261105.md)
+- [Product readiness, evidence gaps, rights and handover checklist](docs/V8_PRODUCT_READINESS_AND_TRANSFER_CHECKLIST_20261105.md)
+- [Open independent DBA and security acceptance gate](https://github.com/lopushniakoleksij-png/Alpha-Hunter/issues/420) — pending; production release **NO-GO**.
+
+**Commercial posture:** Continue product engineering while preparing both potential investor and buyer evidence; no valuation, fundraising solicitation, public sale listing, paid work, merge, deployment, real trading or account/data transfer is authorised by these documents.
+
+---
+
+## Archived core setup guide — V1
+
+The following describes an earlier collector setup and is retained for historical engineering context. Do not infer that every early V1 symbol, configuration or deploy instruction reflects the current V7.2/V8 runtime. Production changes require separate controlled approval.
+
 
 Bitget public-data collector and conservative execution gate for five frozen USDT perpetual contracts.
 
