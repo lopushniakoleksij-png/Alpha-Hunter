@@ -39,6 +39,34 @@ class PrivateCloneGuardTests(unittest.TestCase):
         self.assertEqual(bench.validate_fixture(fixture(),3),
                          "PRIVATE-DISPOSABLE-TEST")
 
+    def test_reject_duplicate_signal_ids_before_database_access(self):
+        v = fixture()
+        v["p_signals"][1]["signal_id"] = v["p_signals"][0]["signal_id"]
+        with self.assertRaisesRegex(RuntimeError, "Duplicate private fixture signal IDs"):
+            bench.validate_fixture(v, 3)
+
+    def test_reject_empty_or_whitespace_symbol(self):
+        for symbol in ("", " ", " TESTUSDT "):
+            with self.subTest(symbol=symbol):
+                v = fixture()
+                v["p_children"][0]["symbol"] = symbol
+                with self.assertRaisesRegex(RuntimeError, "Invalid fixture symbol"):
+                    bench.validate_fixture(v, 3)
+
+    def test_reject_empty_or_whitespace_signal_id(self):
+        for signal_id in ("", " ", " SIG000 "):
+            with self.subTest(signal_id=signal_id):
+                v = fixture()
+                v["p_signals"][0]["signal_id"] = signal_id
+                with self.assertRaisesRegex(RuntimeError, "Invalid private fixture signal_id"):
+                    bench.validate_fixture(v, 3)
+
+    def test_reject_boolean_symbol_count(self):
+        v = fixture(1)
+        v["p_parent"]["symbol_count"] = True
+        with self.assertRaisesRegex(RuntimeError, "Invalid fixture run identity"):
+            bench.validate_fixture(v, 1)
+
     def test_refuse_enabled_trade(self):
         v=fixture()
         v["p_signals"][0]["trade_permission"]=True
