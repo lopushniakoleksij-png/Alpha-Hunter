@@ -98,6 +98,17 @@ def validate_fixture(data, size):
         seen.append(set(symbols))
     if any(x != seen[0] for x in seen[1:]):
         raise RuntimeError("Fixture stage symbol sets differ")
+    signal_ids = [
+        [entry.get("signal_id") for entry in data[group]]
+        for group in ("p_signals", "p_features")
+    ]
+    if any(not isinstance(value, str) or not value.strip()
+           for group in signal_ids for value in group):
+        raise RuntimeError("Missing or empty fixture signal_id")
+    if (len(set(signal_ids[0])) != size
+            or len(set(signal_ids[1])) != size
+            or set(signal_ids[0]) != set(signal_ids[1])):
+        raise RuntimeError("Fixture signal IDs duplicated or stages differ")
     return run_id
 
 
@@ -225,6 +236,22 @@ def one_run(params, data, size):
         ms = round((time.perf_counter()-ts)*1000,3)
         require(isinstance(result,dict) and result.get("status") == "VERIFIED",
                 "Atomic candidate RPC failed or returned invalid status")
+        require(result.get("run_id") == run_id
+                and result.get("child_count") == size
+                and result.get("feature_count") == size,
+                "Atomic candidate RPC identity/count response mismatch")
+        # Capture trigger timings immediately after the RPC and BEFORE
+        # follow-up stage readback queries, avoiding readback contamination.
+        stats = conn.execute("""
+            SELECT s.schemaname,s.funcname,s.calls,s.total_time,s.self_time
+            FROM pg_stat_xact_user_functions s
+            WHERE s.calls>0 AND EXISTS (
+              SELECT 1 FROM pg_trigger t
+              WHERE NOT t.tgisinternal AND t.tgfoid=s.funcid
+            )
+        """).fetchall()
+        if not stats or not any(x[0]=="private" for x in stats):
+            raise RuntimeError("No instrumented private trigger function calls")
         for table in STAGES:
             require(traced_rows(conn,"public",table,run_id,ids) == (
                 1 if table == STAGES[0] else size
@@ -239,16 +266,6 @@ def one_run(params, data, size):
                     sql.Identifier(table)), (run_id,)
             ).fetchone()[0]
             require(enabled == 0, "Trade permission unexpectedly enabled: " + table)
-        stats = conn.execute("""
-            SELECT s.schemaname,s.funcname,s.calls,s.total_time,s.self_time
-            FROM pg_stat_xact_user_functions s
-            WHERE s.calls>0 AND EXISTS (
-              SELECT 1 FROM pg_trigger t
-              WHERE NOT t.tgisinternal AND t.tgfoid=s.funcid
-            )
-        """).fetchall()
-        if not stats or not any(x[0]=="private" for x in stats):
-            raise RuntimeError("No instrumented private trigger function calls")
         observed = {
             "sql_roundtrip_ms":ms,
             "private_paper_rows":private_counts,
