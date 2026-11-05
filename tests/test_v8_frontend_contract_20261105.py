@@ -188,3 +188,57 @@ def test_web_evidence_failure_still_withholds_current_research(monkeypatch, prob
     api = client.get("/api/latest")
     assert api.status_code == 503
     assert api.get_json()["trade_permission"] is False if isinstance(problem, dashboard.CanonicalSnapshotIncomplete) else api.get_json()["error"] == "canonical_scan_publishing"
+
+
+def test_v8_recovery_keeps_responsive_navigation_and_safety_boundary(monkeypatch):
+    """An incomplete newest scan must still show the V8 terminal shell."""
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0)
+    monkeypatch.setattr(
+        dashboard, "bounded_dashboard_payload",
+        lambda: (_ for _ in ()).throw(
+            dashboard.CanonicalSnapshotIncomplete("synthetic incomplete latest scan")
+        ),
+    )
+    client = dashboard.app.test_client()
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert response.headers["X-Alpha-Hunter-Evidence-State"] == "INCOMPLETE"
+    assert 'class="v8-shell"' in html
+    assert 'id="v8-workspace"' in html
+    assert 'class="v8-bottom-nav"' in html
+    assert 'id="v8-view-overview"' in html
+    assert 'id="v8-view-research"' in html
+    assert 'id="v8-view-results"' in html
+    assert 'id="v8-view-system"' in html
+    assert 'data-v8-section="research"' in html
+    assert 'data-v8-section="overview"' in html
+    assert "LATEST CANONICAL SCAN INCOMPLETE" in html
+    assert "Current signals withheld" in html
+    assert "HISTORICAL ONLY" in html
+    assert "/static/v8.js" in html and "/static/v8.css" in html
+    assert 'id="runScanButton"' not in html
+    assert "Real orders disabled" in html
+    result = client.get("/api/latest")
+    assert result.status_code == 503
+    assert result.get_json()["error"] == "canonical_scan_incomplete"
+
+
+def test_v8_outage_page_preserves_same_navigation_and_no_trades(monkeypatch):
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0)
+    monkeypatch.setattr(
+        dashboard, "bounded_dashboard_payload",
+        lambda: (_ for _ in ()).throw(RuntimeError("synthetic transport fault")),
+    )
+    client = dashboard.app.test_client()
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+    assert response.status_code == 503
+    assert 'id="v8-workspace"' in html
+    assert "LIVE DATA TEMPORARILY UNAVAILABLE" in html
+    assert "Current signals withheld" in html
+    assert "No exchange-order authority" in html or "no exchange-order authority" in html
+    assert "Check latest scan" in html
+    assert "Enable auto retry" in html
+
+
