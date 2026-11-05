@@ -123,6 +123,29 @@ def test_no_public_scan_button_or_ui_post_to_scanner(monkeypatch):
     assert "/api/run-scan" in {rule.rule for rule in dashboard.app.url_map.iter_rules()}
 
 
+
+def test_phase7_public_scan_endpoint_is_fail_closed_and_cannot_spawn_worker(monkeypatch):
+    """No browser or unauthenticated API request may create a second scanner."""
+    import copy
+    before = copy.deepcopy(dashboard.scan_state)
+    def forbidden_worker(*args, **kwargs):
+        raise AssertionError("Public web API attempted to launch a scanner worker")
+    monkeypatch.setattr(dashboard.threading, "Thread", forbidden_worker)
+    monkeypatch.setattr(dashboard, "run_scan_worker", forbidden_worker)
+    client = dashboard.app.test_client()
+    for headers in ({}, {"Authorization": "Basic YWJjOmRlZg=="}):
+        response = client.post("/api/run-scan", json={}, headers=headers)
+        assert response.status_code == 403
+        assert response.headers["Cache-Control"] == "no-store"
+        data = response.get_json()
+        assert data["error"] == "manual_web_scanning_disabled"
+        assert data["scanner_started"] is False
+        assert data["trade_permission"] is False
+        assert data["order_path"] == "NONE"
+    assert dashboard.scan_state == before
+
+
+
 def test_static_assets_served_from_existing_flask_application():
     client = dashboard.app.test_client()
     css = client.get("/static/v8.css")
