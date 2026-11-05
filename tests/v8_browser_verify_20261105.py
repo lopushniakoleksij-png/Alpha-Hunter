@@ -89,11 +89,15 @@ def main():
                 search = page.locator("#v8-search")
                 search.fill("BEAMUSDT")
                 assert page.locator("#v8-result-count").get_attribute("role") == "status"
-                assert page.locator("#v8-result-count").inner_text().startswith("1 research observations")
+                assert page.locator("#v8-result-count").inner_text().startswith("1 research observation ·")
                 if width < 900:
                     assert page.locator(".v8-mobile-card").count() == 1
                 page.locator("#v8-reset").click()
-                assert page.locator("#v8-result-count").inner_text().startswith("3 research observations")
+                expected_total = page.locator(".v8-strategy-table tbody tr").count()
+                assert page.locator("#v8-result-count").inner_text().startswith(
+                    f"{expected_total} research " +
+                    ("observation" if expected_total == 1 else "observations") + " ·"
+                )
                 target = (".v8-bottom-nav" if width < 900 else ".v8-rail")
                 page.locator(f'{target} [data-v8-tab="results"]').click()
                 assert page.locator("#v8-view-results").is_visible()
