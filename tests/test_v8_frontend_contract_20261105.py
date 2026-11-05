@@ -117,7 +117,8 @@ def test_no_public_scan_button_or_ui_post_to_scanner(monkeypatch):
     page = response.get_data(as_text=True)
     assert 'id="runScanButton"' not in page
     assert 'onclick="runScan()"' not in page
-    assert "Protected scheduled scanner" in page
+    assert "The protected scanner runs separately" in page
+    assert 'aria-label="Refresh dashboard from the latest accepted canonical scan"' in page
     # Backend route deliberately remains unchanged by a presentation-only patch.
     assert "/api/run-scan" in {rule.rule for rule in dashboard.app.url_map.iter_rules()}
 
