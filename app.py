@@ -2596,7 +2596,7 @@ DASHBOARD_RECOVERY_PAGE = """
     <div class="v8-mobile-head"><strong>Alpha Hunter <span>V8</span></strong><span class="v8-kicker">Research only · No orders</span></div>
     <div class="wrap">
       <div class="v8-recovery-intro">
-        <div><h1>Alpha Hunter V8 · Market Intelligence</h1>
+        <div><h1>Market intelligence</h1>
         <div class="v8-banner">Source integrity · Paper-only research · Real orders disabled</div></div>
         <div class="v8-recovery-hint">Web service online · Current research restricted</div>
       </div>
@@ -2616,7 +2616,7 @@ DASHBOARD_RECOVERY_PAGE = """
           <div class="card"><h2>Performance evidence temporarily unavailable</h2>
             <p class="muted">This recovery screen cannot establish a current scientific profitability result. A scanner, performance or database fault must not be mistaken for positive trading performance.</p>
             <p class="muted">Paper/shadow-only operation is preserved. No exchange-order authority or profitability promotion is granted.</p>
-            <a href="/performance" class="v8-recovery-hint">Open existing performance report (may be unavailable)</a>
+            <a href="/performance" class="v8-report-link">View historical performance report <span aria-hidden="true">↗</span></a><p class="v8-report-disclaimer muted">Report may be unavailable during a source outage. Historical figures are not verified live returns.</p>
           </div>
         </section>
         <section id="v8-view-system" class="v8-view" aria-labelledby="v8-system-title" hidden>
