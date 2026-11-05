@@ -67,6 +67,15 @@ The optional file `ops/reviews/p0_private_clone_actual_trigger_benchmark_2026110
 
 Prepare `sanitized_61.json`, `sanitized_62.json`, and `sanitized_63.json` as full *five-stage* argument dictionaries: keys `p_parent`, `p_children`, `p_signals`, `p_features`, `p_readiness`. For each size, the parent `symbol_count`, all symbol sets, `run_id`, payload identity and all `trade_permission=false` flags must be correct. **Never use production run IDs, signal IDs or actual account/market data**. The runner requires representative clone `reltuples` estimates (at least 150k symbol snapshots and 1m strategy observations) and locally recreates no records: the reviewer must seed approved sanitized data.
 
+**Mandatory clone-only attestation:** After restoring and checking the local-only PostgreSQL instance, the qualified DBA must create this deliberately *nonproduction* object on the **disposable clone only**. If the clone is not isolated, do NOT create it or run the benchmark. The marker is a second guard against accidentally using an unmodified production database, not proof of network isolation:
+
+```sql
+CREATE SCHEMA ah_p0_isolated;
+CREATE TABLE ah_p0_isolated.clone_attestation (marker text PRIMARY KEY);
+INSERT INTO ah_p0_isolated.clone_attestation(marker)
+VALUES ('P0_PRIVATE_DISPOSABLE_CLONE_EGRESS_DISABLED');
+```
+
 On a DBA-controlled machine already network-isolated and using only a disposable local PG17 database, the operator may run:
 
 ```sh
