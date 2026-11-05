@@ -5,6 +5,7 @@ on:
       - research/p0-bounded-child-write-exit-safety-20261105
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
+      - 'research/p0_successor_atomic_canonical_v02_DISPOSABLE_ONLY.sql'
       - '.github/workflows/p0-real-postgrest-canonical-publication-20261105.yml'
   workflow_dispatch:
 
@@ -59,7 +60,7 @@ jobs:
       - name: Install pinned app dependencies and isolated PostgreSQL driver
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
-          python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4'
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.3.8'
       - name: Actual HTTP canonical parent-child-signal-feature-readiness fault matrix
         run: PYTHONPATH=. python ops/reviews/p0_real_postgrest_canonical_publication_20261105.py
       - name: Archive isolated-only HTTP publication evidence
