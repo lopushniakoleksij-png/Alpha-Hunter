@@ -223,12 +223,12 @@ def create_schema(dsn):
             run_id text NOT NULL, trigger_operation text NOT NULL
         )""")
         conn.execute("""CREATE FUNCTION public.p0_parent_capture_hook() RETURNS trigger
-        LANGUAGE plpgsql AS $
+        LANGUAGE plpgsql AS $p0_hook$
         BEGIN
           INSERT INTO public.p0_parent_capture_audit(run_id,trigger_operation)
           VALUES(NEW.run_id,TG_OP);
           RETURN NEW;
-        END $""")
+        END $p0_hook$""")
         conn.execute("""CREATE TRIGGER p0_parent_capture
             AFTER INSERT OR UPDATE OF payload ON public.alpha_hunter_snapshots
             FOR EACH ROW EXECUTE FUNCTION public.p0_parent_capture_hook()""")
