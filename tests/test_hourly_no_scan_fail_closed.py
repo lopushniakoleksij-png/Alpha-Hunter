@@ -32,7 +32,7 @@ def test_missed_only_boundary_returns_nonzero_without_backfill(monkeypatch, caps
     status, calls = _exercise(monkeypatch, initial=False, boundaries=1, missed=True)
     assert status == 4
     assert calls == []
-    assert "cadence incomplete" in capsys.readouterr().err
+    assert "Canonical scan absent" in capsys.readouterr().err
 
 def test_successful_initial_scan_does_not_hide_missed_boundary(monkeypatch):
     status, calls = _exercise(monkeypatch, initial=True, boundaries=1,
