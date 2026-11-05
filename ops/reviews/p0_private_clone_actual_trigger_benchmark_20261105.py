@@ -156,7 +156,9 @@ def traced_rows(conn, schema, table, run_id, signal_ids):
 def check_clone_preflight(conn, fixtures):
     assert conn.execute("SHOW session_replication_role").fetchone()[0] == "origin"
     assert conn.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
-    assert int(conn.execute("SHOW server_version_num").fetchone()[0]) >= 170000
+    major = int(conn.execute("SHOW server_version_num").fetchone()[0])
+    if not 170000 <= major < 180000:
+        raise RuntimeError("DBA benchmark requires PostgreSQL major version 17")
     # The clone-only sentinel must be created by the DBA *after* restore.
     # Never import this marker into production or any external database.
     if conn.execute("SELECT to_regclass('ah_p0_isolated.clone_attestation')"
