@@ -42,6 +42,31 @@ def validate_isolated_dsn(dsn: str) -> dict:
     return params
 
 
+# Read-only catalog inventory recorded from production PostgreSQL 17.6
+# on 2026-11-05. Exact counts are deliberately fail-closed on any drift.
+# Counts are a coverage floor, NOT evidence of matching objects or runtime.
+EXPECTED_INVENTORY = {
+    "public": {"relations": 282, "tables": 128, "views": 154, "enabled_hooks": 131},
+    "private": {"relations": 47, "tables": 34, "views": 13, "enabled_hooks": 0},
+}
+
+
+def inventory_failures(actual):
+    """Reject incomplete restore or unreviewed drift across public/private."""
+    issues = []
+    if set(actual) != set(EXPECTED_INVENTORY):
+        issues.append("full alpha_hunter schema inventory missing or unexpected schema")
+    for namespace, wanted in EXPECTED_INVENTORY.items():
+        present = actual.get(namespace, {})
+        for field, value in wanted.items():
+            if present.get(field) != value:
+                issues.append(
+                    "alpha_hunter inventory mismatch: "
+                    + namespace + "." + field + " expected=" + str(value)
+                    + " actual=" + str(present.get(field)))
+    return issues
+
+
 def isolated_connection():
     if os.environ.get("AH_P0_LOCAL_POSTGREST_ONLY") != "1":
         raise RuntimeError("Refusing non-isolated catalog inspection")
@@ -67,6 +92,32 @@ def run():
     expected = json.loads(MANIFEST.read_text(encoding="utf-8"))
     issues = []
     with isolated_connection() as conn:
+        # A candidate-only restore is dangerous: it could match selected
+        # trigger hashes while omitting many other Alpha Hunter objects.
+        # Inventory covers ALL alpha_hunter_ relations in public and private.
+        inventory_rows = conn.execute("""
+            SELECT n.nspname,
+                   COUNT(*)::integer AS total,
+                   COUNT(*) FILTER (WHERE c.relkind IN ('r','p'))::integer AS tables,
+                   COUNT(*) FILTER (WHERE c.relkind='v')::integer AS views,
+                   (SELECT COUNT(*)::integer FROM pg_trigger t
+                     JOIN pg_class c2 ON c2.oid=t.tgrelid
+                     JOIN pg_namespace n2 ON n2.oid=c2.relnamespace
+                     WHERE NOT t.tgisinternal AND t.tgenabled IN ('O','A')
+                       AND n2.nspname=n.nspname
+                       AND c2.relname LIKE 'alpha_hunter_%') AS enabled_hooks
+            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname IN ('public','private')
+              AND c.relname LIKE 'alpha_hunter_%'
+              AND c.relkind IN ('r','p','v','m')
+            GROUP BY n.nspname
+        """).fetchall()
+        observed_inventory = {
+            namespace: {"relations":total,"tables":tables,"views":views,
+                        "enabled_hooks":hooks}
+            for namespace,total,tables,views,hooks in inventory_rows
+        }
+        issues.extend(inventory_failures(observed_inventory))
         rows = conn.execute("""
             SELECT c.relname,
                    count(*)::integer AS ncols,
@@ -234,6 +285,9 @@ def run():
         "clone_pg17_only":True,
         "schema_first_order_fingerprints":len(expected["canonical_tables"]),
         "trigger_first_order_fingerprints":len(expected["first_order_triggers"]),
+        "inventory_complete_count_only":not inventory_failures(observed_inventory),
+        "inventory_scope_counts":observed_inventory,
+        "inventory_objects_exact_identity_verified":False,
         "candidate_relation_count":len(graph["relations"]),
         "candidate_trigger_count":len(graph["trigger_metadata"]),
         "candidate_trigger_signatures_match":not issues,
