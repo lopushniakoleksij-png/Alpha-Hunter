@@ -8,21 +8,32 @@ on:
       - 'tests/v8_browser_verify_20261105.py'
       - 'tests/v8_accessibility_verify_20261105.py'
       - 'tests/test_v8_frontend_contract_20261105.py'
+      - '.github/workflows/v8-browser-verification.yml'
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   offline-browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Prebuilt, version-pinned browser & OS dependencies. Avoid repeated apt
+    # downloads that exhausted the prior 25-minute CI budget before testing.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.64.1-noble
+      options: --user 1001
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version-file: '.python-version'
-      - run: python -m pip install -r requirements.txt pytest playwright
-      - run: python -m playwright install --with-deps chromium webkit
-      - run: python tests/v8_browser_verify_20261105.py
+          node-version: '22'
+      - name: Install exact matching Playwright Python driver
+        run: python -m pip install --no-cache-dir -r requirements.txt pytest playwright==1.64.1
+      - name: Verify pinned browser installation offline (no apt)
+        run: |
+          python -m playwright --version
+          test -d /ms-playwright
+      - name: Chromium seven-width synthetic Flask interface
+        run: python tests/v8_browser_verify_20261105.py
       - name: Install pinned offline WCAG checker
         run: npm install --no-save --package-lock=false axe-core@4.10.3
       - name: Chromium and WebKit WCAG AA verification
