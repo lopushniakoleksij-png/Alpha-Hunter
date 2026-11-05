@@ -59,3 +59,30 @@ The verifier checks exact first-order fingerprints and selected public/private c
 A qualified independent DBA must approve the exact cloned execution evidence; **a different qualified independent security reviewer** must approve effective permissions and paper/side-effect safety. Each reviewer should file their GitHub review and link sanitized evidence in [issue #420](https://github.com/lopushniakoleksij-png/Alpha-Hunter/issues/420), identifying the **exact immutable tested commit SHA** and their role/qualification. The author, assistant, bots or CI cannot self-sign. Source-custody, paper-risk, operations and owner release authority are separate gates.
 
 Until those reviews exist, **PR #418 and #419 stay DRAFT and UNMERGED. No production scanner change, no actual migration, no grant changes, no extra spending, no live-order authority. PRODUCTION NO-GO.**
+
+
+## 6. DBA-only real-trigger SQL benchmark runner (new; never invoked on production)
+
+The optional file `ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py` runs **only after the existing exact PG17 fingerprint verifier returns an exact catalog match**, the DBA has installed the candidate v03 RPC *only in the isolated clone*, and both isolated-egress and qualified DBA attestations are explicitly present. The runner refuses known live cloud/exchange credentials and unapproved connections. Private JSON fixture files must be mode 0600 and stored outside this public repository, in a 0700 directory.
+
+Prepare `sanitized_61.json`, `sanitized_62.json`, and `sanitized_63.json` as full *five-stage* argument dictionaries: keys `p_parent`, `p_children`, `p_signals`, `p_features`, `p_readiness`. For each size, the parent `symbol_count`, all symbol sets, `run_id`, payload identity and all `trade_permission=false` flags must be correct. **Never use production run IDs, signal IDs or actual account/market data**. The runner requires representative clone `reltuples` estimates (at least 150k symbol snapshots and 1m strategy observations) and locally recreates no records: the reviewer must seed approved sanitized data.
+
+On a DBA-controlled machine already network-isolated and using only a disposable local PG17 database, the operator may run:
+
+```sh
+export AH_P0_LOCAL_POSTGREST_ONLY=1
+export AH_P0_PRIVATE_CLONE_APPROVED=1
+export AH_P0_EGRESS_BLOCKED=1
+export AH_P0_PG_DSN='host=127.0.0.1 port=5432 dbname=isolated_research user=postgres'
+export AH_P0_PRIVATE_FIXTURES_DIR=/private/p0-fixtures
+export AH_P0_PRIVATE_EVIDENCE_DIR=/private/p0-metrics
+python ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py
+```
+
+These are **operator attestations**, not technical proof that the network firewall blocks egress. Create the private directories with 0700 permissions and keep their contents outside GitHub. `PG*` libpq overrides or any cloud/exchange secret in the environment are forbidden. The candidate research RPC must be installed on this clone by the approved DBA *after* comparing the original schema and not on the live project.
+
+The script measures PostgreSQL direct SQL/RPC round-trip time; it does **not** measure production HTTP Supabase gateway latency. It records real local **per-scan** function-call totals/self-time via PostgreSQL `pg_stat_xact_user_functions` with `track_functions=all`, tests counts of five canonical stages and directly traceable private paper-order tables, checks zero enabled trade permissions, then rolls back every sample and verifies no residual rows. It uses 30 sampled transactions each at 61, 62 and 63 symbols plus two discarded warmups each. It stores sanitised metric aggregates only in `/private/p0-metrics/p0_exact_clone_private_metrics.json`.
+
+**Measurement boundary:** The per-function p50/p95/p99 represent distribution of total *per-scan function self-time*, **not** percentiles of individual trigger invocations when the function fires multiple times per scan. The DBA must separately capture per-invocation trigger timing if the original acceptance criterion requires it (for example an approved `auto_explain` nested-call analysis on the clone). `pg_stat_xact_user_functions` excludes untracked/inlined functions, and transaction rollback cannot prove external nontransactional side effects did not occur. If any generated private table cannot be traced by run_id or signal_id, or the function stats are missing, the runner fails closed.
+
+**Required additional acceptance outside this runner:** full original owner/role parity; security-reviewed JWT gateway/RLS checks and truncated-grant risk; independent concurrent multi-client 61/62/63 benchmarking; SQLSTATE/timeout/fault cases and paper-order reconciliation; verified dynamic function/trigger dependency closure; external-side-effect checks; DBA signature and a different independent security signature. The script reports **PRODUCTION NO-GO even when successful** and is not allowed to self-approve.
