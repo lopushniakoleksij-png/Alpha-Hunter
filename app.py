@@ -1830,7 +1830,7 @@ PAGE = r"""
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="300">
+<!-- V8: avoid forced timed page refresh. User controls when evidence reloads. -->
 <title>Alpha Hunter V8 — Research Terminal</title>
 <style>
 :root{--bg:#071018;--panel:#0d1822;--line:#1c2c39;--text:#e8f0f6;--muted:#8ea1b2;--green:#24d18f;--red:#ff6474;--amber:#ffbf47;--blue:#4db6ff}
@@ -1870,7 +1870,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V8 · Market Intelligence</h1><div class="sub">Evidence-first market research. Paper-only, with real-order execution disabled.</div><div class="v8-runtime-note">Underlying engine {{ data.build.version }} · Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start timestamp){% endif %}</div></div>
-    <div><div class="toolbar"><div class="status">Latest accepted scan: {{ data.updated or 'Unavailable' }}</div></div><div class="v8-runtime-note">Protected scheduled scanner · no manual scan action available in V8</div></div>
+    <div><div class="toolbar"><div class="status">Latest accepted scan: {{ data.updated or 'Unavailable' }}</div><a class="v8-reset" href="/" aria-label="Refresh dashboard from the latest accepted canonical scan">Refresh view</a></div><div class="v8-runtime-note">Refresh reads saved canonical evidence only. The protected scanner runs separately; there is no manual scanner action in V8.</div></div>
   </div>
 
   <div class="v8-workspace" id="v8-workspace">
