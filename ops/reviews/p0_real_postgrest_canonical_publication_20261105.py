@@ -835,6 +835,67 @@ def test_disposable_latency_and_concurrency(conn, report):
     }
 
 
+
+def test_transaction_local_function_tracking(dsn, report):
+    """Prove transaction-scoped trigger timing visibility on disposable DB.
+
+    The tracked functions are synthetic and not the production private graph.
+    A rollback prevents persistent paper or canonical rows from this test.
+    PostgreSQL's pg_stat_xact_user_functions measures per-scan function call
+    totals; per-call percentiles cannot be inferred when calls > 1.
+    """
+    run_id = "synthetic-xact-trigger-telemetry"
+    capture = CaptureSchema()
+    capture.save_snapshot(snapshot(run_id, 17))
+    args = [json.dumps(capture.captured[table][0] if table == TABLES[0]
+                       else capture.captured[table], separators=(",", ":"))
+            for table in TABLES]
+    query = ("SELECT public.ah_p0_research_atomic_canonical_v03("
+             "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb)")
+    observed = []
+    with psycopg.connect(dsn) as tx:
+        assert tx.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
+        tx.execute("SET LOCAL track_functions = 'all'")
+        tx.execute("SET LOCAL statement_timeout = '15s'")
+        assert tx.execute("SHOW track_functions").fetchone()[0] == "all"
+        start = time.perf_counter()
+        value = tx.execute(query, args).fetchone()[0]
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 3)
+        assert value["status"] == "VERIFIED"
+        assert_counts(tx, run_id, parent=1, child=17, signal=17,
+                      feature=17, readiness=17, obs=170)
+        observed = tx.execute("""
+            SELECT s.schemaname,s.funcname,s.calls,s.total_time,s.self_time
+            FROM pg_stat_xact_user_functions s
+            WHERE s.calls>0 AND EXISTS (
+              SELECT 1 FROM pg_trigger t
+              WHERE t.tgfoid=s.funcid AND NOT t.tgisinternal
+            ) ORDER BY s.schemaname,s.funcname
+        """).fetchall()
+        assert observed, "No transaction-local trigger timing samples"
+        assert any(x[1] == "p0_test_symbol_trigger" and x[2] == 17
+                   for x in observed), observed
+        tx.rollback()
+    with psycopg.connect(dsn, autocommit=True) as verify:
+        assert_counts(verify, run_id, parent=0, child=0, signal=0,
+                      feature=0, readiness=0, obs=0)
+    report["synthetic_transaction_local_trigger_instrumentation"] = {
+        "proven_local_instrumentation": True,
+        "pg_stat_xact_user_functions_available": True,
+        "synthetic_trigger_samples": [
+            {"schema":schema, "function_name":name, "calls":calls,
+             "total_time_ms":round(total, 3), "self_time_ms":round(self_time, 3)}
+            for schema,name,calls,total,self_time in observed
+        ],
+        "in_transaction_rpc_ms": elapsed_ms,
+        "transaction_rolled_back": True,
+        "persistent_stage_rows_after_rollback": 0,
+        "production_function_p95_p99_verified": False,
+        "production_trigger_or_schema_equivalence": False,
+        "release_authority": False,
+    }
+
+
 def main():
     dsn = assert_disposable()
     disable_unrelated_paper_stage()
@@ -857,6 +918,7 @@ def main():
         test_atomic_rpc_lost_ack_readback(conn, report)
         test_real_http_role_matrix(conn, report)
         test_disposable_truncate_security_gap(dsn, report)
+        test_transaction_local_function_tracking(dsn, report)
         test_disposable_latency_and_concurrency(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
