@@ -119,6 +119,19 @@ def main():
                 assert response.status == 200
                 assert response.headers.get("x-alpha-hunter-evidence-state") == "INCOMPLETE"
                 assert "LATEST CANONICAL SCAN INCOMPLETE" in page.locator("body").inner_text()
+                assert page.locator("body.v8-body.v8-enhanced").count() == 1
+                assert page.locator("#v8-view-overview").is_visible()
+                nav = ".v8-bottom-nav" if 390 < 900 else ".v8-rail"
+                page.locator(f'{nav} [data-v8-tab="research"]').click()
+                assert page.locator("#v8-view-research").is_visible()
+                assert "Current signals withheld" in page.locator("#v8-view-research").inner_text()
+                page.locator(f'{nav} [data-v8-tab="results"]').click()
+                assert page.locator("#v8-view-results").is_visible()
+                assert "Performance evidence temporarily unavailable" in page.locator("#v8-view-results").inner_text()
+                page.locator(f'{nav} [data-v8-tab="system"]').click()
+                assert page.locator("#v8-view-system").is_visible()
+                page.locator(f'{nav} [data-v8-tab="overview"]').click()
+                assert page.locator("#v8-view-overview").is_visible()
                 assert page.get_by_role("link", name="Check latest canonical scan again").is_visible()
                 button = page.locator("#v8-auto-retry")
                 assert button.inner_text() == "Enable auto retry"
