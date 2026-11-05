@@ -246,6 +246,12 @@ def test_v8_recovery_keeps_responsive_navigation_and_safety_boundary(monkeypatch
     assert 'data-v8-section="research"' in html
     assert 'data-v8-section="overview"' in html
     assert "LATEST CANONICAL SCAN INCOMPLETE" in html
+    assert 'class="card v8-recovery-card"' in html
+    assert 'id="v8-scan-warning"' in html
+    assert '<details class="v8-recovery-details">' in html
+    assert "<summary>Recovery and retry details</summary>" in html
+    assert "The scanner reported a canonical run" in html
+    assert "Alpha Hunter signals are withheld" in html
     assert "Current signals withheld" in html
     assert "HISTORICAL ONLY" in html
     assert "/static/v8.js" in html and "/static/v8.css" in html
@@ -268,6 +274,9 @@ def test_v8_outage_page_preserves_same_navigation_and_no_trades(monkeypatch):
     assert response.status_code == 503
     assert 'id="v8-workspace"' in html
     assert "LIVE DATA TEMPORARILY UNAVAILABLE" in html
+    assert 'id="v8-scan-warning"' in html
+    assert "Recovery and retry details" in html
+    assert "You can refresh saved evidence now" in html
     assert "Current signals withheld" in html
     assert "No exchange-order authority" in html or "no exchange-order authority" in html
     assert "Check latest scan" in html
