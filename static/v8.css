@@ -192,7 +192,7 @@ body.v8-body {
 .v8-system-links a {border:1px solid #36546b;background:#10283b;border-radius:10px;padding:12px;min-height:44px;display:inline-flex;align-items:center;font-size:14px}
 .v8-body .v8-ops-table-scroll {max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .v8-body .v8-ops-table-scroll table {min-width:720px}
-.v8-bottom-nav {padding-bottom:env(safe-area-inset-bottom)}
+.v8-bottom-nav {padding-bottom:max(24px, env(safe-area-inset-bottom, 0px))}
 .v8-body .v8-live-status {color:var(--v8-green)}
 .v8-body .v8-incomplete-status {color:var(--v8-amber)}
 .v8-body .v8-archive-notice{color:var(--v8-muted);font-size:13px}
