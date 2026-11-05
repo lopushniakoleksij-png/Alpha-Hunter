@@ -2844,7 +2844,7 @@ ARCHIVED_RESEARCH_CARD = """
     }());
     </script>
 """
-ARCHIVE_INSERT_ANCHOR = '    <div class="card" aria-label="Bitget public reference market">'
+ARCHIVE_INSERT_ANCHOR = '    <div class="card" data-v8-section="overview" aria-label="Bitget public reference market">'
 def _attach_historical_status(page: str) -> str:
     return page.replace(ARCHIVE_INSERT_ANCHOR, ARCHIVED_RESEARCH_CARD + ARCHIVE_INSERT_ANCHOR, 1)
 
