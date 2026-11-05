@@ -122,7 +122,7 @@ body.v8-body {
   width:100%;height:44px;min-width:0;padding:8px 10px;border:1px solid #37546a;
   border-radius:10px;background:#081724;color:var(--v8-text);font-size:14px
 }
-.v8-reset {height:44px;border-radius:10px;padding:9px 14px;background:#183147;
+.v8-reset {display:inline-flex;align-items:center;justify-content:center;min-height:44px;height:auto;text-decoration:none;border-radius:10px;padding:9px 14px;background:#183147;
   border:1px solid #36546b;color:var(--v8-text);cursor:pointer}
 .v8-count {display:block;color:var(--v8-muted);font-size:13px;margin-bottom:10px}
 .v8-coverage {margin:8px 0 12px}
