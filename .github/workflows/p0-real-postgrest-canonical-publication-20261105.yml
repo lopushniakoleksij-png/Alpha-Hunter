@@ -1,5 +1,12 @@
 name: P0 real HTTP PostgREST canonical publication 16 17 (isolated)
 on:
+  pull_request:
+    branches:
+      - research/p0-atomic-rpc-lost-ack-20261105-0544
+    paths:
+      - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
+      - 'research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql'
+      - '.github/workflows/p0-real-postgrest-canonical-publication-20261105.yml'
   push:
     branches:
       - research/p0-bounded-child-write-exit-safety-20261105
