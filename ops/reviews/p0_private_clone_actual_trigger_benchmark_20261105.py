@@ -38,8 +38,15 @@ RPC_SIGNATURE = "public.ah_p0_research_atomic_canonical_v03(jsonb,jsonb,jsonb,js
 CLONE_MARKER = "P0_PRIVATE_DISPOSABLE_CLONE_EGRESS_DISABLED"
 
 
+def require(condition, message):
+    """Runtime safety guard unaffected by python -O optimisation."""
+    if not condition:
+        raise RuntimeError(message)
+
+
 def percentile(values, percentage):
-    assert len(values) >= 1 and 0 <= percentage <= 100
+    if not values or not 0 <= percentage <= 100:
+        raise ValueError("Invalid percentile inputs")
     a = sorted(float(x) for x in values)
     pos = (len(a) - 1) * percentage / 100
     lo = int(pos)
@@ -154,8 +161,10 @@ def traced_rows(conn, schema, table, run_id, signal_ids):
 
 
 def check_clone_preflight(conn, fixtures):
-    assert conn.execute("SHOW session_replication_role").fetchone()[0] == "origin"
-    assert conn.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
+    require(conn.execute("SHOW session_replication_role").fetchone()[0] == "origin",
+            "Clone trigger replication mode disabled")
+    require(conn.execute("SELECT current_database()").fetchone()[0] == "isolated_research",
+            "Clone database identity changed")
     major = int(conn.execute("SHOW server_version_num").fetchone()[0])
     if not 170000 <= major < 180000:
         raise RuntimeError("DBA benchmark requires PostgreSQL major version 17")
@@ -169,7 +178,8 @@ def check_clone_preflight(conn, fixtures):
         "WHERE marker=%s)",(CLONE_MARKER,)).fetchone()[0]
     if ready is not True:
         raise RuntimeError("Disposable clone is not explicitly attested")
-    assert conn.execute("SELECT to_regprocedure(%s)",(RPC_SIGNATURE,)).fetchone()[0] is not None
+    require(conn.execute("SELECT to_regprocedure(%s)",(RPC_SIGNATURE,)).fetchone()[0] is not None,
+            "Required candidate RPC not installed in isolated clone")
     # Refuse a tiny empty fixture as evidence for a production-volume workload.
     samples = dict(conn.execute("""
         SELECT c.relname,c.reltuples::bigint
@@ -199,10 +209,13 @@ def one_run(params, data, size):
     with psycopg.connect(**params) as conn:
         conn.execute("SET LOCAL statement_timeout = '15s'")
         conn.execute("SET LOCAL track_functions = 'all'")
-        assert conn.execute("SHOW session_replication_role").fetchone()[0] == "origin"
-        assert conn.execute("SHOW track_functions").fetchone()[0] == "all"
+        require(conn.execute("SHOW session_replication_role").fetchone()[0] == "origin",
+                "Trigger execution disabled or altered in DBA sample")
+        require(conn.execute("SHOW track_functions").fetchone()[0] == "all",
+                "Trigger function measurement disabled")
         for table in PAPER:
-            assert traced_rows(conn,"private",table,run_id,ids) == 0
+            require(traced_rows(conn,"private",table,run_id,ids) == 0,
+                    "Preexisting paper-order rows; refusing DBA sample: " + table)
         args = [json.dumps(data[x],separators=(",", ":")) for x in GROUPS]
         ts = time.perf_counter()
         result = conn.execute(
@@ -210,20 +223,22 @@ def one_run(params, data, size):
             "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb)",args
         ).fetchone()[0]
         ms = round((time.perf_counter()-ts)*1000,3)
-        assert result["status"] == "VERIFIED"
+        require(isinstance(result,dict) and result.get("status") == "VERIFIED",
+                "Atomic candidate RPC failed or returned invalid status")
         for table in STAGES:
-            assert traced_rows(conn,"public",table,run_id,ids) == (
+            require(traced_rows(conn,"public",table,run_id,ids) == (
                 1 if table == STAGES[0] else size
-            ), "Unexpected canonical stage count"
+            ), "Unexpected canonical stage count: " + table)
         private_counts = {
             table:traced_rows(conn,"private",table,run_id,ids) for table in PAPER
         }
         for table in STAGES[1:]:
-            assert conn.execute(
+            enabled = conn.execute(
                 sql.SQL("SELECT count(*) FROM public.{} "
                         "WHERE run_id=%s AND trade_permission=true").format(
                     sql.Identifier(table)), (run_id,)
-            ).fetchone()[0] == 0, "Trade permission unexpectedly enabled"
+            ).fetchone()[0]
+            require(enabled == 0, "Trade permission unexpectedly enabled: " + table)
         stats = conn.execute("""
             SELECT s.schemaname,s.funcname,s.calls,s.total_time,s.self_time
             FROM pg_stat_xact_user_functions s
@@ -248,9 +263,11 @@ def one_run(params, data, size):
     # Independent transaction: verify nothing has persisted.
     with psycopg.connect(**params, autocommit=True) as check:
         for table in STAGES:
-            assert traced_rows(check,"public",table,run_id,ids) == 0
+            require(traced_rows(check,"public",table,run_id,ids) == 0,
+                    "Rollback left canonical rows: " + table)
         for table in PAPER:
-            assert traced_rows(check,"private",table,run_id,ids) == 0
+            require(traced_rows(check,"private",table,run_id,ids) == 0,
+                    "Rollback left paper-order rows: " + table)
     return observed
 
 
