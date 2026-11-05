@@ -15,6 +15,7 @@ from pathlib import Path
 import psycopg
 
 MANIFEST = Path("ops/reviews/p0_readonly_production_fingerprints_20261105.json")
+CANDIDATES = Path("ops/reviews/p0_production_trigger_dependency_candidates_20261105.json")
 FORBIDDEN = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
              "RENDER_API_KEY", "BITGET_API_KEY", "BITGET_SECRET_KEY")
 
@@ -119,12 +120,56 @@ def run():
                       t["function_sha256"],"O")
             if observed != wanted:
                 issues.append("trigger/function fingerprint drift: " + t["trigger"])
-    status = "FIRST_ORDER_MATCH_ONLY" if not issues else "FIRST_ORDER_MISMATCH_NO_GO"
+        # Additional metadata-only custody check for the broader candidate
+        # trigger closure. This DOES NOT execute the trigger bodies.
+        graph = json.loads(CANDIDATES.read_text(encoding="utf-8"))
+        names = [t["name"] for t in graph["relations"]]
+        rows = conn.execute("""
+            SELECT c.relname,c.relrowsecurity
+            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname='public' AND c.relname = ANY(%s)
+        """, (names,)).fetchall()
+        actual_relations = dict(rows)
+        if len(actual_relations) != len(graph["relations"]):
+            issues.append("candidate graph relation membership drift")
+        for expected_rel in graph["relations"]:
+            if actual_relations.get(expected_rel["name"]) != expected_rel["rls_enabled"]:
+                issues.append("candidate graph RLS drift: " + expected_rel["name"])
+        rows = conn.execute("""
+            SELECT c.relname, t.tgname, nf.nspname||'.'||p.proname,
+                   t.tgtype::integer, t.tgenabled, p.prosecdef,
+                   pg_get_functiondef(p.oid)
+            FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+            JOIN pg_namespace n ON n.oid=c.relnamespace
+            JOIN pg_proc p ON p.oid=t.tgfoid
+            JOIN pg_namespace nf ON nf.oid=p.pronamespace
+            WHERE NOT t.tgisinternal AND n.nspname='public'
+              AND t.tgenabled IN ('O','A') AND c.relname = ANY(%s)
+        """, (names,)).fetchall()
+        actual_hooks = {}
+        for tbl,tg,fn,bits,enabled,definer,body in rows:
+            events = ("I" if bits & 4 else "") + ("U" if bits & 16 else "")                      + ("D" if bits & 8 else "")
+            actual_hooks[(tbl,tg)] = (fn, events, enabled, definer,
+                                      hashlib.md5(body.encode("utf-8")).hexdigest())
+        expected_hooks = {(x["table"],x["trigger"]): (
+            x["function_name"],x["events"],x["enabled"],
+            x["security_definer"],x["function_md5"])
+            for x in graph["trigger_metadata"]}
+        if set(actual_hooks) != set(expected_hooks):
+            issues.append("candidate graph enabled trigger membership drift")
+        for (tbl,tg), wanted in expected_hooks.items():
+            if actual_hooks.get((tbl,tg)) != wanted:
+                issues.append("candidate graph trigger signature drift: " + tbl + "." + tg)
+    status = "CATALOG_FINGERPRINT_MATCH_ONLY" if not issues else "CATALOG_MISMATCH_NO_GO"
     print(json.dumps({
         "status":status,
         "clone_pg17_only":True,
         "schema_first_order_fingerprints":len(expected["canonical_tables"]),
         "trigger_first_order_fingerprints":len(expected["first_order_triggers"]),
+        "candidate_relation_count":len(graph["relations"]),
+        "candidate_trigger_count":len(graph["trigger_metadata"]),
+        "candidate_trigger_signatures_match":not issues,
+        "candidate_edges_executable_verified":False,
         "issues":issues,
         "transitive_production_graph_verified":False,
         "real_workload_performance_verified":False,
