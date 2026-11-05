@@ -96,11 +96,11 @@
     const wrap = make("div", "v8-detail-field");
     const name = make("dt", "", label);
     const desc = make("dd", "", showExact ? formatDisplayPrice(raw) : (raw || "—"));
-    wrap.append(name, desc);
     if (showExact && raw && raw !== "—") {
       const exact = make("span", "v8-exact", "Exact: " + raw);
-      wrap.append(exact);
+      desc.appendChild(exact);
     }
+    wrap.append(name, desc);
     return wrap;
   }
   function buildDetail(rec) {
@@ -277,6 +277,10 @@
   for (const table of document.querySelectorAll("table:not(.v8-strategy-table)")) {
     if (table.parentElement?.classList.contains("v8-ops-table-scroll")) continue;
     const wrapper = make("div", "v8-ops-table-scroll");
+    wrapper.tabIndex = 0;
+    wrapper.setAttribute("role", "region");
+    const heading = table.closest(".panel")?.querySelector("h2")?.textContent?.trim();
+    wrapper.setAttribute("aria-label", (heading || "Research data") + " — scrollable table");
     table.parentNode?.insertBefore(wrapper, table);
     wrapper.appendChild(table);
   }
