@@ -300,3 +300,22 @@ body.v8-body {
     font-size:14px;line-height:1.48
   }
 }
+
+
+/* Recovery results action: an inline bordered anchor wrapped across lines
+ * and drew a horizontal line through its own label on narrow iPhones. */
+.v8-body .v8-report-link {
+  display:inline-flex;align-items:center;justify-content:space-between;gap:12px;
+  max-width:100%;min-height:48px;padding:11px 15px;
+  border:1px solid #47738f;border-radius:11px;
+  background:#183247;color:var(--v8-blue);text-decoration:none;
+  font-size:14px;font-weight:650;line-height:1.4;overflow-wrap:anywhere;
+}
+.v8-body .v8-report-link:hover {background:#203e54;text-decoration:underline}
+.v8-body .v8-report-link span{flex:none;font-size:17px}
+.v8-body .v8-report-disclaimer{font-size:13px;line-height:1.5;margin:10px 0 0}
+@media(max-width:430px){
+  .v8-body .v8-report-link{display:flex;width:100%}
+  .v8-body .v8-recovery-intro h1{font-size:clamp(23px,6.4vw,27px);line-height:1.18}
+  .v8-body .v8-recovery-intro{margin-bottom:9px}
+}
