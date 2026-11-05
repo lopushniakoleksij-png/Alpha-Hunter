@@ -714,6 +714,46 @@ def _p0_rpc_benchmark_post(size: int, label: str) -> tuple[float, str]:
     return round(ms, 3), label
 
 
+def test_disposable_truncate_security_gap(dsn, report):
+    """Show that RLS does not constrain granted SQL TRUNCATE in a local DB.
+
+    This probe uses an independent temporary test table in a transaction that
+    is rolled back. It is NOT evidence of an exposed production HTTP endpoint.
+    """
+    with psycopg.connect(dsn) as probe:
+        assert probe.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
+        probe.execute("CREATE TABLE public.p0_rls_truncate_probe (id integer PRIMARY KEY)")
+        probe.execute("ALTER TABLE public.p0_rls_truncate_probe ENABLE ROW LEVEL SECURITY")
+        probe.execute("GRANT SELECT, TRUNCATE ON public.p0_rls_truncate_probe "
+                      "TO anon, authenticated")
+        outcomes = {}
+        for role in ("anon", "authenticated"):
+            probe.execute("INSERT INTO public.p0_rls_truncate_probe VALUES (1)")
+            assert probe.execute("SELECT COUNT(*) FROM public.p0_rls_truncate_probe"
+                                 ).fetchone()[0] == 1
+            probe.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+            assert probe.execute("SELECT COUNT(*) FROM public.p0_rls_truncate_probe"
+                                 ).fetchone()[0] == 0, role
+            # Despite an empty RLS-visible SELECT, TRUNCATE succeeds because
+            # it is governed by the table-level TRUNCATE grant, not row policy.
+            probe.execute("TRUNCATE TABLE public.p0_rls_truncate_probe")
+            probe.execute("RESET ROLE")
+            assert probe.execute("SELECT COUNT(*) FROM public.p0_rls_truncate_probe"
+                                 ).fetchone()[0] == 0, role
+            outcomes[role] = {
+                "rls_select_denied": True,
+                "sql_truncate_succeeded_under_grant": True,
+            }
+        probe.rollback()
+    report["isolated_rls_truncate_gap_probe"] = {
+        "database": "local disposable PostgreSQL only",
+        "roles": outcomes,
+        "production_http_truncate_exposure_proven": False,
+        "production_grants_modified": False,
+        "release_decision": "NO-GO pending DBA/security least-privilege assessment",
+    }
+
+
 def test_disposable_latency_and_concurrency(conn, report):
     """Measured HTTP time; fixture triggers are synthetic, not production."""
     results = {}
@@ -816,6 +856,7 @@ def main():
         test_atomic_five_stage_rpc(conn, report)
         test_atomic_rpc_lost_ack_readback(conn, report)
         test_real_http_role_matrix(conn, report)
+        test_disposable_truncate_security_gap(dsn, report)
         test_disposable_latency_and_concurrency(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
