@@ -2649,16 +2649,19 @@ DASHBOARD_RECOVERY_PAGE = """
           </div>
         </section>
       </div>
-    <div class="card" data-v8-section="overview">
-      <div class="warn">LIVE DATA TEMPORARILY UNAVAILABLE</div>
-      <p class="muted">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
-      <p class="muted">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
-      <p class="muted">You can refresh saved evidence now or enable automatic retries every 10 seconds. Auto retry can be paused at any time.</p>
+    <div class="card v8-recovery-card" data-v8-section="overview" aria-labelledby="v8-scan-warning">
+      <div class="warn" id="v8-scan-warning">LIVE DATA TEMPORARILY UNAVAILABLE</div>
+      <p class="muted v8-recovery-summary">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
+      <p class="muted v8-recovery-limits">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
       <div class="v8-retry-controls" role="group" aria-label="Dashboard recovery">
         <a href="/" aria-label="Check latest canonical scan again">Check latest scan</a>
         <button type="button" id="v8-auto-retry" aria-pressed="false">Enable auto retry</button>
       </div>
-      <p class="muted">The warning remains visible until the latest complete canonical scan is verified.</p>
+      <details class="v8-recovery-details">
+        <summary>Recovery and retry details</summary>
+        <p class="muted">You can refresh saved evidence now or enable automatic retries every 10 seconds. Auto retry can be paused at any time.</p>
+        <p class="muted">The warning remains visible until the latest complete canonical scan is verified.</p>
+      </details>
     </div>
     <div class="card" data-v8-section="overview" aria-label="Bitget public reference market">
       <h2 style="margin:0 0 10px;font-size:21px">Bitget public market prices</h2>
