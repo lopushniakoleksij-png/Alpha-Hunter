@@ -47,6 +47,20 @@ class PrivateCloneGuardTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             bench.validate_fixture(v,3)
 
+    def test_refuse_mismatched_or_duplicate_signal_ids(self):
+        v=fixture()
+        v["p_features"][0]["signal_id"]="NON_MATCHING"
+        with self.assertRaisesRegex(RuntimeError,"signal IDs"):
+            bench.validate_fixture(v,3)
+        v=fixture()
+        v["p_signals"][1]["signal_id"]=v["p_signals"][0]["signal_id"]
+        with self.assertRaisesRegex(RuntimeError,"signal IDs"):
+            bench.validate_fixture(v,3)
+        v=fixture()
+        del v["p_signals"][0]["signal_id"]
+        with self.assertRaisesRegex(RuntimeError,"signal_id"):
+            bench.validate_fixture(v,3)
+
     def test_refuse_inconsistent_stage_symbol_sets(self):
         v=fixture()
         v["p_children"][0]["symbol"]="MISMATCHUSDT"
