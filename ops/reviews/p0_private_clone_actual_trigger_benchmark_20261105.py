@@ -83,11 +83,13 @@ def validate_fixture(data, size):
     run_id = parent.get("run_id")
     if (not isinstance(run_id, str) or len(run_id) < 8
             or parent["payload"].get("run_id") != run_id
-            or parent.get("symbol_count") != size):
+            or type(parent.get("symbol_count")) is not int
+            or parent["symbol_count"] != size):
         raise RuntimeError("Invalid fixture run identity or count")
     if parent["payload"].get("_canonical_publication_state") is not None:
         raise RuntimeError("Fixture must not be pre-marked verified")
     seen = []
+    signal_ids = []
     for group in GROUPS[1:]:
         batch = data[group]
         if not isinstance(batch, list) or len(batch) != size:
@@ -96,12 +98,22 @@ def validate_fixture(data, size):
         for item in batch:
             if (not isinstance(item, dict) or item.get("run_id") != run_id
                     or item.get("trade_permission") is not False
-                    or not isinstance(item.get("symbol"), str)):
+                    or not isinstance(item.get("symbol"), str)
+                    or not item["symbol"].strip()
+                    or item["symbol"] != item["symbol"].strip()):
                 raise RuntimeError("Invalid fixture symbol or paper-only flag")
             symbols.append(item["symbol"])
+            if group == "p_signals":
+                signal_id = item.get("signal_id")
+                if (not isinstance(signal_id, str) or not signal_id.strip()
+                        or signal_id != signal_id.strip()):
+                    raise RuntimeError("Invalid private fixture signal_id")
+                signal_ids.append(signal_id)
         if len(set(symbols)) != size:
             raise RuntimeError("Duplicate fixture symbols")
         seen.append(set(symbols))
+    if len(set(signal_ids)) != size:
+        raise RuntimeError("Duplicate private fixture signal IDs")
     if any(x != seen[0] for x in seen[1:]):
         raise RuntimeError("Fixture stage symbol sets differ")
     return run_id
