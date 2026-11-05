@@ -120,7 +120,8 @@ def main():
                 assert response.headers.get("x-alpha-hunter-evidence-state") == "INCOMPLETE"
                 assert "LATEST CANONICAL SCAN INCOMPLETE" in page.locator("body").inner_text()
                 assert page.get_by_role("link", name="Check latest canonical scan again").is_visible()
-                button = page.get_by_role("button", name="Enable auto retry")
+                button = page.locator("#v8-auto-retry")
+                assert button.inner_text() == "Enable auto retry"
                 assert button.get_attribute("aria-pressed") == "false"
                 audit_with_axe(page, f"{browser_name}-390-incomplete-source", axe_js)
                 button.click()
