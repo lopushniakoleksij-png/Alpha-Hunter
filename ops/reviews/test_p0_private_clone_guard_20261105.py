@@ -1,4 +1,6 @@
 """No-network defensive tests for DBA-only clone workload harness."""
+import ast
+import subprocess
 import importlib.util
 import os
 import sys
@@ -102,6 +104,22 @@ class PrivateCloneGuardTests(unittest.TestCase):
                 raise AssertionError("Unexpected SQL past missing-sentinel gate")
         with self.assertRaisesRegex(RuntimeError,"sentinel absent"):
             bench.check_clone_preflight(FakeReadonlyClone(),{})
+
+    def test_no_assert_statements_in_dba_benchmark(self):
+        # All authorization, measured-count and rollback guards must execute
+        # even if a reviewer mistakenly runs Python with -O / PYTHONOPTIMIZE.
+        filename = ROOT/"p0_private_clone_actual_trigger_benchmark_20261105.py"
+        tree = ast.parse(filename.read_text(encoding="utf-8"))
+        self.assertFalse([n for n in ast.walk(tree) if isinstance(n, ast.Assert)])
+
+    def test_runtime_safety_guard_active_under_python_optimize(self):
+        run = subprocess.run(
+            [sys.executable,"-O","-c",
+             "from p0_private_clone_actual_trigger_benchmark_20261105 import require; "
+             "require(False,'optimisation guard remains active')"],
+            cwd=ROOT, capture_output=True,text=True,check=False,timeout=15)
+        self.assertNotEqual(run.returncode,0)
+        self.assertIn("optimisation guard remains active",run.stderr)
 
     def test_refuse_missing_approval_before_any_connection(self):
         with patch.dict(os.environ,{
