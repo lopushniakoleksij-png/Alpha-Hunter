@@ -134,6 +134,25 @@ def main():
                 assert page.locator("#v8-view-system").is_visible()
                 assert page.get_by_text("Safety Blocks").is_visible()
                 assert page.locator("#v8-view-system").get_by_role("link",name="V14 Control Tower").count() == 1
+                trust = page.locator("#v8-trust-title")
+                assert trust.is_visible()
+                assert "What Alpha Hunter does" in trust.inner_text()
+                assert page.get_by_text("Real-money order authority is disabled.").is_visible()
+                if width in (390, 1280):
+                    page.screenshot(path=str(screenshot_dir / f"system-{width}.png"),
+                                    full_page=True)
+                page.evaluate("""() => history.replaceState(null, '', '?do_not_copy=synthetic_secret#v8-system')""")
+                page.locator("#v8-copy-view-link").click()
+                page.wait_for_function("""() => {
+                  const s = document.querySelector('#v8-share-feedback')?.textContent || '';
+                  return s.includes('copied') || s.includes('Select and copy');
+                }""")
+                feedback = page.locator("#v8-share-feedback").inner_text()
+                assert "No credentials or research values included" in feedback
+                fallback = page.locator("#v8-share-manual")
+                if fallback.is_visible():
+                    assert fallback.input_value() == origin + "/#v8-system"
+                    assert "do_not_copy" not in fallback.input_value()
                 assert_no_root_overflow(page,width)
                 targets = page.evaluate("""() => {
                     const selectors = innerWidth < 900
