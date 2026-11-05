@@ -32,11 +32,11 @@ def isolated_connection():
     if "host=127.0.0.1" not in dsn or "dbname=isolated_research" not in dsn:
         raise RuntimeError("Only approved localhost isolated_research is allowed")
     connection = psycopg.connect(dsn)
+    connection.execute("SET TRANSACTION READ ONLY")
     if connection.execute("SELECT current_database()").fetchone()[0] != "isolated_research":
         raise RuntimeError("Unexpected database")
     if int(connection.execute("SHOW server_version_num").fetchone()[0]) < 170000:
         raise RuntimeError("This exact production fingerprint was taken on PostgreSQL 17")
-    connection.execute("SET TRANSACTION READ ONLY")
     return connection
 
 
