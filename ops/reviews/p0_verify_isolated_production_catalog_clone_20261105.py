@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 MANIFEST = Path("ops/reviews/p0_readonly_production_fingerprints_20261105.json")
 CANDIDATES = Path("ops/reviews/p0_production_trigger_dependency_candidates_20261105.json")
@@ -25,15 +26,34 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def validate_isolated_dsn(dsn: str) -> dict:
+    """Reject remote targets and libpq connection indirection before connecting."""
+    try:
+        params = conninfo_to_dict(dsn)
+    except Exception as exc:
+        raise RuntimeError("Invalid isolated connection configuration") from exc
+    allowed = {"host", "port", "dbname", "user", "password", "connect_timeout"}
+    if set(params) - allowed:
+        raise RuntimeError("Unexpected connection parameter in isolated DSN")
+    if params.get("host") != "127.0.0.1" or params.get("dbname") != "isolated_research":
+        raise RuntimeError("Only explicit localhost isolated_research is allowed")
+    if params.get("port", "5432") != "5432":
+        raise RuntimeError("Unexpected isolated PostgreSQL port")
+    return params
+
+
 def isolated_connection():
     if os.environ.get("AH_P0_LOCAL_POSTGREST_ONLY") != "1":
         raise RuntimeError("Refusing non-isolated catalog inspection")
     if any(os.environ.get(key) for key in FORBIDDEN):
         raise RuntimeError("Real cloud or exchange credentials are forbidden")
-    dsn = os.environ.get("AH_P0_PG_DSN", "")
-    if "host=127.0.0.1" not in dsn or "dbname=isolated_research" not in dsn:
-        raise RuntimeError("Only approved localhost isolated_research is allowed")
-    connection = psycopg.connect(dsn)
+    # Libpq can silently inherit PGHOST/PGSERVICE/PGOPTIONS and similar values.
+    # Explicitly reject these rather than trusting textual DSN substrings.
+    if any(os.environ.get(key) for key in os.environ if key.startswith("PG")
+           and key not in {"AH_P0_PG_DSN"}):
+        raise RuntimeError("Inherited libpq environment configuration is forbidden")
+    params = validate_isolated_dsn(os.environ.get("AH_P0_PG_DSN", ""))
+    connection = psycopg.connect(**params)
     connection.execute("SET TRANSACTION READ ONLY")
     if connection.execute("SELECT current_database()").fetchone()[0] != "isolated_research":
         raise RuntimeError("Unexpected database")
