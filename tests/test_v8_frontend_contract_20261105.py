@@ -99,6 +99,38 @@ def test_current_flask_dashboard_renders_approved_v8_shell_without_backend_chang
     assert "/static/v8.css" in content and "/static/v8.js" in content
 
 
+def test_v8_product_transparency_is_present_on_healthy_and_recovery_pages(monkeypatch):
+    healthy = _example_dashboard(monkeypatch).get_data(as_text=True)
+    assert 'id="v8-trust-title"' in healthy
+    assert 'id="v8-copy-view-link"' in healthy
+    assert 'id="v8-share-feedback"' in healthy
+    assert 'id="v8-share-manual"' in healthy
+    assert "Paper results and shadow scores are not verified live returns" in healthy
+    assert "independent security certification" in healthy
+    assert "Real-money order authority is disabled" in healthy
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    monkeypatch.setattr(
+        dashboard, "bounded_dashboard_payload",
+        lambda: (_ for _ in ()).throw(
+            dashboard.CanonicalSnapshotIncomplete("synthetic blocked latest scan")
+        ),
+    )
+    blocked = dashboard.app.test_client().get("/").get_data(as_text=True)
+    assert 'id="v8-trust-title"' in blocked
+    assert 'id="v8-copy-view-link"' in blocked
+    assert "Historical records never replace incomplete" in blocked
+
+
+def test_v8_share_link_drops_query_parameters_and_never_fetches(monkeypatch):
+    _example_dashboard(monkeypatch)
+    js = dashboard.app.test_client().get("/static/v8.js").get_data(as_text=True)
+    assert 'location.origin + location.pathname + "#v8-" + activeView' in js
+    assert 'navigator.clipboard.writeText(safeUrl)' in js
+    assert 'manualShare.select()' in js
+    assert "location.search" not in js
+    assert "fetch(" not in js
+
+
 def test_research_payload_retains_original_values_and_explicit_unsafe_gate(monkeypatch):
     response = _example_dashboard(monkeypatch)
     body = response.get_data(as_text=True)
