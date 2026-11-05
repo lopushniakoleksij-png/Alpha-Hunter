@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import os
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -44,6 +45,8 @@ def main():
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
     verified = []
+    screenshot_dir = Path(os.getenv("V8_SCREENSHOT_DIR", "artifacts/v8-browser"))
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
@@ -58,6 +61,9 @@ def main():
                 assert "Alpha Hunter V8" in page.title()
                 assert_no_root_overflow(page,width)
                 assert page.locator("#v8-view-overview").is_visible()
+                if width in (390, 1280):
+                    page.screenshot(path=str(screenshot_dir / f"overview-{width}.png"),
+                                    full_page=True)
                 assert page.locator("#v8-view-overview").get_by_text("Latest symbol evidence loaded").is_visible()
                 assert page.locator('[id="runScanButton"]').count() == 0
                 if width < 900:
@@ -68,6 +74,9 @@ def main():
                     assert nav.is_visible()
                 nav.click()
                 assert page.locator("#v8-view-research").is_visible()
+                if width in (390, 1280):
+                    page.screenshot(path=str(screenshot_dir / f"research-{width}.png"),
+                                    full_page=True)
                 assert page.locator(".v8-strategy-table tbody tr").count() >= 2
                 if width < 900:
                     assert page.locator(".v8-mobile-card").count() >= 2
@@ -75,6 +84,9 @@ def main():
                     assert first.get_attribute("aria-expanded") == "false"
                     first.click()
                     assert first.get_attribute("aria-expanded") == "true"
+                    if width == 390:
+                        page.screenshot(path=str(screenshot_dir / "research-detail-390.png"),
+                                        full_page=True)
                     assert page.locator(".v8-mobile-card").first.get_by_text("Exact:",exact=False).count() >= 1
                     assert_no_root_overflow(page,width)
                 else:
@@ -92,7 +104,23 @@ def main():
                 assert page.locator("#v8-result-count").inner_text().startswith("1 research observation ·")
                 if width < 900:
                     assert page.locator(".v8-mobile-card").count() == 1
+                # Sorting changes presentation, not canonical evidence or prices.
                 page.locator("#v8-reset").click()
+                page.locator("#v8-sort").select_option("symbol")
+                if width < 900:
+                    sorted_symbols = page.locator(".v8-card-pair").all_inner_texts()
+                    assert sorted_symbols == sorted(sorted_symbols), (
+                        f"mobile symbol sort failed at {width}: {sorted_symbols}"
+                    )
+                else:
+                    sorted_symbols = page.locator(".v8-strategy-table tbody tr td:first-child").all_inner_texts()
+                    assert sorted_symbols == sorted(sorted_symbols), (
+                        f"desktop symbol sort failed at {width}: {sorted_symbols}"
+                    )
+                page.locator("#v8-sort").select_option("rr")
+                page.locator("#v8-sort").select_option("persistence")
+                page.locator("#v8-reset").click()
+                assert page.locator("#v8-sort").input_value() == "canonical"
                 expected_total = page.locator(".v8-strategy-table tbody tr").count()
                 assert page.locator("#v8-result-count").inner_text().startswith(
                     f"{expected_total} research " +
@@ -107,6 +135,23 @@ def main():
                 assert page.get_by_text("Safety Blocks").is_visible()
                 assert page.locator("#v8-view-system").get_by_role("link",name="V14 Control Tower").count() == 1
                 assert_no_root_overflow(page,width)
+                targets = page.evaluate("""() => {
+                    const selectors = innerWidth < 900
+                        ? [".v8-bottom-nav .v8-tab", ".v8-card-toggle"]
+                        : [".v8-rail .v8-tab", ".v8-open-research"];
+                    return [...document.querySelectorAll(selectors.join(","))]
+                      .filter(e => e.getClientRects().length && getComputedStyle(e).visibility !== "hidden")
+                      .slice(0, 12).map(e => ({name: e.textContent.trim().slice(0,30),
+                        w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height}));
+                }""")
+                assert targets and all(t["w"] >= 44 and t["h"] >= 44 for t in targets), (
+                    f"undersized interactive target at {width}: {targets}"
+                )
+                # The UI is intentionally read-only: there must not be
+                # background Bitget, Supabase or private API calls.
+                resources = page.evaluate("""() => performance.getEntriesByType('resource')
+                    .map(e => e.name).filter(name => !name.startsWith(location.origin))""")
+                assert not resources, f"unexpected external network resources: {resources}"
                 assert not errors, f"JavaScript exceptions at {width}: {errors}"
                 verified.append(width)
                 page.close()
@@ -114,6 +159,8 @@ def main():
         print("PASS: actual Flask V8 offline Chromium / seven responsive widths:", verified)
         print("PASS: desktop 7-column research, iPhone cards/detail, search/reset, 4 destinations")
         print("PASS: no document horizontal overflow, no JS errors, no scanner control")
+        print("PASS: ≥44px key navigation/touch targets, no external resource fetches")
+        print("PASS: research sorting, mobile expansion, accessible tabs, images:", screenshot_dir)
     finally:
         server.shutdown()
 
