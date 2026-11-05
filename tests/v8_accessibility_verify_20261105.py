@@ -134,6 +134,16 @@ def main():
                 page.locator(f'{nav} [data-v8-tab="results"]').click()
                 assert page.locator("#v8-view-results").is_visible()
                 assert "Performance evidence temporarily unavailable" in page.locator("#v8-view-results").inner_text()
+                report_link = page.locator("#v8-view-results .v8-report-link")
+                assert report_link.count() == 1
+                assert report_link.is_visible()
+                rect = report_link.bounding_box()
+                assert rect and rect["width"] >= 44 and rect["height"] >= 44
+                assert rect["x"] >= 0 and rect["x"] + rect["width"] <= 391, (
+                    f"Recovery Results link exceeds iPhone viewport: {rect}"
+                )
+                assert "Report may be unavailable" in page.locator("#v8-view-results").inner_text()
+                audit_with_axe(page, f"{browser_name}-390-recovery-results-action", axe_js)
                 page.locator(f'{nav} [data-v8-tab="system"]').click()
                 assert page.locator("#v8-view-system").is_visible()
                 page.locator(f'{nav} [data-v8-tab="overview"]').click()
