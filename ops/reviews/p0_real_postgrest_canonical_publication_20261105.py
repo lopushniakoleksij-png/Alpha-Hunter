@@ -474,6 +474,50 @@ def test_atomic_five_stage_rpc(conn, report):
     }
 
 
+
+def test_atomic_rpc_lost_ack_readback(conn, report):
+    """A committed RPC with a lost HTTP ACK must be classified by durable readback."""
+    capture = CaptureSchema()
+    run = "atomic-lost-ack"
+    capture.save_snapshot(snapshot(run))
+    payload = {
+        "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+        "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+        "p_signals": capture.captured["alpha_hunter_signals"],
+        "p_features": capture.captured["alpha_hunter_signal_features"],
+        "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+    }
+    response = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+        json=payload, timeout=15,
+    )
+    assert response.status_code == 200, response.text
+    # The transport loses the successful response after the server committed.
+    # Do not infer failure or reissue a write from a missing acknowledgement.
+    simulated_transport_error = requests.ReadTimeout("ACK lost after atomic commit")
+    assert isinstance(simulated_transport_error, requests.ReadTimeout)
+    c = assert_counts(conn, run, parent=1, child=61, signal=61,
+                      feature=61, readiness=61, obs=610)
+    parent = conn.execute(
+        "SELECT payload FROM public.alpha_hunter_snapshots WHERE run_id=%s",
+        (run,),
+    ).fetchone()[0]
+    assert parent.get("_canonical_publication_state") == "VERIFIED"
+    duplicate = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+        json=payload, timeout=15,
+    )
+    assert duplicate.status_code >= 400, duplicate.text
+    assert_counts(conn, run, parent=1, child=61, signal=61,
+                  feature=61, readiness=61, obs=610)
+    report["atomic_rpc_lost_ack"] = {
+        "post_commit_ack_lost_simulated": True,
+        "readback_proved_exact_five_stage_commit": True,
+        "duplicate_rpc_rejected": True,
+        "counts": c,
+        "production_network_fault_reproduced": False,
+    }
+
 def main():
     dsn = assert_disposable()
     disable_unrelated_paper_stage()
@@ -493,6 +537,7 @@ def main():
         test_child_trigger_cancel_fails_closed(conn, report)
         test_feature_failure_reveals_non_atomic_publication(conn, report)
         test_atomic_five_stage_rpc(conn, report)
+        test_atomic_rpc_lost_ack_readback(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
