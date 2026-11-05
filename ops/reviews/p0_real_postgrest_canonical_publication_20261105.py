@@ -185,6 +185,53 @@ def create_schema(dsn):
             conn.execute(sql.SQL("CREATE TABLE public.{} ({})").format(
                 sql.Identifier(table), sql.SQL(", ").join(cols + [pk])
             ))
+        # Reflect the production PostgreSQL 17 default/NOT NULL contract.
+        # The captured app JSON omits created_at, while actual production
+        # tables have created_at timestamptz NOT NULL DEFAULT now().
+        for table in TABLES:
+            if "created_at" not in capture.captured[table][0]:
+                conn.execute(sql.SQL(
+                    "ALTER TABLE public.{} ADD COLUMN created_at "
+                    "timestamptz NOT NULL DEFAULT now()"
+                ).format(sql.Identifier(table)))
+            else:
+                conn.execute(sql.SQL(
+                    "ALTER TABLE public.{} ALTER COLUMN created_at SET NOT NULL"
+                ).format(sql.Identifier(table)))
+        conn.execute("ALTER TABLE public.alpha_hunter_snapshots "
+                     "ALTER COLUMN error_count SET DEFAULT 0")
+        for table in TABLES[1:]:
+            conn.execute(sql.SQL(
+                "ALTER TABLE public.{} ALTER COLUMN trade_permission "
+                "SET DEFAULT false"
+            ).format(sql.Identifier(table)))
+        conn.execute("ALTER TABLE public.alpha_hunter_symbol_snapshots "
+                     "ALTER COLUMN state_changed SET DEFAULT false")
+        conn.execute("ALTER TABLE public.alpha_hunter_readiness_observations_v01 "
+                     "ALTER COLUMN v7_trade_ready SET DEFAULT false")
+        conn.execute("ALTER TABLE public.alpha_hunter_signal_features "
+                     "ALTER COLUMN features SET DEFAULT '{}'::jsonb")
+        conn.execute("ALTER TABLE public.alpha_hunter_signal_features "
+                     "ALTER COLUMN source_payload SET DEFAULT '{}'::jsonb")
+        for table in TABLES[1:]:
+            conn.execute(sql.SQL(
+                "ALTER TABLE public.{} ALTER COLUMN trade_permission SET NOT NULL"
+            ).format(sql.Identifier(table)))
+        # Mirror the parent trigger event classification; an UPDATE OF payload
+        # must not be necessary to mark an already-atomic commit VERIFIED.
+        conn.execute("""CREATE TABLE public.p0_parent_capture_audit (
+            run_id text NOT NULL, trigger_operation text NOT NULL
+        )""")
+        conn.execute("""CREATE FUNCTION public.p0_parent_capture_hook() RETURNS trigger
+        LANGUAGE plpgsql AS $
+        BEGIN
+          INSERT INTO public.p0_parent_capture_audit(run_id,trigger_operation)
+          VALUES(NEW.run_id,TG_OP);
+          RETURN NEW;
+        END $""")
+        conn.execute("""CREATE TRIGGER p0_parent_capture
+            AFTER INSERT OR UPDATE OF payload ON public.alpha_hunter_snapshots
+            FOR EACH ROW EXECUTE FUNCTION public.p0_parent_capture_hook()""")
         conn.execute("""ALTER TABLE public.alpha_hunter_symbol_snapshots
             ADD FOREIGN KEY (run_id) REFERENCES public.alpha_hunter_snapshots(run_id)""")
         conn.execute("""ALTER TABLE public.alpha_hunter_signal_features
@@ -224,11 +271,11 @@ def create_schema(dsn):
         conn.execute("GRANT USAGE ON SCHEMA public TO ah_p0_local_writer")
         conn.execute("GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ah_p0_local_writer")
         atomic_sql = Path(
-            "research/p0_successor_atomic_canonical_v02_DISPOSABLE_ONLY.sql"
+            "research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql"
         ).read_text(encoding="utf-8")
         conn.execute(atomic_sql)
         conn.execute("""GRANT EXECUTE ON FUNCTION
-          public.ah_p0_research_atomic_canonical_v02(jsonb,jsonb,jsonb,jsonb,jsonb)
+          public.ah_p0_research_atomic_canonical_v03(jsonb,jsonb,jsonb,jsonb,jsonb)
           TO ah_p0_local_writer""")
         conn.execute("NOTIFY pgrst, 'reload schema'")
     for attempt in range(100):
@@ -415,7 +462,7 @@ def test_atomic_five_stage_rpc(conn, report):
         if elevate_permission:
             payload["p_signals"][0]["trade_permission"] = True
         response = requests.post(
-            BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+            BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
             json=payload,
             timeout=15,
         )
@@ -436,6 +483,18 @@ def test_atomic_five_stage_rpc(conn, report):
         ("success-atomic",),
     ).fetchone()[0]
     assert payload.get("_canonical_publication_state") == "VERIFIED"
+    for table in TABLES:
+        not_null = conn.execute(
+            sql.SQL("SELECT count(*) FROM public.{} WHERE run_id=%s "
+                    "AND created_at IS NULL").format(sql.Identifier(table)),
+            ("success-atomic",),
+        ).fetchone()[0]
+        assert not_null == 0, (table, "production required created_at missing")
+    operations = conn.execute(
+        "SELECT trigger_operation FROM public.p0_parent_capture_audit "
+        "WHERE run_id=%s", ("success-atomic",)
+    ).fetchall()
+    assert operations == [("INSERT",)], operations
 
     again = atomic("success-atomic")
     assert again.status_code >= 400, "Ambiguous duplicate RPC unexpectedly accepted"
@@ -471,6 +530,8 @@ def test_atomic_five_stage_rpc(conn, report):
         "forged_permission_rejected": True,
         "real_production_deploy_ready": False,
         "production_schema_defaults_verified": False,
+        "isolated_production_equivalent_not_null_defaults_verified": True,
+        "isolated_parent_payload_trigger_fired_once": True,
     }
 
 
@@ -488,7 +549,7 @@ def test_atomic_rpc_lost_ack_readback(conn, report):
         "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
     }
     response = requests.post(
-        BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
         json=payload, timeout=15,
     )
     assert response.status_code == 200, response.text
@@ -504,7 +565,7 @@ def test_atomic_rpc_lost_ack_readback(conn, report):
     ).fetchone()[0]
     assert parent.get("_canonical_publication_state") == "VERIFIED"
     duplicate = requests.post(
-        BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
         json=payload, timeout=15,
     )
     assert duplicate.status_code >= 400, duplicate.text
