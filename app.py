@@ -2526,7 +2526,7 @@ DASHBOARD_RECOVERY_PAGE = """
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <!-- V8: retry reloads are user-controllable; no unpausable meta refresh. -->
-  <title>Alpha Hunter — recovering</title>
+  <title>Alpha Hunter V8 — Source Integrity</title>
   <style>
     :root{color-scheme:dark}
     *{box-sizing:border-box}
@@ -2544,13 +2544,77 @@ DASHBOARD_RECOVERY_PAGE = """
     @media(min-width:900px){.wrap{padding-top:38px}.card{padding:24px}}
     @media(max-width:400px){.wrap{padding:16px 11px 32px}.card{padding:15px}}
     @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+    .v8-recovery-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    .v8-recovery-intro h1{margin:0;font-size:clamp(23px,3vw,30px)}
+    .v8-recovery-intro .v8-banner{margin:5px 0 0}
+    .v8-recovery-hint{font-size:13px;color:#b2c6d5;padding:7px 11px;border-radius:10px;border:1px solid #41596e}
+    .v8-recovery-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .v8-recovery-info .card{margin:0}
+    .v8-recovery-info p{margin:8px 0 0;font-size:14px}
+    .v8-body .v8-view-heading h2{font-size:21px}
+    .v8-body .v8-retry-controls a,.v8-body .v8-retry-controls button{font-size:14px}
+    .v8-body .v8-view .card{margin-bottom:14px}
+    @media(max-width:899px){.v8-recovery-info{grid-template-columns:1fr}}
+    @media(max-width:390px){.v8-body .v8-retry-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+      .v8-body .v8-retry-controls a,.v8-body .v8-retry-controls button{padding:10px 8px;text-align:center;font-size:13px}}
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='v8.css') }}">
 </head>
-<body>
-  <div class="wrap">
-    <h1>Alpha Hunter Dashboard</h1>
-    <div class="v8-banner">ALPHA HUNTER <strong>V8</strong> · Source integrity · Paper-only research · Real orders disabled</div>
-    <div class="card">
+<body class="v8-body">
+<div class="v8-shell">
+  <aside class="v8-rail" aria-label="Primary workspace navigation">
+    <div class="v8-brand">ALPHA HUNTER <span>V8</span></div>
+    <div class="v8-brand-note">Research terminal</div>
+    <nav class="v8-rail-nav" aria-label="Workspace">
+      <button type="button" class="v8-tab" data-v8-tab="overview" aria-current="page"><span class="v8-nav-icon" aria-hidden="true">▦</span>Overview</button>
+      <button type="button" class="v8-tab" data-v8-tab="research"><span class="v8-nav-icon" aria-hidden="true">⌕</span>Research</button>
+      <button type="button" class="v8-tab" data-v8-tab="results"><span class="v8-nav-icon" aria-hidden="true">▥</span>Paper Results</button>
+      <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
+    </nav>
+    <div class="v8-rail-foot"><strong>Evidence first</strong>Current signals are unavailable when the canonical scan is incomplete. Real-order execution is disabled.</div>
+  </aside>
+  <div class="v8-content">
+    <div class="v8-mobile-head"><strong>Alpha Hunter <span>V8</span></strong><span class="v8-kicker">Research only · No orders</span></div>
+    <div class="wrap">
+      <div class="v8-recovery-intro">
+        <div><h1>Alpha Hunter V8 · Market Intelligence</h1>
+        <div class="v8-banner">Source integrity · Paper-only research · Real orders disabled</div></div>
+        <div class="v8-recovery-hint">Web service online · Current research restricted</div>
+      </div>
+      <div class="v8-workspace" id="v8-workspace">
+        <section id="v8-view-overview" class="v8-view" aria-labelledby="v8-overview-title">
+          <div class="v8-view-heading"><h2 id="v8-overview-title">Overview</h2><p>Current evidence and market reference</p></div>
+        </section>
+        <section id="v8-view-research" class="v8-view" aria-labelledby="v8-research-title" hidden>
+          <div class="v8-view-heading"><h2 id="v8-research-title">Research</h2><p>Historical storage only · no current strategy setup</p></div>
+          <div class="card"><h2>Current signals withheld</h2>
+            <p class="muted">The latest canonical scan has not passed symbol-evidence verification. There are no current Alpha Hunter entry, stop, target or research recommendations to display.</p>
+            <p class="muted">Previous complete storage runs may be described below solely as historical evidence. They are not promoted into live signals.</p>
+          </div>
+        </section>
+        <section id="v8-view-results" class="v8-view" aria-labelledby="v8-results-title" hidden>
+          <div class="v8-view-heading"><h2 id="v8-results-title">Paper Results</h2><p>Scientific performance requires independently verified data</p></div>
+          <div class="card"><h2>Performance evidence temporarily unavailable</h2>
+            <p class="muted">This recovery screen cannot establish a current scientific profitability result. A scanner, performance or database fault must not be mistaken for positive trading performance.</p>
+            <p class="muted">Paper/shadow-only operation is preserved. No exchange-order authority or profitability promotion is granted.</p>
+            <a href="/performance" class="v8-recovery-hint">Open existing performance report (may be unavailable)</a>
+          </div>
+        </section>
+        <section id="v8-view-system" class="v8-view" aria-labelledby="v8-system-title" hidden>
+          <div class="v8-view-heading"><h2 id="v8-system-title">System</h2><p>Build provenance and operational diagnostics</p></div>
+          <div class="card"><h2>System status</h2>
+            <p class="muted">Web application responding. Current scanner evidence is not fully verified. This page does not prove scanner or database health.</p>
+            <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
+            <div class="v8-retry-controls">
+              <a href="/api/build">Build provenance</a>
+              <a href="/api/historical-status">Historical storage status</a>
+              <a href="/control-tower">Control Tower (may be unavailable)</a>
+            </div>
+          </div>
+        </section>
+      </div>
+    <div class="card" data-v8-section="overview">
       <div class="warn">LIVE DATA TEMPORARILY UNAVAILABLE</div>
       <p class="muted">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
       <p class="muted">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
@@ -2559,16 +2623,24 @@ DASHBOARD_RECOVERY_PAGE = """
         <a href="/" aria-label="Check latest canonical scan again">Check latest scan</a>
         <button type="button" id="v8-auto-retry" aria-pressed="false">Enable auto retry</button>
       </div>
-      <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
+      <p class="muted">The warning remains visible until the latest complete canonical scan is verified.</p>
     </div>
-    <div class="card" aria-label="Bitget public reference market">
+    <div class="card" data-v8-section="overview" aria-label="Bitget public reference market">
       <h2 style="margin:0 0 10px;font-size:21px">Bitget public market prices</h2>
       <p class="muted" style="margin-top:0">Independent USDT-futures reference quotes. Not Alpha Hunter verified signals, not paper-test evidence, and not trading authorization.</p>
       <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
       <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
       <p id="public-market-time" class="muted" style="font-size:13px"></p>
     </div>
+    </div>
   </div>
+  <nav class="v8-bottom-nav" aria-label="Mobile workspace navigation">
+    <button type="button" class="v8-tab" data-v8-tab="overview" aria-current="page"><span class="v8-nav-icon" aria-hidden="true">▦</span>Overview</button>
+    <button type="button" class="v8-tab" data-v8-tab="research"><span class="v8-nav-icon" aria-hidden="true">⌕</span>Research</button>
+    <button type="button" class="v8-tab" data-v8-tab="results"><span class="v8-nav-icon" aria-hidden="true">▥</span>Results</button>
+    <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
+  </nav>
+</div>
   <script>
   (function () {
     const button = document.getElementById("v8-auto-retry");
@@ -2637,6 +2709,7 @@ DASHBOARD_RECOVERY_PAGE = """
     }
   }());
   </script>
+  <script src="{{ url_for('static', filename='v8.js') }}" defer></script>
 </body>
 </html>
 """
@@ -2717,7 +2790,7 @@ DASHBOARD_INCOMPLETE_PAGE = (
 # Historical-only research summary: deliberately separate from /api/latest,
 # which must keep blocking invalid canonical evidence.
 ARCHIVED_RESEARCH_CARD = """
-    <div class="card" aria-label="Historical Alpha Hunter research status">
+    <div class="card" data-v8-section="research" aria-label="Historical Alpha Hunter research status">
       <h2 style="margin:0 0 8px;font-size:21px">Last stored complete scan</h2>
       <p class="muted" style="margin:0 0 12px">Historical research status only. This does not indicate that the latest scan succeeded, and no historical pair can be traded from this panel.</p>
       <div id="historical-data-status" class="muted" role="status" aria-live="polite">Checking recent verified storage records…</div>
