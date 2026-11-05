@@ -35,6 +35,7 @@ STAGES = (
 )
 PAPER = ("alpha_hunter_paper_orders_v01", "alpha_hunter_calibrated_paper_orders_v01")
 RPC_SIGNATURE = "public.ah_p0_research_atomic_canonical_v03(jsonb,jsonb,jsonb,jsonb,jsonb)"
+CLONE_MARKER = "P0_PRIVATE_DISPOSABLE_CLONE_EGRESS_DISABLED"
 
 
 def percentile(values, percentage):
@@ -156,6 +157,16 @@ def check_clone_preflight(conn, fixtures):
     assert conn.execute("SHOW session_replication_role").fetchone()[0] == "origin"
     assert conn.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
     assert int(conn.execute("SHOW server_version_num").fetchone()[0]) >= 170000
+    # The clone-only sentinel must be created by the DBA *after* restore.
+    # Never import this marker into production or any external database.
+    if conn.execute("SELECT to_regclass('ah_p0_isolated.clone_attestation')"
+                    ).fetchone()[0] is None:
+        raise RuntimeError("Disposable clone-only schema sentinel absent")
+    ready = conn.execute(
+        "SELECT EXISTS(SELECT 1 FROM ah_p0_isolated.clone_attestation "
+        "WHERE marker=%s)",(CLONE_MARKER,)).fetchone()[0]
+    if ready is not True:
+        raise RuntimeError("Disposable clone is not explicitly attested")
     assert conn.execute("SELECT to_regprocedure(%s)",(RPC_SIGNATURE,)).fetchone()[0] is not None
     # Refuse a tiny empty fixture as evidence for a production-volume workload.
     samples = dict(conn.execute("""
