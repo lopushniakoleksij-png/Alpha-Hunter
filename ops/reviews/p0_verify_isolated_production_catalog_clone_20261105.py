@@ -16,6 +16,7 @@ import psycopg
 
 MANIFEST = Path("ops/reviews/p0_readonly_production_fingerprints_20261105.json")
 CANDIDATES = Path("ops/reviews/p0_production_trigger_dependency_candidates_20261105.json")
+CROSS_SCHEMA = Path("ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json")
 FORBIDDEN = ("SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY",
              "RENDER_API_KEY", "BITGET_API_KEY", "BITGET_SECRET_KEY")
 
@@ -160,6 +161,52 @@ def run():
         for (tbl,tg), wanted in expected_hooks.items():
             if actual_hooks.get((tbl,tg)) != wanted:
                 issues.append("candidate graph trigger signature drift: " + tbl + "." + tg)
+        # CROSS-SCHEMA candidate audit: the earlier lexical-only graph excluded
+        # private.* paper-order destinations. Compare both public and private
+        # objects, but NEVER claim executed DML / network permissions parity.
+        cross = json.loads(CROSS_SCHEMA.read_text(encoding="utf-8"))
+        qualified_names = [x["qualified_name"] for x in cross["relations"]]
+        actual_cross_relations = dict(conn.execute("""
+            SELECT n.nspname||'.'||c.relname, c.relrowsecurity
+            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname IN ('public','private')
+              AND n.nspname||'.'||c.relname = ANY(%s)
+        """, (qualified_names,)).fetchall())
+        for expected_rel in cross["relations"]:
+            n = expected_rel["qualified_name"]
+            if actual_cross_relations.get(n) != expected_rel["rls"]:
+                issues.append("cross-schema candidate RLS/object drift: " + n)
+        if len(actual_cross_relations) != len(cross["relations"]):
+            issues.append("cross-schema candidate relation count drift")
+        records = conn.execute("""
+            SELECT n.nspname||'.'||c.relname, t.tgname,
+                   nf.nspname||'.'||p.proname, t.tgtype::integer,
+                   p.prosecdef, pg_get_functiondef(p.oid)
+            FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
+            JOIN pg_namespace n ON n.oid=c.relnamespace
+            JOIN pg_proc p ON p.oid=t.tgfoid
+            JOIN pg_namespace nf ON nf.oid=p.pronamespace
+            WHERE NOT t.tgisinternal AND t.tgenabled IN ('O','A')
+              AND n.nspname IN ('public','private')
+              AND n.nspname||'.'||c.relname = ANY(%s)
+        """, (qualified_names,)).fetchall()
+        actual_cross_hooks = {}
+        for tbl,tg,fn,bits,definer,body in records:
+            events = ("I" if bits & 4 else "") + ("U" if bits & 16 else "") \
+                     + ("D" if bits & 8 else "")
+            actual_cross_hooks[(tbl,tg)] = (
+                fn,events,definer,
+                hashlib.md5(body.encode("utf-8")).hexdigest())
+        expected_cross_hooks = {
+            (v["source_table"],v["trigger"]): (
+                v["function_name"],v["events"],v["security_definer"],v["function_md5"])
+            for v in cross["reachable_hooks"]
+        }
+        if set(actual_cross_hooks) != set(expected_cross_hooks):
+            issues.append("cross-schema candidate trigger membership drift")
+        for (tbl,tg),wanted in expected_cross_hooks.items():
+            if actual_cross_hooks.get((tbl,tg)) != wanted:
+                issues.append("cross-schema candidate trigger drift: " + tbl + "." + tg)
     status = "CATALOG_FINGERPRINT_MATCH_ONLY" if not issues else "CATALOG_MISMATCH_NO_GO"
     print(json.dumps({
         "status":status,
@@ -170,6 +217,11 @@ def run():
         "candidate_trigger_count":len(graph["trigger_metadata"]),
         "candidate_trigger_signatures_match":not issues,
         "candidate_edges_executable_verified":False,
+        "cross_schema_candidate_relation_count":len(cross["relations"]),
+        "cross_schema_candidate_private_relations":sum(
+            x["qualified_name"].startswith("private.") for x in cross["relations"]),
+        "cross_schema_candidate_trigger_count":len(cross["reachable_hooks"]),
+        "cross_schema_executable_graph_verified":False,
         "issues":issues,
         "transitive_production_graph_verified":False,
         "real_workload_performance_verified":False,
