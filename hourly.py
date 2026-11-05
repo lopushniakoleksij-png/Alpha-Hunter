@@ -432,7 +432,7 @@ def run_render_cron_burst(
         if overall_code == 0:
             overall_code = 4
     if missed_boundaries:
-        print(f"Canonical scan cadence incomplete: {missed_boundaries} missed 
+        print(f"Canonical scan cadence incomplete: {missed_boundaries} missed "
               "aligned boundary/boundaries; no backfill.", file=sys.stderr, flush=True)
         if overall_code == 0:
             return 4
