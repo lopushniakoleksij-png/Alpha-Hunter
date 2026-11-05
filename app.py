@@ -2525,7 +2525,7 @@ DASHBOARD_RECOVERY_PAGE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="10">
+  <!-- V8: retry reloads are user-controllable; no unpausable meta refresh. -->
   <title>Alpha Hunter — recovering</title>
   <style>
     :root{color-scheme:dark}
@@ -2538,6 +2538,9 @@ DASHBOARD_RECOVERY_PAGE = """
     .v8-banner{margin:0 0 14px;color:#b2c6d5;font-size:14px;letter-spacing:.01em}
     .v8-banner strong{color:#3be4aa}
     .card h2{color:#eef5fb}
+    .v8-retry-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .v8-retry-controls a,.v8-retry-controls button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border:1px solid #3b6985;border-radius:10px;padding:10px 14px;background:#183247;color:#eef5fb;font:inherit;text-decoration:none;cursor:pointer}
+    .v8-retry-controls a:focus-visible,.v8-retry-controls button:focus-visible{outline:3px solid #6bc0ff;outline-offset:3px}
     @media(min-width:900px){.wrap{padding-top:38px}.card{padding:24px}}
     @media(max-width:400px){.wrap{padding:16px 11px 32px}.card{padding:15px}}
     @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -2551,7 +2554,11 @@ DASHBOARD_RECOVERY_PAGE = """
       <div class="warn">LIVE DATA TEMPORARILY UNAVAILABLE</div>
       <p class="muted">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
       <p class="muted">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
-      <p class="muted">This page retries automatically every 10 seconds.</p>
+      <p class="muted">You can refresh saved evidence now or enable automatic retries every 10 seconds. Auto retry can be paused at any time.</p>
+      <div class="v8-retry-controls" role="group" aria-label="Dashboard recovery">
+        <a href="/" aria-label="Check latest canonical scan again">Check latest scan</a>
+        <button type="button" id="v8-auto-retry" aria-pressed="false">Enable auto retry</button>
+      </div>
       <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
     </div>
     <div class="card" aria-label="Bitget public reference market">
@@ -2563,6 +2570,25 @@ DASHBOARD_RECOVERY_PAGE = """
     </div>
   </div>
   <script>
+  (function () {
+    const button = document.getElementById("v8-auto-retry");
+    if (!button) return;
+    let enabled = false;
+    try { enabled = sessionStorage.getItem("alpha-v8-auto-retry") === "enabled"; } catch (_) {}
+    let refreshTimer = null;
+    function update() {
+      button.setAttribute("aria-pressed", enabled ? "true" : "false");
+      button.textContent = enabled ? "Pause auto retry" : "Enable auto retry";
+      if (refreshTimer) clearTimeout(refreshTimer);
+      if (enabled) refreshTimer = setTimeout(() => location.reload(), 10000);
+    }
+    button.addEventListener("click", () => {
+      enabled = !enabled;
+      try { sessionStorage.setItem("alpha-v8-auto-retry", enabled ? "enabled" : "paused"); } catch (_) {}
+      update();
+    });
+    update();
+  }());
   (async function () {
     const state = document.getElementById("public-market-state");
     const list = document.getElementById("public-market-list");
