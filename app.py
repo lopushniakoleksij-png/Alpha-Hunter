@@ -1870,6 +1870,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   <div class="v8-workspace" id="v8-workspace">
     <section id="v8-view-overview" class="v8-view" aria-labelledby="v8-overview-title">
       <div class="v8-view-heading"><h2 id="v8-overview-title">Overview</h2><p>Source health and market context</p></div>
+      <div class="v8-overview-preview" id="v8-overview-preview" aria-label="Top current research observations"></div>
     </section>
     <section id="v8-view-research" class="v8-view" aria-labelledby="v8-research-title" hidden>
       <div class="v8-view-heading"><h2 id="v8-research-title">Research watchlist</h2><p>WATCH and shadow evidence are not trading instructions</p></div>
@@ -2063,11 +2064,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
 </nav>
 </div>
-<script>
-let scanPollTimer=null;
-async function runScan(){const b=document.getElementById('runScanButton'),m=document.getElementById('scanMessage');b.disabled=true;m.textContent='Starting fresh scan...';try{const r=await fetch('/api/run-scan',{method:'POST'}),x=await r.json();if(!r.ok)throw new Error(x.error||'Unable to start scan');m.textContent='Scan running...';if(scanPollTimer)clearInterval(scanPollTimer);scanPollTimer=setInterval(checkScanStatus,3000)}catch(e){m.textContent='Scan failed: '+e.message;b.disabled=false}}
-async function checkScanStatus(){const b=document.getElementById('runScanButton'),m=document.getElementById('scanMessage');try{const r=await fetch('/api/scan-status'),x=await r.json();if(x.running){m.textContent='Scan running...';b.disabled=true;return}if(x.status==='completed'){clearInterval(scanPollTimer);m.textContent='Scan complete. Refreshing...';setTimeout(()=>location.reload(),700);return}if(x.status==='failed'){clearInterval(scanPollTimer);m.textContent='Scan failed: '+(x.error||'unknown error');b.disabled=false;return}b.disabled=false}catch(e){m.textContent='Unable to read scan status';b.disabled=false}}
-</script>
+<!-- Manual scanner JavaScript intentionally absent from the public V8 UI.
+     The legacy backend endpoint is a separate security review item. -->
 <script src="{{ url_for('static', filename='v8.js') }}" defer></script>
 </body>
 </html>
@@ -2508,16 +2506,25 @@ DASHBOARD_RECOVERY_PAGE = """
   <meta http-equiv="refresh" content="10">
   <title>Alpha Hunter — recovering</title>
   <style>
-    body{margin:0;background:#071018;color:#e7edf2;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    .wrap{max-width:720px;margin:0 auto;padding:28px 18px}
-    .card{margin-top:18px;background:#0d1923;border:1px solid #1b3040;border-radius:16px;padding:20px}
-    h1{margin:0 0 8px;font-size:28px}.muted{color:#91a3b1;line-height:1.55}
-    .warn{color:#ffbf69;font-weight:700}.ok{color:#75e6b5}
+    :root{color-scheme:dark}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(1100px 700px at 85% 0%,#153047 0%,transparent 72%),#07111c;color:#eef5fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
+    .wrap{max-width:1040px;margin:0 auto;padding:24px clamp(12px,3vw,32px) 38px;min-width:0}
+    .card{margin-top:14px;background:#101e2c;border:1px solid #294155;border-radius:16px;padding:clamp(14px,2vw,22px);max-width:100%;min-width:0;overflow-wrap:anywhere}
+    h1{margin:0 0 8px;font-size:clamp(23px,3vw,30px);letter-spacing:-.5px}.muted{color:#b2c6d5;line-height:1.55}
+    .warn{color:#ffca6c;font-weight:750;font-size:16px}.ok{color:#3be4aa}
+    .v8-banner{margin:0 0 14px;color:#b2c6d5;font-size:14px;letter-spacing:.01em}
+    .v8-banner strong{color:#3be4aa}
+    .card h2{color:#eef5fb}
+    @media(min-width:900px){.wrap{padding-top:38px}.card{padding:24px}}
+    @media(max-width:400px){.wrap{padding:16px 11px 32px}.card{padding:15px}}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
   </style>
 </head>
 <body>
   <div class="wrap">
     <h1>Alpha Hunter Dashboard</h1>
+    <div class="v8-banner">ALPHA HUNTER <strong>V8</strong> · Source integrity · Paper-only research · Real orders disabled</div>
     <div class="card">
       <div class="warn">LIVE DATA TEMPORARILY UNAVAILABLE</div>
       <p class="muted">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
