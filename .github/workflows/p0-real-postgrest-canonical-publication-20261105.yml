@@ -61,7 +61,7 @@ jobs:
           python -m pip install --disable-pip-version-check -r requirements.txt
           python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<3.4'
       - name: Actual HTTP canonical parent-child-signal-feature-readiness fault matrix
-        run: python ops/reviews/p0_real_postgrest_canonical_publication_20261105.py
+        run: PYTHONPATH=. python ops/reviews/p0_real_postgrest_canonical_publication_20261105.py
       - name: Archive isolated-only HTTP publication evidence
         if: success()
         uses: actions/upload-artifact@v4
