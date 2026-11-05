@@ -285,8 +285,37 @@
     wrapper.appendChild(table);
   }
 
+
+  // Share only the local read-only navigation state. Never copy query strings,
+  // which can contain transient auth parameters or private account context.
+  // Clipboard APIs are permission-dependent, especially on mobile Safari.
+  const copyView = byId("v8-copy-view-link");
+  const shareFeedback = byId("v8-share-feedback");
+  const manualShare = byId("v8-share-manual");
+  let activeView = "overview";
+  copyView?.addEventListener("click", async () => {
+    const safeUrl = location.origin + location.pathname + "#v8-" + activeView;
+    if (manualShare) manualShare.hidden = true;
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        throw new Error("Clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(safeUrl);
+      if (shareFeedback) shareFeedback.textContent = "Read-only view link copied. No credentials or research values included.";
+    } catch (_error) {
+      if (manualShare) {
+        manualShare.value = safeUrl;
+        manualShare.hidden = false;
+        manualShare.focus();
+        manualShare.select();
+      }
+      if (shareFeedback) shareFeedback.textContent = "Select and copy the link shown below. No credentials or research values included.";
+    }
+  });
+
   function activate(tab, setHash = true) {
     if (!names.includes(tab)) return;
+    activeView = tab;
     for (const name of names) {
       panes[name].classList.toggle("is-active", name === tab);
       panes[name].hidden = name !== tab;
