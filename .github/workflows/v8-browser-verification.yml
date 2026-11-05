@@ -22,3 +22,11 @@ jobs:
       - run: python -m pip install -r requirements.txt pytest playwright
       - run: python -m playwright install chromium
       - run: python tests/v8_browser_verify_20261105.py
+      - name: Preserve tested mobile and desktop screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-browser-phase6-screenshots
+          path: artifacts/v8-browser/
+          if-no-files-found: ignore
+          retention-days: 7
