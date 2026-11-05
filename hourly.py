@@ -336,11 +336,14 @@ def run_render_cron_burst(
     # A scan returns 0 after its run.py evidence stages have completed.
     # It is not proof of independently verified database publication.
     successful_scan_this_burst = False
+    attempted_scans = 0
+    missed_boundaries = 0
 
     if should_run_initial_burst_scan(
         burst_started_at,
         interval,
     ):
+        attempted_scans += 1
         overall_code = run_once(
             project_root,
             config,
@@ -367,6 +370,7 @@ def run_render_cron_burst(
                 f"{scheduled_at.isoformat()}; no late backfill.",
                 flush=True,
             )
+            missed_boundaries += 1
             continue
 
         delay = (scheduled_at - current).total_seconds()
@@ -378,6 +382,7 @@ def run_render_cron_burst(
         )
         time.sleep(delay)
 
+        attempted_scans += 1
         code = run_once(
             project_root,
             config,
@@ -413,6 +418,17 @@ def run_render_cron_burst(
             flush=True,
         )
 
+    # A skipped entire hour must never masquerade as a successful scan.
+    # Preserve the first actual scanner failure when present; never backfill.
+    if attempted_scans == 0 and overall_code == 0:
+        print("Canonical scan absent: no scanner attempt executed; evidence UNKNOWN.",
+              file=sys.stderr, flush=True)
+        return 4
+    if missed_boundaries:
+        print(f"Canonical scan cadence incomplete: {missed_boundaries} missed "
+              "aligned boundary/boundaries; no backfill.", file=sys.stderr, flush=True)
+        if overall_code == 0:
+            return 4
     return overall_code
 
 
