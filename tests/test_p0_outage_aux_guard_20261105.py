@@ -65,6 +65,8 @@ def test_mixed_burst_with_later_success_keeps_aux_and_reports_first_failure(monk
 
 def test_late_run_without_any_scan_does_not_launch_auxiliary(monkeypatch, capsys):
     code, calls = _simulate(monkeypatch, [], initial=False, boundaries=0)
-    assert code == 0
+    assert code == 4  # Missing canonical scan must fail closed.
     assert calls == []
-    assert "Auxiliary evidence deferred" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "Auxiliary evidence deferred" in stderr
+    assert "Canonical scan absent" in stderr
