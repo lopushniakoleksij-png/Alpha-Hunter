@@ -257,6 +257,10 @@ def test_v8_recovery_keeps_responsive_navigation_and_safety_boundary(monkeypatch
     assert "The scanner reported a canonical run" in html
     assert "Alpha Hunter signals are withheld" in html
     assert "Current signals withheld" in html
+    assert 'class="v8-report-link"' in html
+    assert "View historical performance report" in html
+    assert "Report may be unavailable during a source outage" in html
+    assert "<h1>Market intelligence</h1>" in html
     assert "HISTORICAL ONLY" in html
     assert "/static/v8.js" in html and "/static/v8.css" in html
     assert 'id="runScanButton"' not in html
@@ -288,5 +292,7 @@ def test_v8_outage_page_preserves_same_navigation_and_no_trades(monkeypatch):
     assert "No exchange-order authority" in html or "no exchange-order authority" in html
     assert "Check latest scan" in html
     assert "Enable auto retry" in html
+    assert 'class="v8-report-link"' in html
+    assert "Open existing performance report (may be unavailable)" not in html
 
 
