@@ -1,0 +1,59 @@
+name: P0 immutable canonical child retry PostgreSQL 16 and 17
+on:
+  push:
+    branches:
+      - research/p0-bounded-child-write-exit-safety-20261105
+    paths:
+      - 'tests/postgres/p0_immutable_child_retry_pg16_pg17_20261105.sql'
+      - '.github/workflows/p0-immutable-child-retry-pg16-pg17.yml'
+  pull_request:
+    paths:
+      - 'tests/postgres/p0_immutable_child_retry_pg16_pg17_20261105.sql'
+      - '.github/workflows/p0-immutable-child-retry-pg16-pg17.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-database:
+    name: "Disposable PostgreSQL ${{ matrix.pg }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        pg: ['16','17']
+    services:
+      postgres:
+        image: postgres:${{ matrix.pg }}
+        env:
+          POSTGRES_PASSWORD: isolated_only
+          POSTGRES_DB: isolated_research
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d isolated_research"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: isolated_only
+      PGDATABASE: isolated_research
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      BITGET_API_KEY: ''
+      RENDER_API_KEY: ''
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Prove 61-child immutable retry and rollback under actual PG trigger
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/postgres/p0_immutable_child_retry_pg16_pg17_20261105.sql
+      - name: Require no live service credentials in test job
+        run: |
+          test -z "$SUPABASE_URL"
+          test -z "$SUPABASE_SERVICE_ROLE_KEY"
+          test -z "$BITGET_API_KEY"
+          test -z "$RENDER_API_KEY"
