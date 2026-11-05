@@ -137,6 +137,15 @@ def main():
                 assert button.inner_text() == "Enable auto retry"
                 assert button.get_attribute("aria-pressed") == "false"
                 audit_with_axe(page, f"{browser_name}-390-incomplete-source", axe_js)
+                disclosure = page.locator(".v8-recovery-details")
+                assert disclosure.count() == 1
+                assert disclosure.get_attribute("open") is None
+                assert page.locator("#v8-scan-warning").is_visible()
+                disclosure.locator("summary").click()
+                assert disclosure.get_attribute("open") is not None
+                assert disclosure.get_by_text("You can refresh saved evidence now", exact=False).is_visible()
+                audit_with_axe(page, f"{browser_name}-390-recovery-instructions-open", axe_js)
+                disclosure.locator("summary").click()
                 button.click()
                 assert button.get_attribute("aria-pressed") == "true"
                 button.click()
