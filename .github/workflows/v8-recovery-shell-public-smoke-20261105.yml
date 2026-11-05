@@ -1,0 +1,77 @@
+name: Alpha Hunter V8 Recovery Shell Live Acceptance 2026-11-05
+on:
+  push:
+    branches:
+      - ops/web-archive-public-smoke-20261104
+    paths:
+      - '.github/workflows/v8-recovery-shell-public-smoke-20261105.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-get-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify deployed V8 recovery UI and fail-closed data
+        env:
+          LIVE_URL: https://alpha-hunter-j5i3.onrender.com
+          EXPECT_SHA: 3d98fa11d18da0e013bc165b149cb91bab57408d
+        run: |
+          python - <<'PY'
+          import os,json,time,urllib.request,urllib.error
+          base=os.environ["LIVE_URL"]
+          def read(path,method="GET"):
+              req=urllib.request.Request(base+path,headers={"User-Agent":"AlphaHunterV8RecoveryIndependentRead/20261105","Cache-Control":"no-cache"},method=method)
+              start=time.monotonic()
+              try:
+                  with urllib.request.urlopen(req,timeout=18) as r:
+                      z=r.status,dict(r.headers),r.read(300000)
+              except urllib.error.HTTPError as e:
+                  z=e.code,dict(e.headers),e.read(300000)
+              print(method,path,"HTTP",z[0],"sec",round(time.monotonic()-start,2),flush=True)
+              return z
+          status,h,b=read("/api/build")
+          assert status==200
+          build=json.loads(b)
+          assert build.get("git_commit")==os.environ["EXPECT_SHA"], "wrong live code"
+          assert build.get("git_branch")=="design/v8-frontend-20261105"
+          for path,typ in (("/static/v8.css","css"),("/static/v8.js","javascript")):
+              s,h,b=read(path)
+              assert s==200 and typ in h.get("Content-Type",""),path
+          s,h,b=read("/")
+          page=b.decode("utf-8","replace")
+          assert s in (200,202,503)
+          assert "Alpha Hunter" in page and "V8" in page
+          assert 'id="v8-workspace"' in page
+          for tab in ("overview","research","results","system"):
+              assert f'id="v8-view-{tab}"' in page, tab
+              assert f'data-v8-tab="{tab}"' in page,tab
+          assert 'class="v8-bottom-nav"' in page
+          assert 'id="runScanButton"' not in page
+          if h.get("X-Alpha-Hunter-Evidence-State")=="INCOMPLETE":
+              assert "LATEST CANONICAL SCAN INCOMPLETE" in page
+              assert 'data-v8-section="research"' in page
+              assert "Last stored complete scan" in page
+              assert "Current signals withheld" in page
+              print("RECOVERY SHELL PASS: four views, archive card, current signals withheld",flush=True)
+          elif "v8-mobile-cards" in page:
+              print("FULL V8 DATA PAGE PASS",flush=True)
+          else:
+              print("V8 guarded publishing/outage fallback PASS",flush=True)
+          s,h,b=read("/api/latest")
+          assert s in (200,503)
+          p=json.loads(b)
+          if s==503:
+              assert p.get("error") in ("canonical_scan_incomplete","canonical_scan_publishing","live_data_unavailable")
+              assert "symbols" not in p
+              assert p.get("trade_permission") is not True
+          else:
+              assert p.get("trade_permission") is not True
+          s,h,b=read("/api/historical-status")
+          assert s in (200,503)
+          history=json.loads(b)
+          assert history.get("trade_permission") is False
+          assert history.get("verified_live_trade_signal") is False
+          print("PASS: exact release, V8 continuity, live evidence safety and historical-only nonexecution",flush=True)
+          PY
