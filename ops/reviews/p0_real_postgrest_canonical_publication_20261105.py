@@ -10,6 +10,9 @@ from __future__ import annotations
 import json
 import os
 import time
+import base64
+import hashlib
+import hmac
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +24,8 @@ from alpha_hunter import storage as storage_module
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, SupabaseStorageError
 
 BASE = "http://127.0.0.1:3000"
+ROLE_BASE = "http://127.0.0.1:3001"
+ROLE_TEST_SECRET = "alpha-hunter-disposable-only-role-matrix-2026-key"
 TABLES = (
     "alpha_hunter_snapshots",
     "alpha_hunter_symbol_snapshots",
@@ -162,7 +167,13 @@ def create_schema(dsn):
         current = conn.execute("SELECT current_database()").fetchone()[0]
         if current != "isolated_research":
             raise RuntimeError("Refusing non-disposable database")
-        conn.execute("CREATE ROLE ah_p0_local_writer NOLOGIN")
+        # Temporary roles in disposable PostgreSQL ONLY. The local writer
+        # deliberately models service_role's RLS bypass; real authentication
+        # and role assignment still require independent Supabase review.
+        conn.execute("CREATE ROLE ah_p0_local_writer NOLOGIN BYPASSRLS")
+        conn.execute("CREATE ROLE anon NOLOGIN")
+        conn.execute("CREATE ROLE authenticated NOLOGIN")
+        conn.execute("CREATE ROLE service_role NOLOGIN BYPASSRLS")
         for table in TABLES:
             cols = []
             for field in capture.captured[table][0]:
@@ -268,7 +279,18 @@ def create_schema(dsn):
         conn.execute("""CREATE TRIGGER p0_feature_fail BEFORE INSERT OR UPDATE
         ON public.alpha_hunter_signal_features FOR EACH ROW
         EXECUTE FUNCTION public.p0_test_feature_trigger()""")
-        conn.execute("GRANT USAGE ON SCHEMA public TO ah_p0_local_writer")
+        for table in TABLES:
+            conn.execute(sql.SQL("ALTER TABLE public.{} ENABLE ROW LEVEL SECURITY"
+                     ).format(sql.Identifier(table)))
+        conn.execute("GRANT USAGE ON SCHEMA public "
+                     "TO ah_p0_local_writer, anon, authenticated, service_role")
+        # Production has broad table DML grants but no RLS policies on these
+        # five canonical tables. Reproduce the effective deny-by-RLS property.
+        conn.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES "
+                     "IN SCHEMA public TO anon, authenticated, service_role")
+        assert conn.execute("""SELECT count(*) FROM pg_policies
+                 WHERE schemaname='public' AND tablename = ANY(%s)""",
+                 (list(TABLES),)).fetchone()[0] == 0
         conn.execute("GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ah_p0_local_writer")
         atomic_sql = Path(
             "research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql"
@@ -276,7 +298,7 @@ def create_schema(dsn):
         conn.execute(atomic_sql)
         conn.execute("""GRANT EXECUTE ON FUNCTION
           public.ah_p0_research_atomic_canonical_v03(jsonb,jsonb,jsonb,jsonb,jsonb)
-          TO ah_p0_local_writer""")
+          TO ah_p0_local_writer, service_role""")
         conn.execute("NOTIFY pgrst, 'reload schema'")
     for attempt in range(100):
         try:
@@ -536,6 +558,87 @@ def test_atomic_five_stage_rpc(conn, report):
 
 
 
+def _disposable_jwt(role: str) -> str:
+    """HS256 only, using a public fixture secret; NEVER a real Supabase token."""
+    if role not in ("anon", "authenticated", "service_role"):
+        raise AssertionError("Unexpected synthetic JWT role")
+    def encode(value):
+        data = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+    message = encode({"alg": "HS256", "typ": "JWT"}) + "." + encode({
+        "role": role, "iat": int(time.time()), "exp": int(time.time()) + 600,
+        "sub": "DISPOSABLE_ONLY", "aud": "authenticated",
+    })
+    signature = hmac.new(ROLE_TEST_SECRET.encode(), message.encode(),
+                         hashlib.sha256).digest()
+    return message + "." + base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+
+
+def test_real_http_role_matrix(conn, report):
+    """Actual local HTTP JWT/RLS checks; never claims Supabase auth parity."""
+    capture = CaptureSchema()
+    capture.save_snapshot(snapshot("local-role-matrix", 17))
+    args = {
+        "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+        "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+        "p_signals": capture.captured["alpha_hunter_signals"],
+        "p_features": capture.captured["alpha_hunter_signal_features"],
+        "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+    }
+    url = ROLE_BASE + "/rpc/ah_p0_research_atomic_canonical_v03"
+    # The local PostgREST service has an actual anonymous DB role; a signed
+    # JWT with role authenticated must also be denied. Neither is privileged.
+    for role in ("anon", "authenticated"):
+        headers = {} if role == "anon" else {
+            "Authorization": "Bearer " + _disposable_jwt(role),
+        }
+        for _ in range(40):
+            try:
+                get = requests.get(ROLE_BASE + "/alpha_hunter_snapshots",
+                                   params={"select": "run_id", "limit": "1"},
+                                   headers=headers, timeout=2)
+                if get.status_code == 200:
+                    break
+            except requests.RequestException:
+                pass
+            time.sleep(0.2)
+        else:
+            raise AssertionError("Local role PostgREST did not become ready")
+        assert get.json() == [], (role, get.text[:250])
+        direct = requests.post(ROLE_BASE + "/alpha_hunter_snapshots",
+                               json=[args["p_parent"]], headers=headers, timeout=5)
+        assert direct.status_code in (401, 403), (role, direct.status_code, direct.text)
+        rpc = requests.post(url, json=args, headers=headers, timeout=5)
+        assert rpc.status_code in (401, 403, 404), (role, rpc.status_code, rpc.text)
+        assert_counts(conn, "local-role-matrix", parent=0, child=0,
+                      signal=0, feature=0, readiness=0, obs=0)
+
+    # Altered/unsigned role claims must not be accepted.
+    unsigned = _disposable_jwt("service_role").rsplit(".", 1)[0] + ".invalid"
+    forged = requests.post(url, json=args, headers={
+        "Authorization": "Bearer " + unsigned}, timeout=5)
+    assert forged.status_code == 401, (forged.status_code, forged.text)
+
+    # Only the explicitly granted server-side synthetic service role may
+    # invoke the function. The JWT signing secret exists in local CI only.
+    allowed = requests.post(url, json=args, headers={
+        "Authorization": "Bearer " + _disposable_jwt("service_role"),
+    }, timeout=15)
+    assert allowed.status_code == 200, (allowed.status_code, allowed.text)
+    assert allowed.json()["status"] == "VERIFIED"
+    c = assert_counts(conn, "local-role-matrix", parent=1, child=17, signal=17,
+                      feature=17, readiness=17, obs=170)
+    report["isolated_jwt_rls_role_matrix"] = {
+        "local_http_anon_denied": True,
+        "local_http_authenticated_jwt_denied": True,
+        "forged_service_jwt_denied": True,
+        "explicit_service_role_jwt_accepted": True,
+        "zero_trade_permission": c["enabled_trading"] == 0,
+        "production_auth_or_real_trigger_graph_verified": False,
+        "jwt_secret_production_credential": False,
+    }
+
+
 def test_atomic_rpc_lost_ack_readback(conn, report):
     """A committed RPC with a lost HTTP ACK must be classified by durable readback."""
     capture = CaptureSchema()
@@ -599,6 +702,7 @@ def main():
         test_feature_failure_reveals_non_atomic_publication(conn, report)
         test_atomic_five_stage_rpc(conn, report)
         test_atomic_rpc_lost_ack_readback(conn, report)
+        test_real_http_role_matrix(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
