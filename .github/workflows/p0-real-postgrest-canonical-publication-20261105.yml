@@ -6,6 +6,7 @@ on:
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
+      - 'ops/reviews/test_p0_clone_dsn_guard_20261105.py'
       - 'ops/reviews/p0_readonly_production_fingerprints_20261105.json'
       - 'ops/reviews/p0_production_trigger_dependency_candidates_20261105.json'
       - 'ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json'
@@ -18,9 +19,11 @@ on:
       - research/p0-bounded-child-write-exit-safety-20261105
       - research/p0-atomic-rpc-lost-ack-20261105-0544
       - research/p0-production-schema-atomic-review-20261105
+      - research/p0-clone-dsn-strict-20261105-1142
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
+      - 'ops/reviews/test_p0_clone_dsn_guard_20261105.py'
       - 'ops/reviews/p0_readonly_production_fingerprints_20261105.json'
       - 'ops/reviews/p0_production_trigger_dependency_candidates_20261105.json'
       - 'ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json'
@@ -96,6 +99,8 @@ jobs:
           python -m pip install --disable-pip-version-check 'psycopg[binary]==3.3.8'
       - name: Compile read-only DBA clone fingerprint verifier (not an acceptance run)
         run: python -m py_compile ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py
+      - name: Test isolated clone connection guard (no database connection)
+        run: python -m unittest discover -s ops/reviews -p 'test_p0_clone_dsn_guard_20261105.py' -v
       - name: Validate pinned production catalog and candidate-graph metadata (no source bodies)
         run: |
           python - <<'PY'
