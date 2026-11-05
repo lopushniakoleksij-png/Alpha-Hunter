@@ -196,7 +196,8 @@ def create_schema(dsn):
         conn.execute("""CREATE FUNCTION public.p0_test_symbol_trigger() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
-          IF NEW.run_id='bad-child' AND NEW.symbol='TEST012USDT' THEN
+          IF NEW.run_id IN ('bad-child','bad-child-atomic')
+             AND NEW.symbol='TEST012USDT' THEN
             RAISE EXCEPTION 'synthetic nested child cancellation'
               USING ERRCODE='57014';
           END IF;
@@ -211,7 +212,7 @@ def create_schema(dsn):
         conn.execute("""CREATE FUNCTION public.p0_test_feature_trigger() RETURNS trigger
         LANGUAGE plpgsql AS $$
         BEGIN
-          IF NEW.run_id='bad-feature' THEN
+          IF NEW.run_id IN ('bad-feature','bad-feature-atomic') THEN
             RAISE EXCEPTION 'synthetic feature-stage failure'
               USING ERRCODE='57014';
           END IF;
@@ -222,6 +223,13 @@ def create_schema(dsn):
         EXECUTE FUNCTION public.p0_test_feature_trigger()""")
         conn.execute("GRANT USAGE ON SCHEMA public TO ah_p0_local_writer")
         conn.execute("GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ah_p0_local_writer")
+        atomic_sql = Path(
+            "research/p0_successor_atomic_canonical_v02_DISPOSABLE_ONLY.sql"
+        ).read_text(encoding="utf-8")
+        conn.execute(atomic_sql)
+        conn.execute("""GRANT EXECUTE ON FUNCTION
+          public.ah_p0_research_atomic_canonical_v02(jsonb,jsonb,jsonb,jsonb,jsonb)
+          TO ah_p0_local_writer""")
         conn.execute("NOTIFY pgrst, 'reload schema'")
     for attempt in range(100):
         try:
@@ -388,6 +396,84 @@ def test_feature_failure_reveals_non_atomic_publication(conn, report):
     }
 
 
+def test_atomic_five_stage_rpc(conn, report):
+    """Actual PostgREST single-function-call transaction: separate from live writer."""
+    capture = CaptureSchema()
+
+    def atomic(run, size=61, *, shorten_features=False, elevate_permission=False):
+        capture.captured.clear()
+        capture.save_snapshot(snapshot(run, size))
+        payload = {
+            "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+            "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+            "p_signals": capture.captured["alpha_hunter_signals"],
+            "p_features": capture.captured["alpha_hunter_signal_features"],
+            "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+        }
+        if shorten_features:
+            payload["p_features"] = payload["p_features"][:-1]
+        if elevate_permission:
+            payload["p_signals"][0]["trade_permission"] = True
+        response = requests.post(
+            BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+            json=payload,
+            timeout=15,
+        )
+        print("ATOMIC_RPC",run,response.status_code,
+              repr(response.text[:350]),flush=True)
+        return response
+
+    first = atomic("success-atomic")
+    assert first.status_code == 200, first.text
+    result = first.json()
+    assert result["status"] == "VERIFIED"
+    assert result["child_count"] == 61
+    assert result["feature_count"] == 61
+    c = assert_counts(conn, "success-atomic", parent=1, child=61,
+                      signal=61, feature=61, readiness=61, obs=610)
+    payload = conn.execute(
+        "SELECT payload FROM public.alpha_hunter_snapshots WHERE run_id=%s",
+        ("success-atomic",),
+    ).fetchone()[0]
+    assert payload.get("_canonical_publication_state") == "VERIFIED"
+
+    again = atomic("success-atomic")
+    assert again.status_code >= 400, "Ambiguous duplicate RPC unexpectedly accepted"
+    assert_counts(conn, "success-atomic", parent=1, child=61,
+                  signal=61, feature=61, readiness=61, obs=610)
+
+    fail_child = atomic("bad-child-atomic", 17)
+    assert fail_child.status_code >= 400, fail_child.text
+    assert_counts(conn, "bad-child-atomic", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    fail_feature = atomic("bad-feature-atomic", 17)
+    assert fail_feature.status_code >= 400, fail_feature.text
+    assert_counts(conn, "bad-feature-atomic", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    wrong_count = atomic("bad-count-atomic", 61, shorten_features=True)
+    assert wrong_count.status_code >= 400, wrong_count.text
+    assert_counts(conn, "bad-count-atomic", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    forged = atomic("forged-permission", 17, elevate_permission=True)
+    assert forged.status_code >= 400, forged.text
+    assert_counts(conn, "forged-permission", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    report["isolated_atomic_rpc"] = {
+        "five_stage_success": c,
+        "duplicate_replay_rejected": True,
+        "child_trigger_error_full_rollback": True,
+        "feature_trigger_error_full_rollback": True,
+        "feature_count_mismatch_full_rollback": True,
+        "forged_permission_rejected": True,
+        "real_production_deploy_ready": False,
+        "production_schema_defaults_verified": False,
+    }
+
+
 def main():
     dsn = assert_disposable()
     disable_unrelated_paper_stage()
@@ -406,12 +492,14 @@ def main():
         test_real_commit_lost_ack(conn, report)
         test_child_trigger_cancel_fails_closed(conn, report)
         test_feature_failure_reveals_non_atomic_publication(conn, report)
+        test_atomic_five_stage_rpc(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps(report, sort_keys=True))
     print("PASS: isolated HTTP semantics and fail-closed partial-publish detection.")
-    print("RELEASE NO-GO: separate HTTP writes are not atomic, live trigger equivalence unproven.")
+    print("RELEASE NO-GO: current separate-HTTP writer is non-atomic; "
+          "the tested atomic RPC has no production wiring or full schema acceptance.")
 
 
 if __name__ == "__main__":
