@@ -29,21 +29,35 @@ class FakeResponse:
 class FakeSession:
     def __init__(self):
         self.calls = []
+        self.child_rows = {}
+        self.inserted_children = 0
 
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
+        if url.endswith("/alpha_hunter_symbol_snapshots") and "data" in kwargs:
+            assert "resolution=ignore-duplicates" in kwargs["headers"]["Prefer"]
+            for row in json.loads(kwargs["data"]):
+                key = (row["run_id"], row["symbol"])
+                if key not in self.child_rows:
+                    self.child_rows[key] = row
+                    self.inserted_children += 1
         return FakeResponse()
 
     def get(self, url, **kwargs):
         self.calls.append((url, kwargs))
-        symbols = []
-        for posted_url, call in self.calls:
-            if posted_url.endswith("/alpha_hunter_symbol_snapshots") and "data" in call:
-                symbols.extend(
-                    {"symbol": row["symbol"]}
-                    for row in json.loads(call["data"])
-                )
-        return StatusResponse(200, payload=symbols)
+        run_id = kwargs.get("params", {}).get("run_id", "").removeprefix("eq.")
+        rows = [
+            {
+                "run_id": row["run_id"],
+                "symbol": row["symbol"],
+                "collected_at_utc": row["collected_at_utc"],
+                "state": row["state"],
+                "error": row["error"],
+                "trade_permission": row["trade_permission"],
+            }
+            for (rid, symbol), row in self.child_rows.items() if rid == run_id
+        ]
+        return StatusResponse(200, payload=sorted(rows, key=lambda row: row["symbol"]))
 
 
 class SequencedSession:
@@ -102,7 +116,7 @@ def test_supabase_writes_parent_and_children():
     assert len(session.calls) == 6
     assert session.calls[0][1]["params"] == {"on_conflict": "run_id"}
     assert session.calls[1][1]["params"] == {"on_conflict": "run_id,symbol"}
-    assert session.calls[2][1]["params"]["select"] == "symbol"
+    assert session.calls[2][1]["params"]["select"] == "run_id,symbol,collected_at_utc,state,error,trade_permission"
     assert session.calls[3][1]["params"] == {"on_conflict": "signal_id"}
     assert session.calls[4][1]["params"] == {"on_conflict": "signal_id"}
     assert session.calls[5][1]["params"] == {"on_conflict": "run_id,symbol"}
@@ -134,7 +148,7 @@ def test_snapshot_child_writes_are_small_and_verified_before_signal_persistence(
     verification = [
         call for url, call in session.calls
         if url.endswith("/alpha_hunter_symbol_snapshots") and "params" in call
-        and call["params"].get("select") == "symbol"
+        and call["params"].get("select") == "run_id,symbol,collected_at_utc,state,error,trade_permission"
     ]
     assert len(verification) == 1
     verified_index = session.calls.index(next(
@@ -208,7 +222,14 @@ def test_supabase_upsert_retries_transient_status_without_duplicate_identity():
         StatusResponse(503, text="temporary upstream reset"),
         StatusResponse(201),
         StatusResponse(201),
-        StatusResponse(200, payload=[{"symbol": "SUIUSDT"}]),
+        StatusResponse(200, payload=[{
+            "run_id": build_run_id(sample_snapshot()),
+            "symbol": "SUIUSDT",
+            "collected_at_utc": sample_snapshot()["collected_at_utc"],
+            "state": "WATCH_LONG",
+            "error": None,
+            "trade_permission": False,
+        }]),
         StatusResponse(201),
         StatusResponse(201),
         StatusResponse(201),
