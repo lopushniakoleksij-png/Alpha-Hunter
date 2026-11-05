@@ -332,6 +332,10 @@ def run_render_cron_burst(
     """
     interval = _validated_interval_minutes(interval_minutes)
     burst_started_at = datetime.now(timezone.utc)
+    # This flag is scoped only to the three existing canonical scan attempts.
+    # A scan returns 0 after its run.py evidence stages have completed.
+    # It is not proof of independently verified database publication.
+    successful_scan_this_burst = False
 
     if should_run_initial_burst_scan(
         burst_started_at,
@@ -343,6 +347,7 @@ def run_render_cron_burst(
             run_auxiliary_jobs=False,
             run_source_override="RENDER_CRON",
         )
+        successful_scan_this_burst = overall_code == 0
     else:
         overall_code = 0
         print(
@@ -379,6 +384,8 @@ def run_render_cron_burst(
             run_auxiliary_jobs=False,
             run_source_override="RENDER_CRON",
         )
+        if code == 0:
+            successful_scan_this_burst = True
         if overall_code == 0 and code != 0:
             overall_code = code
 
@@ -388,10 +395,23 @@ def run_render_cron_burst(
         microsecond=0,
     ) + timedelta(hours=1)
 
-    run_auxiliary_jobs_with_deadline(
-        project_root,
-        next_hour,
-    )
+    # During a documented Supabase write outage, all three downstream
+    # evidence jobs repeatedly query the same failing backend. Do not pile
+    # them on after an entirely failed canonical burst. Keep each protected
+    # aligned scan attempt and the cron failure verdict unchanged.
+    if successful_scan_this_burst:
+        run_auxiliary_jobs_with_deadline(
+            project_root,
+            next_hour,
+        )
+    else:
+        print(
+            "Auxiliary evidence deferred: no scanner cycle returned success "
+            "in this burst. Canonical publication/position health UNKNOWN; "
+            "no historical evidence backfill or scientific promotion.",
+            file=sys.stderr,
+            flush=True,
+        )
 
     return overall_code
 
