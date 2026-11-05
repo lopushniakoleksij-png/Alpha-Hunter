@@ -3020,15 +3020,24 @@ def api_build():
 
 @app.post("/api/run-scan")
 def api_run_scan():
-    with scan_lock:
-        if scan_state["running"]:
-            return jsonify({"status": "running", "message": "A scan is already running"}), 202
-        scan_state["running"] = True
-        scan_state["status"] = "starting"
-        scan_state["error"] = None
-
-    threading.Thread(target=run_scan_worker, daemon=True).start()
-    return jsonify({"status": "started", "message": "Alpha Hunter V7.2 scan started"}), 202
+    # V8 release-safety boundary: this public web service is a reader,
+    # never a scheduler. The protected hourly scanner runs independently
+    # as a Render Cron Job. No public request may launch run.py.
+    #
+    # The old HTTP path is retained as a fail-closed compatibility response
+    # so existing clients get an explicit refusal rather than a surprise
+    # 404 or an accidental scan. The inactive optional Supabase fast-scan
+    # schedule must remain inactive until separately re-engineered.
+    response = jsonify({
+        "error": "manual_web_scanning_disabled",
+        "message": "Web scanning is disabled; the independent scheduled scanner is unchanged.",
+        "scanner_started": False,
+        "trade_permission": False,
+        "order_path": "NONE",
+    })
+    response.status_code = 403
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/scan-status")
