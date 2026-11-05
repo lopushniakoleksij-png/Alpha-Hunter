@@ -1,0 +1,566 @@
+{
+  "title": "P0 PRODUCTION LEXICAL TRANSITIVE TRIGGER CANDIDATE GRAPH",
+  "captured_on": "2026-11-05",
+  "source": "READ-ONLY live pg_catalog inspection, PostgreSQL 17.6",
+  "scope": "5 canonical seed tables; recursive regex extraction of relation identifiers from enabled trigger function bodies; max path depth 6",
+  "classification": "CANDIDATE GRAPH ONLY (not an exact SQL runtime write graph, not the DBA acceptance clone)",
+  "limitations": [
+    "Presence of a relation identifier in a trigger function may reflect SELECT or a comment, not an INSERT or an executed branch",
+    "Dynamic SQL and non-alpha_hunter functions may evade this extraction",
+    "Does not prove runtime trigger execution, cost, exact function bodies or paper side-effect safety",
+    "No prod data, function source or credentials are included in this file",
+    "Not independent DBA or security approval"
+  ],
+  "release_decision": "PRODUCTION NO-GO",
+  "relations": [
+    {
+      "name": "alpha_hunter_readiness_observations_v01",
+      "rls_enabled": true,
+      "candidate_depth": 0
+    },
+    {
+      "name": "alpha_hunter_signal_features",
+      "rls_enabled": true,
+      "candidate_depth": 0
+    },
+    {
+      "name": "alpha_hunter_signals",
+      "rls_enabled": true,
+      "candidate_depth": 0
+    },
+    {
+      "name": "alpha_hunter_snapshots",
+      "rls_enabled": true,
+      "candidate_depth": 0
+    },
+    {
+      "name": "alpha_hunter_symbol_snapshots",
+      "rls_enabled": true,
+      "candidate_depth": 0
+    },
+    {
+      "name": "alpha_hunter_account_ledger_materialization_events",
+      "rls_enabled": true,
+      "candidate_depth": 1
+    },
+    {
+      "name": "alpha_hunter_account_state_snapshots",
+      "rls_enabled": true,
+      "candidate_depth": 1
+    },
+    {
+      "name": "alpha_hunter_open_position_snapshots",
+      "rls_enabled": true,
+      "candidate_depth": 1
+    },
+    {
+      "name": "alpha_hunter_strategy_episodes_v01",
+      "rls_enabled": true,
+      "candidate_depth": 1
+    },
+    {
+      "name": "alpha_hunter_strategy_observations_v01",
+      "rls_enabled": true,
+      "candidate_depth": 1
+    },
+    {
+      "name": "alpha_hunter_profit_management_forward_config_v01",
+      "rls_enabled": true,
+      "candidate_depth": 2
+    },
+    {
+      "name": "alpha_hunter_profit_management_forward_v01",
+      "rls_enabled": true,
+      "candidate_depth": 2
+    },
+    {
+      "name": "alpha_hunter_protection_reconciliation_events_v01",
+      "rls_enabled": true,
+      "candidate_depth": 2
+    },
+    {
+      "name": "alpha_hunter_shadow_decision_quotes_v01",
+      "rls_enabled": true,
+      "candidate_depth": 2
+    },
+    {
+      "name": "alpha_hunter_execution_decision_freezes_v01",
+      "rls_enabled": true,
+      "candidate_depth": 3
+    },
+    {
+      "name": "alpha_hunter_profitability_test_activations_v01",
+      "rls_enabled": true,
+      "candidate_depth": 3
+    },
+    {
+      "name": "alpha_hunter_profitability_test_specs_v01",
+      "rls_enabled": true,
+      "candidate_depth": 3
+    },
+    {
+      "name": "alpha_hunter_execution_cost_floor_status_v01",
+      "rls_enabled": false,
+      "candidate_depth": 4
+    },
+    {
+      "name": "alpha_hunter_paper_execution_activation_v09",
+      "rls_enabled": true,
+      "candidate_depth": 4
+    },
+    {
+      "name": "alpha_hunter_paper_execution_activation_v10",
+      "rls_enabled": true,
+      "candidate_depth": 4
+    },
+    {
+      "name": "alpha_hunter_paper_execution_integrity_activation_v08",
+      "rls_enabled": true,
+      "candidate_depth": 4
+    },
+    {
+      "name": "alpha_hunter_strategy_forward_outcomes_v01",
+      "rls_enabled": true,
+      "candidate_depth": 4
+    }
+  ],
+  "trigger_metadata": [
+    {
+      "table": "alpha_hunter_account_ledger_materialization_events",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_account_materialization_events_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_account_state_snapshots",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_account_state_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_execution_decision_freezes_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_calibrated_paper_order_v02",
+      "function_md5": "c05fc276562bba077d3ca48a88b3a3a1",
+      "function_name": "private.alpha_hunter_create_calibrated_paper_order_v02",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_execution_decision_freezes_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_execution_decision_freezes_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_execution_decision_freezes_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_payoff_geometry_health_v01",
+      "function_md5": "cea4e21b84587377fd665e21d2763d6c",
+      "function_name": "private.alpha_hunter_capture_payoff_geometry_health_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_open_position_snapshots",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_materialize_profit_management_forward_v01",
+      "function_md5": "c27ec2afb598d3e7950374527ab5941f",
+      "function_name": "private.alpha_hunter_materialize_profit_management_forward_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_open_position_snapshots",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_materialize_protection_reconciliation_v01",
+      "function_md5": "1eada4dc507cabcc374fd3870c541db6",
+      "function_name": "private.alpha_hunter_materialize_protection_reconciliation_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_open_position_snapshots",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_open_positions_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_paper_execution_activation_v09",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_r9_activation_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_paper_execution_activation_v10",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_r10_activation_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_paper_execution_integrity_activation_v08",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_paper_execution_r8_activation_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_profit_management_forward_config_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_profit_management_forward_config_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_profit_management_forward_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_profit_management_forward_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_profitability_test_activations_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_profitability_activation_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_profitability_test_activations_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_r10_profitability_activation_interlock_v01",
+      "function_md5": "0c182ed495711252abb96d40f3515a9e",
+      "function_name": "private.alpha_hunter_guard_r10_profitability_activation_v01",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_profitability_test_activations_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_r8_profitability_activation_interlock_v01",
+      "function_md5": "ad067d0d796d2a42e981531b1714e782",
+      "function_name": "private.alpha_hunter_guard_r8_profitability_activation_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_profitability_test_activations_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_r9_profitability_activation_interlock",
+      "function_md5": "09d8c61feb762c1e35f7c6b9deeb23dd",
+      "function_name": "private.alpha_hunter_guard_r9_activation_v01",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_profitability_test_specs_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_profitability_specs_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_protection_reconciliation_events_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_protection_reconciliation_events_append_only",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_shadow_decision_quotes_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_auto_freeze_execution_decision_v02",
+      "function_md5": "2caefa517ee67735917497ccdba350fe",
+      "function_name": "private.alpha_hunter_auto_freeze_execution_decision_v02",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_shadow_decision_quotes_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_shadow_decision_quotes_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_signal_features",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_enrich_signal_feature_geometry_context_v01",
+      "function_md5": "26b0c79d862373c37fa1ecb1921d36d7",
+      "function_name": "private.alpha_hunter_enrich_signal_feature_geometry_context_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_signals",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_create_paper_order_v01",
+      "function_md5": "6fe344bf93efdcea6dd7e154697e666f",
+      "function_name": "private.alpha_hunter_create_paper_order_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_snapshots",
+      "events": "IU",
+      "enabled": "O",
+      "trigger": "trg_ah_capture_snapshot_slim_v01",
+      "function_md5": "b2e7875f08bd146358181dd606181e93",
+      "function_name": "private.alpha_hunter_capture_snapshot_slim_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_snapshots",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_materialize_account_ledger_from_snapshot",
+      "function_md5": "5dde00a0e79d2343e91dd1bbf3ac5365",
+      "function_name": "private.alpha_hunter_materialize_account_ledger_from_snapshot",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_strategy_episodes_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_enqueue_strategy_24h_outcome_v01",
+      "function_md5": "18ed88128252c57891fa66a680cb1028",
+      "function_name": "private.alpha_hunter_enqueue_strategy_24h_outcome_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_strategy_episodes_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_strategy_episode_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_strategy_forward_outcomes_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_strategy_forward_outcome_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_strategy_observations_v01",
+      "events": "I",
+      "enabled": "O",
+      "trigger": "trg_ah_capture_shadow_decision_quote_v01",
+      "function_md5": "88af26209fa503cbdf4ad9cf29eb09b5",
+      "function_name": "private.alpha_hunter_capture_shadow_decision_quote_v01",
+      "security_definer": true
+    },
+    {
+      "table": "alpha_hunter_strategy_observations_v01",
+      "events": "UD",
+      "enabled": "O",
+      "trigger": "trg_ah_strategy_obs_append_only_v01",
+      "function_md5": "4db6a60b328f843970f8b165142f6fe2",
+      "function_name": "private.alpha_hunter_block_append_only_mutation",
+      "security_definer": false
+    },
+    {
+      "table": "alpha_hunter_symbol_snapshots",
+      "events": "IU",
+      "enabled": "O",
+      "trigger": "trg_ah_capture_strategy_observations_v01",
+      "function_md5": "52b3b76ecb79ed9694c5a3063a8c81ab",
+      "function_name": "private.alpha_hunter_capture_strategy_observations_v01",
+      "security_definer": true
+    }
+  ],
+  "lexical_candidate_edges": [
+    {
+      "to": "alpha_hunter_signal_features",
+      "from": "alpha_hunter_execution_decision_freezes_v01",
+      "via_trigger": "trg_ah_calibrated_paper_order_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_strategy_observations_v01",
+      "from": "alpha_hunter_execution_decision_freezes_v01",
+      "via_trigger": "trg_ah_calibrated_paper_order_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_execution_cost_floor_status_v01",
+      "from": "alpha_hunter_execution_decision_freezes_v01",
+      "via_trigger": "trg_ah_payoff_geometry_health_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_strategy_forward_outcomes_v01",
+      "from": "alpha_hunter_execution_decision_freezes_v01",
+      "via_trigger": "trg_ah_payoff_geometry_health_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_account_state_snapshots",
+      "from": "alpha_hunter_open_position_snapshots",
+      "via_trigger": "trg_ah_materialize_profit_management_forward_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_profit_management_forward_config_v01",
+      "from": "alpha_hunter_open_position_snapshots",
+      "via_trigger": "trg_ah_materialize_profit_management_forward_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_profit_management_forward_v01",
+      "from": "alpha_hunter_open_position_snapshots",
+      "via_trigger": "trg_ah_materialize_profit_management_forward_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_protection_reconciliation_events_v01",
+      "from": "alpha_hunter_open_position_snapshots",
+      "via_trigger": "trg_ah_materialize_protection_reconciliation_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_paper_execution_activation_v10",
+      "from": "alpha_hunter_profitability_test_activations_v01",
+      "via_trigger": "trg_ah_r10_profitability_activation_interlock_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_profitability_test_specs_v01",
+      "from": "alpha_hunter_profitability_test_activations_v01",
+      "via_trigger": "trg_ah_r10_profitability_activation_interlock_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_paper_execution_integrity_activation_v08",
+      "from": "alpha_hunter_profitability_test_activations_v01",
+      "via_trigger": "trg_ah_r8_profitability_activation_interlock_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_paper_execution_activation_v09",
+      "from": "alpha_hunter_profitability_test_activations_v01",
+      "via_trigger": "trg_ah_r9_profitability_activation_interlock",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_execution_decision_freezes_v01",
+      "from": "alpha_hunter_shadow_decision_quotes_v01",
+      "via_trigger": "trg_ah_auto_freeze_execution_decision_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_profitability_test_activations_v01",
+      "from": "alpha_hunter_shadow_decision_quotes_v01",
+      "via_trigger": "trg_ah_auto_freeze_execution_decision_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_profitability_test_specs_v01",
+      "from": "alpha_hunter_shadow_decision_quotes_v01",
+      "via_trigger": "trg_ah_auto_freeze_execution_decision_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_snapshots",
+      "from": "alpha_hunter_shadow_decision_quotes_v01",
+      "via_trigger": "trg_ah_auto_freeze_execution_decision_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_strategy_observations_v01",
+      "from": "alpha_hunter_shadow_decision_quotes_v01",
+      "via_trigger": "trg_ah_auto_freeze_execution_decision_v02",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_symbol_snapshots",
+      "from": "alpha_hunter_signal_features",
+      "via_trigger": "trg_ah_enrich_signal_feature_geometry_context_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_account_ledger_materialization_events",
+      "from": "alpha_hunter_snapshots",
+      "via_trigger": "trg_ah_materialize_account_ledger_from_snapshot",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_account_state_snapshots",
+      "from": "alpha_hunter_snapshots",
+      "via_trigger": "trg_ah_materialize_account_ledger_from_snapshot",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_open_position_snapshots",
+      "from": "alpha_hunter_snapshots",
+      "via_trigger": "trg_ah_materialize_account_ledger_from_snapshot",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_shadow_decision_quotes_v01",
+      "from": "alpha_hunter_strategy_observations_v01",
+      "via_trigger": "trg_ah_capture_shadow_decision_quote_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_snapshots",
+      "from": "alpha_hunter_strategy_observations_v01",
+      "via_trigger": "trg_ah_capture_shadow_decision_quote_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_symbol_snapshots",
+      "from": "alpha_hunter_strategy_observations_v01",
+      "via_trigger": "trg_ah_capture_shadow_decision_quote_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_strategy_episodes_v01",
+      "from": "alpha_hunter_symbol_snapshots",
+      "via_trigger": "trg_ah_capture_strategy_observations_v01",
+      "possible_read_or_write": true
+    },
+    {
+      "to": "alpha_hunter_strategy_observations_v01",
+      "from": "alpha_hunter_symbol_snapshots",
+      "via_trigger": "trg_ah_capture_strategy_observations_v01",
+      "possible_read_or_write": true
+    }
+  ]
+}

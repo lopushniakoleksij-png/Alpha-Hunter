@@ -10,6 +10,10 @@ from __future__ import annotations
 import json
 import os
 import time
+import base64
+import hashlib
+import hmac
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +25,8 @@ from alpha_hunter import storage as storage_module
 from alpha_hunter.storage import SupabaseConfig, SupabaseStorage, SupabaseStorageError
 
 BASE = "http://127.0.0.1:3000"
+ROLE_BASE = "http://127.0.0.1:3001"
+ROLE_TEST_SECRET = "alpha-hunter-disposable-only-role-matrix-2026-key"
 TABLES = (
     "alpha_hunter_snapshots",
     "alpha_hunter_symbol_snapshots",
@@ -162,7 +168,13 @@ def create_schema(dsn):
         current = conn.execute("SELECT current_database()").fetchone()[0]
         if current != "isolated_research":
             raise RuntimeError("Refusing non-disposable database")
-        conn.execute("CREATE ROLE ah_p0_local_writer NOLOGIN")
+        # Temporary roles in disposable PostgreSQL ONLY. The local writer
+        # deliberately models service_role's RLS bypass; real authentication
+        # and role assignment still require independent Supabase review.
+        conn.execute("CREATE ROLE ah_p0_local_writer NOLOGIN BYPASSRLS")
+        conn.execute("CREATE ROLE anon NOLOGIN")
+        conn.execute("CREATE ROLE authenticated NOLOGIN")
+        conn.execute("CREATE ROLE service_role NOLOGIN BYPASSRLS")
         for table in TABLES:
             cols = []
             for field in capture.captured[table][0]:
@@ -185,6 +197,53 @@ def create_schema(dsn):
             conn.execute(sql.SQL("CREATE TABLE public.{} ({})").format(
                 sql.Identifier(table), sql.SQL(", ").join(cols + [pk])
             ))
+        # Reflect the production PostgreSQL 17 default/NOT NULL contract.
+        # The captured app JSON omits created_at, while actual production
+        # tables have created_at timestamptz NOT NULL DEFAULT now().
+        for table in TABLES:
+            if "created_at" not in capture.captured[table][0]:
+                conn.execute(sql.SQL(
+                    "ALTER TABLE public.{} ADD COLUMN created_at "
+                    "timestamptz NOT NULL DEFAULT now()"
+                ).format(sql.Identifier(table)))
+            else:
+                conn.execute(sql.SQL(
+                    "ALTER TABLE public.{} ALTER COLUMN created_at SET NOT NULL"
+                ).format(sql.Identifier(table)))
+        conn.execute("ALTER TABLE public.alpha_hunter_snapshots "
+                     "ALTER COLUMN error_count SET DEFAULT 0")
+        for table in TABLES[1:]:
+            conn.execute(sql.SQL(
+                "ALTER TABLE public.{} ALTER COLUMN trade_permission "
+                "SET DEFAULT false"
+            ).format(sql.Identifier(table)))
+        conn.execute("ALTER TABLE public.alpha_hunter_symbol_snapshots "
+                     "ALTER COLUMN state_changed SET DEFAULT false")
+        conn.execute("ALTER TABLE public.alpha_hunter_readiness_observations_v01 "
+                     "ALTER COLUMN v7_trade_ready SET DEFAULT false")
+        conn.execute("ALTER TABLE public.alpha_hunter_signal_features "
+                     "ALTER COLUMN features SET DEFAULT '{}'::jsonb")
+        conn.execute("ALTER TABLE public.alpha_hunter_signal_features "
+                     "ALTER COLUMN source_payload SET DEFAULT '{}'::jsonb")
+        for table in TABLES[1:]:
+            conn.execute(sql.SQL(
+                "ALTER TABLE public.{} ALTER COLUMN trade_permission SET NOT NULL"
+            ).format(sql.Identifier(table)))
+        # Mirror the parent trigger event classification; an UPDATE OF payload
+        # must not be necessary to mark an already-atomic commit VERIFIED.
+        conn.execute("""CREATE TABLE public.p0_parent_capture_audit (
+            run_id text NOT NULL, trigger_operation text NOT NULL
+        )""")
+        conn.execute("""CREATE FUNCTION public.p0_parent_capture_hook() RETURNS trigger
+        LANGUAGE plpgsql AS $p0_hook$
+        BEGIN
+          INSERT INTO public.p0_parent_capture_audit(run_id,trigger_operation)
+          VALUES(NEW.run_id,TG_OP);
+          RETURN NEW;
+        END $p0_hook$""")
+        conn.execute("""CREATE TRIGGER p0_parent_capture
+            AFTER INSERT OR UPDATE OF payload ON public.alpha_hunter_snapshots
+            FOR EACH ROW EXECUTE FUNCTION public.p0_parent_capture_hook()""")
         conn.execute("""ALTER TABLE public.alpha_hunter_symbol_snapshots
             ADD FOREIGN KEY (run_id) REFERENCES public.alpha_hunter_snapshots(run_id)""")
         conn.execute("""ALTER TABLE public.alpha_hunter_signal_features
@@ -221,15 +280,26 @@ def create_schema(dsn):
         conn.execute("""CREATE TRIGGER p0_feature_fail BEFORE INSERT OR UPDATE
         ON public.alpha_hunter_signal_features FOR EACH ROW
         EXECUTE FUNCTION public.p0_test_feature_trigger()""")
-        conn.execute("GRANT USAGE ON SCHEMA public TO ah_p0_local_writer")
+        for table in TABLES:
+            conn.execute(sql.SQL("ALTER TABLE public.{} ENABLE ROW LEVEL SECURITY"
+                     ).format(sql.Identifier(table)))
+        conn.execute("GRANT USAGE ON SCHEMA public "
+                     "TO ah_p0_local_writer, anon, authenticated, service_role")
+        # Production has broad table DML grants but no RLS policies on these
+        # five canonical tables. Reproduce the effective deny-by-RLS property.
+        conn.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES "
+                     "IN SCHEMA public TO anon, authenticated, service_role")
+        assert conn.execute("""SELECT count(*) FROM pg_policies
+                 WHERE schemaname='public' AND tablename = ANY(%s)""",
+                 (list(TABLES),)).fetchone()[0] == 0
         conn.execute("GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO ah_p0_local_writer")
         atomic_sql = Path(
-            "research/p0_successor_atomic_canonical_v02_DISPOSABLE_ONLY.sql"
+            "research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql"
         ).read_text(encoding="utf-8")
         conn.execute(atomic_sql)
         conn.execute("""GRANT EXECUTE ON FUNCTION
-          public.ah_p0_research_atomic_canonical_v02(jsonb,jsonb,jsonb,jsonb,jsonb)
-          TO ah_p0_local_writer""")
+          public.ah_p0_research_atomic_canonical_v03(jsonb,jsonb,jsonb,jsonb,jsonb)
+          TO ah_p0_local_writer, service_role""")
         conn.execute("NOTIFY pgrst, 'reload schema'")
     for attempt in range(100):
         try:
@@ -415,7 +485,7 @@ def test_atomic_five_stage_rpc(conn, report):
         if elevate_permission:
             payload["p_signals"][0]["trade_permission"] = True
         response = requests.post(
-            BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+            BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
             json=payload,
             timeout=15,
         )
@@ -436,6 +506,18 @@ def test_atomic_five_stage_rpc(conn, report):
         ("success-atomic",),
     ).fetchone()[0]
     assert payload.get("_canonical_publication_state") == "VERIFIED"
+    for table in TABLES:
+        not_null = conn.execute(
+            sql.SQL("SELECT count(*) FROM public.{} WHERE run_id=%s "
+                    "AND created_at IS NULL").format(sql.Identifier(table)),
+            ("success-atomic",),
+        ).fetchone()[0]
+        assert not_null == 0, (table, "production required created_at missing")
+    operations = conn.execute(
+        "SELECT trigger_operation FROM public.p0_parent_capture_audit "
+        "WHERE run_id=%s", ("success-atomic",)
+    ).fetchall()
+    assert operations == [("INSERT",)], operations
 
     again = atomic("success-atomic")
     assert again.status_code >= 400, "Ambiguous duplicate RPC unexpectedly accepted"
@@ -471,8 +553,91 @@ def test_atomic_five_stage_rpc(conn, report):
         "forged_permission_rejected": True,
         "real_production_deploy_ready": False,
         "production_schema_defaults_verified": False,
+        "isolated_production_equivalent_not_null_defaults_verified": True,
+        "isolated_parent_payload_trigger_fired_once": True,
     }
 
+
+
+def _disposable_jwt(role: str) -> str:
+    """HS256 only, using a public fixture secret; NEVER a real Supabase token."""
+    if role not in ("anon", "authenticated", "service_role"):
+        raise AssertionError("Unexpected synthetic JWT role")
+    def encode(value):
+        data = json.dumps(value, separators=(",", ":"), sort_keys=True).encode()
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+    message = encode({"alg": "HS256", "typ": "JWT"}) + "." + encode({
+        "role": role, "iat": int(time.time()), "exp": int(time.time()) + 600,
+        "sub": "DISPOSABLE_ONLY", "aud": "authenticated",
+    })
+    signature = hmac.new(ROLE_TEST_SECRET.encode(), message.encode(),
+                         hashlib.sha256).digest()
+    return message + "." + base64.urlsafe_b64encode(signature).rstrip(b"=").decode()
+
+
+def test_real_http_role_matrix(conn, report):
+    """Actual local HTTP JWT/RLS checks; never claims Supabase auth parity."""
+    capture = CaptureSchema()
+    capture.save_snapshot(snapshot("local-role-matrix", 17))
+    args = {
+        "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+        "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+        "p_signals": capture.captured["alpha_hunter_signals"],
+        "p_features": capture.captured["alpha_hunter_signal_features"],
+        "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+    }
+    url = ROLE_BASE + "/rpc/ah_p0_research_atomic_canonical_v03"
+    # The local PostgREST service has an actual anonymous DB role; a signed
+    # JWT with role authenticated must also be denied. Neither is privileged.
+    for role in ("anon", "authenticated"):
+        headers = {} if role == "anon" else {
+            "Authorization": "Bearer " + _disposable_jwt(role),
+        }
+        for _ in range(40):
+            try:
+                get = requests.get(ROLE_BASE + "/alpha_hunter_snapshots",
+                                   params={"select": "run_id", "limit": "1"},
+                                   headers=headers, timeout=2)
+                if get.status_code == 200:
+                    break
+            except requests.RequestException:
+                pass
+            time.sleep(0.2)
+        else:
+            raise AssertionError("Local role PostgREST did not become ready")
+        assert get.json() == [], (role, get.text[:250])
+        direct = requests.post(ROLE_BASE + "/alpha_hunter_snapshots",
+                               json=[args["p_parent"]], headers=headers, timeout=5)
+        assert direct.status_code in (401, 403), (role, direct.status_code, direct.text)
+        rpc = requests.post(url, json=args, headers=headers, timeout=5)
+        assert rpc.status_code in (401, 403, 404), (role, rpc.status_code, rpc.text)
+        assert_counts(conn, "local-role-matrix", parent=0, child=0,
+                      signal=0, feature=0, readiness=0, obs=0)
+
+    # Altered/unsigned role claims must not be accepted.
+    unsigned = _disposable_jwt("service_role").rsplit(".", 1)[0] + ".invalid"
+    forged = requests.post(url, json=args, headers={
+        "Authorization": "Bearer " + unsigned}, timeout=5)
+    assert forged.status_code == 401, (forged.status_code, forged.text)
+
+    # Only the explicitly granted server-side synthetic service role may
+    # invoke the function. The JWT signing secret exists in local CI only.
+    allowed = requests.post(url, json=args, headers={
+        "Authorization": "Bearer " + _disposable_jwt("service_role"),
+    }, timeout=15)
+    assert allowed.status_code == 200, (allowed.status_code, allowed.text)
+    assert allowed.json()["status"] == "VERIFIED"
+    c = assert_counts(conn, "local-role-matrix", parent=1, child=17, signal=17,
+                      feature=17, readiness=17, obs=170)
+    report["isolated_jwt_rls_role_matrix"] = {
+        "local_http_anon_denied": True,
+        "local_http_authenticated_jwt_denied": True,
+        "forged_service_jwt_denied": True,
+        "explicit_service_role_jwt_accepted": True,
+        "zero_trade_permission": c["enabled_trading"] == 0,
+        "production_auth_or_real_trigger_graph_verified": False,
+        "jwt_secret_production_credential": False,
+    }
 
 
 def test_atomic_rpc_lost_ack_readback(conn, report):
@@ -488,7 +653,7 @@ def test_atomic_rpc_lost_ack_readback(conn, report):
         "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
     }
     response = requests.post(
-        BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
         json=payload, timeout=15,
     )
     assert response.status_code == 200, response.text
@@ -504,7 +669,7 @@ def test_atomic_rpc_lost_ack_readback(conn, report):
     ).fetchone()[0]
     assert parent.get("_canonical_publication_state") == "VERIFIED"
     duplicate = requests.post(
-        BASE + "/rpc/ah_p0_research_atomic_canonical_v02",
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
         json=payload, timeout=15,
     )
     assert duplicate.status_code >= 400, duplicate.text
@@ -517,6 +682,158 @@ def test_atomic_rpc_lost_ack_readback(conn, report):
         "counts": c,
         "production_network_fault_reproduced": False,
     }
+
+
+def _p0_sample_percentile(values: list[float], pct: float) -> float:
+    """Linear sample interpolation, NOT a production confidence interval."""
+    values = sorted(values)
+    assert values and 0 <= pct <= 100
+    index = (len(values) - 1) * pct / 100.0
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    return round(values[lower] * (upper - index)
+                 + values[upper] * (index - lower), 3)
+
+
+def _p0_rpc_benchmark_post(size: int, label: str) -> tuple[float, str]:
+    capture = CaptureSchema()
+    capture.save_snapshot(snapshot(label, size))
+    payload = {
+        "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+        "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+        "p_signals": capture.captured["alpha_hunter_signals"],
+        "p_features": capture.captured["alpha_hunter_signal_features"],
+        "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+    }
+    start = time.perf_counter()
+    r = requests.post(BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+                      json=payload, timeout=15)
+    ms = (time.perf_counter() - start) * 1000.0
+    assert r.status_code == 200, (r.status_code, r.text[:350])
+    assert r.json()["status"] == "VERIFIED", r.text[:350]
+    return round(ms, 3), label
+
+
+def test_disposable_truncate_security_gap(dsn, report):
+    """Show that RLS does not constrain granted SQL TRUNCATE in a local DB.
+
+    This probe uses an independent temporary test table in a transaction that
+    is rolled back. It is NOT evidence of an exposed production HTTP endpoint.
+    """
+    with psycopg.connect(dsn) as probe:
+        assert probe.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
+        probe.execute("CREATE TABLE public.p0_rls_truncate_probe (id integer PRIMARY KEY)")
+        probe.execute("ALTER TABLE public.p0_rls_truncate_probe ENABLE ROW LEVEL SECURITY")
+        probe.execute("GRANT SELECT, TRUNCATE ON public.p0_rls_truncate_probe "
+                      "TO anon, authenticated")
+        outcomes = {}
+        for role in ("anon", "authenticated"):
+            probe.execute("INSERT INTO public.p0_rls_truncate_probe VALUES (1)")
+            assert probe.execute("SELECT COUNT(*) FROM public.p0_rls_truncate_probe"
+                                 ).fetchone()[0] == 1
+            probe.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+            assert probe.execute("SELECT COUNT(*) FROM public.p0_rls_truncate_probe"
+                                 ).fetchone()[0] == 0, role
+            # Despite an empty RLS-visible SELECT, TRUNCATE succeeds because
+            # it is governed by the table-level TRUNCATE grant, not row policy.
+            probe.execute("TRUNCATE TABLE public.p0_rls_truncate_probe")
+            probe.execute("RESET ROLE")
+            assert probe.execute("SELECT COUNT(*) FROM public.p0_rls_truncate_probe"
+                                 ).fetchone()[0] == 0, role
+            outcomes[role] = {
+                "rls_select_denied": True,
+                "sql_truncate_succeeded_under_grant": True,
+            }
+        probe.rollback()
+    report["isolated_rls_truncate_gap_probe"] = {
+        "database": "local disposable PostgreSQL only",
+        "roles": outcomes,
+        "production_http_truncate_exposure_proven": False,
+        "production_grants_modified": False,
+        "release_decision": "NO-GO pending DBA/security least-privilege assessment",
+    }
+
+
+def test_disposable_latency_and_concurrency(conn, report):
+    """Measured HTTP time; fixture triggers are synthetic, not production."""
+    results = {}
+    sample_count = 30
+    for size in (61, 62, 63):
+        # Warming a local PostgREST service makes the sampling conditions
+        # explicit, while retaining individual samples for independent audit.
+        for i in range(2):
+            _, label = _p0_rpc_benchmark_post(size, f"bench-{size}-warm-{i}")
+            assert_counts(conn, label, parent=1, child=size, signal=size,
+                          feature=size, readiness=size, obs=size * 10)
+        durations = []
+        for i in range(sample_count):
+            ms, label = _p0_rpc_benchmark_post(size, f"bench-{size}-{i:03d}")
+            assert_counts(conn, label, parent=1, child=size, signal=size,
+                          feature=size, readiness=size, obs=size * 10)
+            durations.append(ms)
+        results[str(size)] = {
+            "sample_count":len(durations),
+            "p50_ms":_p0_sample_percentile(durations, 50),
+            "p95_ms":_p0_sample_percentile(durations, 95),
+            "p99_ms":_p0_sample_percentile(durations, 99),
+            "max_ms":round(max(durations), 3),
+            "mean_ms":round(sum(durations) / len(durations), 3),
+            "samples_ms":durations,
+        }
+
+    # Concurrent distinct run IDs, HTTP through same disposable PostgREST.
+    # Retain all latencies: no fabricated, theoretical or live timing.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(_p0_rpc_benchmark_post, 61, f"bench-concurrent-{i}")
+                   for i in range(8)]
+        measured = [f.result() for f in futures]
+    for ms, label in measured:
+        assert_counts(conn, label, parent=1, child=61, signal=61,
+                      feature=61, readiness=61, obs=610)
+    concurrent_ms = [x[0] for x in measured]
+
+    # Two simultaneous requests for the same run ID must not publish
+    # anything twice; a duplicate can fail at the unique constraint.
+    duplicated = "bench-duplicate-concurrent"
+    def race():
+        capture = CaptureSchema()
+        capture.save_snapshot(snapshot(duplicated, 61))
+        args = {
+            "p_parent": capture.captured["alpha_hunter_snapshots"][0],
+            "p_children": capture.captured["alpha_hunter_symbol_snapshots"],
+            "p_signals": capture.captured["alpha_hunter_signals"],
+            "p_features": capture.captured["alpha_hunter_signal_features"],
+            "p_readiness": capture.captured["alpha_hunter_readiness_observations_v01"],
+        }
+        res = requests.post(BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+                            json=args, timeout=15)
+        return res.status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        status_codes = list(pool.map(lambda _: race(), range(2)))
+    assert sorted(x < 300 for x in status_codes) == [False, True], status_codes
+    assert_counts(conn, duplicated, parent=1, child=61, signal=61,
+                  feature=61, readiness=61, obs=610)
+    report["diagnostic_fixture_http_performance"] = {
+        "production_trigger_performance_valid":False,
+        "cloned_production_trigger_graph":False,
+        "postgresql_server_version":report["pg_version"],
+        "samples_per_size":sample_count,
+        "requests_measured_via":"local PostgREST HTTP round trip",
+        "synthetic_observations_per_symbol":10,
+        "sizes":results,
+        "concurrency": {
+            "workers":4,
+            "distinct_run_samples":len(concurrent_ms),
+            "samples_ms":concurrent_ms,
+            "p95_ms":_p0_sample_percentile(concurrent_ms, 95),
+            "max_ms":round(max(concurrent_ms), 3),
+            "duplicate_same_run_status_codes":status_codes,
+            "exact_single_commit_verified":True,
+        },
+        "client_timeout_seconds":15,
+        "release_slo_or_signoff_proven":False,
+    }
+
 
 def main():
     dsn = assert_disposable()
@@ -538,6 +855,9 @@ def main():
         test_feature_failure_reveals_non_atomic_publication(conn, report)
         test_atomic_five_stage_rpc(conn, report)
         test_atomic_rpc_lost_ack_readback(conn, report)
+        test_real_http_role_matrix(conn, report)
+        test_disposable_truncate_security_gap(dsn, report)
+        test_disposable_latency_and_concurrency(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
