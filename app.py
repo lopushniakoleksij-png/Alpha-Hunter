@@ -2655,11 +2655,11 @@ DASHBOARD_RECOVERY_PAGE = """
       <p class="muted v8-recovery-limits">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
       <div class="v8-retry-controls" role="group" aria-label="Dashboard recovery">
         <a href="/" aria-label="Check latest canonical scan again">Check latest scan</a>
-        <button type="button" id="v8-auto-retry" aria-pressed="false">Enable auto retry</button>
+        <button type="button" id="v8-auto-retry" data-v8-retry-ms="75000" aria-pressed="false">Enable auto retry</button>
       </div>
       <details class="v8-recovery-details">
         <summary>Recovery and retry details</summary>
-        <p class="muted">You can refresh saved evidence now or enable automatic retries every 10 seconds. Auto retry can be paused at any time.</p>
+        <p class="muted">You can refresh saved evidence now or enable automatic retries every 75 seconds. Auto retry can be paused at any time.</p>
         <p class="muted">The warning remains visible until the latest complete canonical scan is verified.</p>
       </details>
     </div>
@@ -2686,11 +2686,16 @@ DASHBOARD_RECOVERY_PAGE = """
     let enabled = false;
     try { enabled = sessionStorage.getItem("alpha-v8-auto-retry") === "enabled"; } catch (_) {}
     let refreshTimer = null;
+    // The browser must not hammer a degraded Supabase service. The outage
+    // page waits out the server circuit cooldown before another read.
+    const configuredRetryMs = Number(button.dataset.v8RetryMs);
+    const retryMs = [15000, 60000, 75000].includes(configuredRetryMs)
+      ? configuredRetryMs : 75000;
     function update() {
       button.setAttribute("aria-pressed", enabled ? "true" : "false");
       button.textContent = enabled ? "Pause auto retry" : "Enable auto retry";
       if (refreshTimer) clearTimeout(refreshTimer);
-      if (enabled) refreshTimer = setTimeout(() => location.reload(), 10000);
+      if (enabled) refreshTimer = setTimeout(() => location.reload(), retryMs);
     }
     button.addEventListener("click", () => {
       enabled = !enabled;
@@ -2804,6 +2809,8 @@ def bounded_dashboard_payload() -> dict[str, Any]:
 DASHBOARD_PUBLISHING_PAGE = (
     DASHBOARD_RECOVERY_PAGE
     .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST SCAN IS PUBLISHING")
+    .replace("every 75 seconds", "every 15 seconds")
+    .replace('data-v8-retry-ms="75000"', 'data-v8-retry-ms="15000"')
     .replace(
         "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
         "The newest canonical scan has arrived, but its per-symbol evidence is still being committed. Trading decisions remain hidden until the complete scan is verified.",
@@ -2814,6 +2821,8 @@ DASHBOARD_PUBLISHING_PAGE = (
 DASHBOARD_INCOMPLETE_PAGE = (
     DASHBOARD_RECOVERY_PAGE
     .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST CANONICAL SCAN INCOMPLETE")
+    .replace("every 75 seconds", "every 60 seconds")
+    .replace('data-v8-retry-ms="75000"', 'data-v8-retry-ms="60000"')
     .replace(
         "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
         "The scanner reported a canonical run, but its verified symbol evidence did not finish publishing. No trade signals or execution recommendations are available from this run.",
