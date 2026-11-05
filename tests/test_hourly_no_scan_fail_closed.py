@@ -50,3 +50,19 @@ def test_normal_scan_keeps_success_status(monkeypatch):
     status, calls = _exercise(monkeypatch, initial=True, boundaries=0, codes=(0,))
     assert status == 0
     assert calls == ["scan", "aux"]
+
+
+def test_skipped_initial_scan_with_later_success_is_still_incomplete(monkeypatch, capsys):
+    status, calls = _exercise(monkeypatch, initial=False, boundaries=1,
+                              missed=False, codes=(0,))
+    assert status == 4
+    assert calls == ["scan", "aux"]
+    assert "initial scan skipped late" in capsys.readouterr().err
+
+
+def test_skipped_initial_scan_preserves_later_scanner_failure(monkeypatch, capsys):
+    status, calls = _exercise(monkeypatch, initial=False, boundaries=1,
+                              missed=False, codes=(2,))
+    assert status == 2
+    assert calls == ["scan"]
+    assert "initial scan skipped late" in capsys.readouterr().err
