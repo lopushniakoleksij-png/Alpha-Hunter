@@ -1829,7 +1829,7 @@ PAGE = r"""
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- V8: avoid forced timed page refresh. User controls when evidence reloads. -->
 <title>Alpha Hunter V8 — Research Terminal</title>
 <style>
@@ -2542,7 +2542,7 @@ DASHBOARD_RECOVERY_PAGE = """
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <!-- V8: retry reloads are user-controllable; no unpausable meta refresh. -->
   <title>Alpha Hunter V8 — Source Integrity</title>
   <style>
