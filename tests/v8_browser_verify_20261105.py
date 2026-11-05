@@ -12,6 +12,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 from werkzeug.serving import make_server
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_v8_frontend_contract_20261105 import _sample_snapshot
 import app as alpha
