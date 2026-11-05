@@ -1885,6 +1885,24 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     </section>
     <section id="v8-view-system" class="v8-view" aria-labelledby="v8-system-title" hidden>
       <div class="v8-view-heading"><h2 id="v8-system-title">System &amp; diagnostics</h2><p>Preserved evidence and operational routes</p></div>
+
+      <section class="v8-trust-panel" aria-labelledby="v8-trust-title">
+        <div class="v8-trust-head">
+          <div><span class="v8-kicker">Product transparency</span><h3 id="v8-trust-title">What Alpha Hunter does—and does not prove</h3>
+            <p>A read-only research terminal for market observations, historical paper evidence and system diagnostics. Displayed information is not an instruction to trade.</p>
+          </div>
+        </div>
+        <div class="v8-trust-grid">
+          <div class="v8-trust-item"><h4>Research provenance</h4><p>Current observations appear only when canonical source checks pass. Historical records never replace incomplete or unavailable current evidence.</p></div>
+          <div class="v8-trust-item"><h4>Paper performance</h4><p>Paper results and shadow scores are not verified live returns, probability forecasts or a claim of scientific profitability.</p></div>
+          <div class="v8-trust-item"><h4>Execution and release</h4><p>Real-money order authority is disabled. Browser checks are not an independent security certification or production-release approval.</p></div>
+        </div>
+        <div class="v8-share-tools">
+          <button class="v8-reset" id="v8-copy-view-link" type="button">Copy link to this view</button>
+          <p class="v8-share-feedback" id="v8-share-feedback" role="status" aria-live="polite">You can share this read-only system overview without sharing credentials or private records.</p>
+          <input id="v8-share-manual" class="v8-share-input" type="text" readonly hidden aria-label="Select and copy this page link manually">
+        </div>
+      </section>
     </section>
   </div>
   <div class="v8-shell-status" data-v8-section="overview" aria-label="Evidence and permissions">
@@ -2603,6 +2621,23 @@ DASHBOARD_RECOVERY_PAGE = """
         </section>
         <section id="v8-view-system" class="v8-view" aria-labelledby="v8-system-title" hidden>
           <div class="v8-view-heading"><h2 id="v8-system-title">System</h2><p>Build provenance and operational diagnostics</p></div>
+      <section class="v8-trust-panel" aria-labelledby="v8-trust-title">
+        <div class="v8-trust-head">
+          <div><span class="v8-kicker">Product transparency</span><h3 id="v8-trust-title">What Alpha Hunter does—and does not prove</h3>
+            <p>A read-only research terminal for market observations, historical paper evidence and system diagnostics. Displayed information is not an instruction to trade.</p>
+          </div>
+        </div>
+        <div class="v8-trust-grid">
+          <div class="v8-trust-item"><h4>Research provenance</h4><p>Current observations appear only when canonical source checks pass. Historical records never replace incomplete or unavailable current evidence.</p></div>
+          <div class="v8-trust-item"><h4>Paper performance</h4><p>Paper results and shadow scores are not verified live returns, probability forecasts or a claim of scientific profitability.</p></div>
+          <div class="v8-trust-item"><h4>Execution and release</h4><p>Real-money order authority is disabled. Browser checks are not an independent security certification or production-release approval.</p></div>
+        </div>
+        <div class="v8-share-tools">
+          <button class="v8-reset" id="v8-copy-view-link" type="button">Copy link to this view</button>
+          <p class="v8-share-feedback" id="v8-share-feedback" role="status" aria-live="polite">You can share this read-only system overview without sharing credentials or private records.</p>
+          <input id="v8-share-manual" class="v8-share-input" type="text" readonly hidden aria-label="Select and copy this page link manually">
+        </div>
+      </section>
           <div class="card"><h2>System status</h2>
             <p class="muted">Web application responding. Current scanner evidence is not fully verified. This page does not prove scanner or database health.</p>
             <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
