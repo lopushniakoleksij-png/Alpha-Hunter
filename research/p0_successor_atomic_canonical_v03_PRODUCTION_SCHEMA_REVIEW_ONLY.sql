@@ -137,6 +137,39 @@ BEGIN
     THEN
         RAISE EXCEPTION 'canonical symbol or signal identity mismatch';
     END IF;
+    -- Sorted symbol lists and sorted ID lists can both match even if two
+    -- signal IDs have been SWAPPED between symbols. Assert actual pairs.
+    IF EXISTS (
+        SELECT 1 FROM (
+            SELECT value->>'symbol' AS symbol, value->>'signal_id' AS signal_id
+            FROM jsonb_array_elements(p_signals)
+            EXCEPT
+            SELECT value->>'symbol', value->>'signal_id'
+            FROM jsonb_array_elements(p_features)
+        ) mismatched
+    ) OR EXISTS (
+        SELECT 1 FROM (
+            SELECT value->>'symbol' AS symbol, value->>'signal_id' AS signal_id
+            FROM jsonb_array_elements(p_features)
+            EXCEPT
+            SELECT value->>'symbol', value->>'signal_id'
+            FROM jsonb_array_elements(p_signals)
+        ) mismatched
+    ) THEN
+        RAISE EXCEPTION 'canonical signal/feature symbol-id pairing mismatch';
+    END IF;
+    -- The compact parent contains the same symbol universe. A swapped
+    -- parent symbol cannot silently be promoted as VERIFIED evidence.
+    IF jsonb_typeof(p_parent->'payload'->'symbols') IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION 'canonical parent symbol inventory is missing';
+    END IF;
+    IF jsonb_array_length(p_parent->'payload'->'symbols') <> v_expected
+       OR (SELECT array_agg(value->>'symbol' ORDER BY value->>'symbol')
+           FROM jsonb_array_elements(p_parent->'payload'->'symbols'))
+             IS DISTINCT FROM v_children
+    THEN
+        RAISE EXCEPTION 'canonical parent/child symbol inventory mismatch';
+    END IF;
     IF exists (SELECT 1 FROM public.alpha_hunter_snapshots WHERE run_id=v_run)
     THEN
         RAISE EXCEPTION 'ambiguous existing canonical run requires independent readback';
