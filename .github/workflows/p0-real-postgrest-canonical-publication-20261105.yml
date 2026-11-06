@@ -3,14 +3,19 @@ on:
   pull_request:
     branches:
       - research/p0-atomic-rpc-lost-ack-20261105-0544
+      - research/p0-production-schema-atomic-review-20261105
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
+      - 'ops/reviews/test_p0_clone_dsn_guard_20261105.py'
+      - 'ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py'
+      - 'ops/reviews/test_p0_private_clone_guard_20261105.py'
       - 'ops/reviews/p0_readonly_production_fingerprints_20261105.json'
       - 'ops/reviews/p0_production_trigger_dependency_candidates_20261105.json'
       - 'ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json'
       - 'ops/reviews/P0_ISOLATED_BENCHMARK_AND_TRIGGER_GRAPH_20261105.md'
       - 'ops/reviews/P0_INDEPENDENT_DBA_SECURITY_ACCEPTANCE_PACKET_20261105.md'
+      - 'ops/reviews/P0_PRIVATE_EXACT_CLONE_DBA_HANDOFF_20261105.md'
       - 'research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql'
       - '.github/workflows/p0-real-postgrest-canonical-publication-20261105.yml'
   push:
@@ -18,14 +23,19 @@ on:
       - research/p0-bounded-child-write-exit-safety-20261105
       - research/p0-atomic-rpc-lost-ack-20261105-0544
       - research/p0-production-schema-atomic-review-20261105
+      - research/p0-clone-dsn-strict-20261105-1142
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
+      - 'ops/reviews/test_p0_clone_dsn_guard_20261105.py'
+      - 'ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py'
+      - 'ops/reviews/test_p0_private_clone_guard_20261105.py'
       - 'ops/reviews/p0_readonly_production_fingerprints_20261105.json'
       - 'ops/reviews/p0_production_trigger_dependency_candidates_20261105.json'
       - 'ops/reviews/p0_cross_schema_write_candidate_graph_20261105.json'
       - 'ops/reviews/P0_ISOLATED_BENCHMARK_AND_TRIGGER_GRAPH_20261105.md'
       - 'ops/reviews/P0_INDEPENDENT_DBA_SECURITY_ACCEPTANCE_PACKET_20261105.md'
+      - 'ops/reviews/P0_PRIVATE_EXACT_CLONE_DBA_HANDOFF_20261105.md'
       - 'research/p0_successor_atomic_canonical_v02_DISPOSABLE_ONLY.sql'
       - 'research/p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql'
       - '.github/workflows/p0-real-postgrest-canonical-publication-20261105.yml'
@@ -96,6 +106,12 @@ jobs:
           python -m pip install --disable-pip-version-check 'psycopg[binary]==3.3.8'
       - name: Compile read-only DBA clone fingerprint verifier (not an acceptance run)
         run: python -m py_compile ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py
+      - name: Test isolated clone connection guard (no database connection)
+        run: python -m unittest discover -s ops/reviews -p 'test_p0_clone_dsn_guard_20261105.py' -v
+      - name: No-network private DBA benchmark guard tests (NOT acceptance)
+        run: |
+          python -m py_compile ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py
+          python -m unittest discover -s ops/reviews -p 'test_p0_private_clone_guard_20261105.py' -v
       - name: Validate pinned production catalog and candidate-graph metadata (no source bodies)
         run: |
           python - <<'PY'
@@ -122,6 +138,32 @@ jobs:
           PY
       - name: Actual HTTP canonical parent-child-signal-feature-readiness fault matrix
         run: PYTHONPATH=. python ops/reviews/p0_real_postgrest_canonical_publication_20261105.py
+      - name: Synthetic PG17 fixture MUST fail the exact-production clone gate
+        if: matrix.postgres == '17'
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          result = subprocess.run(
+              [sys.executable, "ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py"],
+              capture_output=True, text=True, check=False, timeout=30,
+          )
+          assert result.returncode == 2, (
+              "DANGER: simplified synthetic schema was wrongly accepted as production clone",
+              result.returncode, result.stdout[-500:], result.stderr[-500:],
+          )
+          try:
+              report = json.loads(result.stdout.strip().splitlines()[-1])
+          except Exception as exc:
+              raise AssertionError("Clone rejection did not yield inspectable JSON") from exc
+          assert report["status"] == "CATALOG_MISMATCH_NO_GO", report
+          assert report["release_decision"] == "PRODUCTION NO-GO"
+          assert report["transitive_production_graph_verified"] is False
+          assert report["independent_DBA_security_approval"] is False
+          assert len(report["issues"]) > 0
+          print("PASS negative gate: synthetic PG17 schema rejected; production release remains NO-GO")
+          PY
       - name: Archive isolated-only HTTP publication evidence
         if: success()
         uses: actions/upload-artifact@v4

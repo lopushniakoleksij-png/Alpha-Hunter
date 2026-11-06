@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict
 
 MANIFEST = Path("ops/reviews/p0_readonly_production_fingerprints_20261105.json")
 CANDIDATES = Path("ops/reviews/p0_production_trigger_dependency_candidates_20261105.json")
@@ -25,20 +26,65 @@ def sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def validate_isolated_dsn(dsn: str) -> dict:
+    """Reject remote targets and libpq connection indirection before connecting."""
+    try:
+        params = conninfo_to_dict(dsn)
+    except Exception as exc:
+        raise RuntimeError("Invalid isolated connection configuration") from exc
+    allowed = {"host", "port", "dbname", "user", "password", "connect_timeout"}
+    if set(params) - allowed:
+        raise RuntimeError("Unexpected connection parameter in isolated DSN")
+    if params.get("host") != "127.0.0.1" or params.get("dbname") != "isolated_research":
+        raise RuntimeError("Only explicit localhost isolated_research is allowed")
+    if params.get("port", "5432") != "5432":
+        raise RuntimeError("Unexpected isolated PostgreSQL port")
+    return params
+
+
+# Read-only catalog inventory recorded from production PostgreSQL 17.6
+# on 2026-11-05. Exact counts are deliberately fail-closed on any drift.
+# Counts are a coverage floor, NOT evidence of matching objects or runtime.
+EXPECTED_INVENTORY = {
+    "public": {"relations": 282, "tables": 128, "views": 154, "enabled_hooks": 131},
+    "private": {"relations": 47, "tables": 34, "views": 13, "enabled_hooks": 0},
+}
+
+
+def inventory_failures(actual):
+    """Reject incomplete restore or unreviewed drift across public/private."""
+    issues = []
+    if set(actual) != set(EXPECTED_INVENTORY):
+        issues.append("full alpha_hunter schema inventory missing or unexpected schema")
+    for namespace, wanted in EXPECTED_INVENTORY.items():
+        present = actual.get(namespace, {})
+        for field, value in wanted.items():
+            if present.get(field) != value:
+                issues.append(
+                    "alpha_hunter inventory mismatch: "
+                    + namespace + "." + field + " expected=" + str(value)
+                    + " actual=" + str(present.get(field)))
+    return issues
+
+
 def isolated_connection():
     if os.environ.get("AH_P0_LOCAL_POSTGREST_ONLY") != "1":
         raise RuntimeError("Refusing non-isolated catalog inspection")
     if any(os.environ.get(key) for key in FORBIDDEN):
         raise RuntimeError("Real cloud or exchange credentials are forbidden")
-    dsn = os.environ.get("AH_P0_PG_DSN", "")
-    if "host=127.0.0.1" not in dsn or "dbname=isolated_research" not in dsn:
-        raise RuntimeError("Only approved localhost isolated_research is allowed")
-    connection = psycopg.connect(dsn)
+    # Libpq can silently inherit PGHOST/PGSERVICE/PGOPTIONS and similar values.
+    # Explicitly reject these rather than trusting textual DSN substrings.
+    if any(os.environ.get(key) for key in os.environ if key.startswith("PG")
+           and key not in {"AH_P0_PG_DSN"}):
+        raise RuntimeError("Inherited libpq environment configuration is forbidden")
+    params = validate_isolated_dsn(os.environ.get("AH_P0_PG_DSN", ""))
+    connection = psycopg.connect(**params)
     connection.execute("SET TRANSACTION READ ONLY")
     if connection.execute("SELECT current_database()").fetchone()[0] != "isolated_research":
         raise RuntimeError("Unexpected database")
-    if int(connection.execute("SHOW server_version_num").fetchone()[0]) < 170000:
-        raise RuntimeError("This exact production fingerprint was taken on PostgreSQL 17")
+    version = int(connection.execute("SHOW server_version_num").fetchone()[0])
+    if not 170000 <= version < 180000:
+        raise RuntimeError("Exact catalog fingerprint requires PostgreSQL major version 17")
     return connection
 
 
@@ -46,6 +92,32 @@ def run():
     expected = json.loads(MANIFEST.read_text(encoding="utf-8"))
     issues = []
     with isolated_connection() as conn:
+        # A candidate-only restore is dangerous: it could match selected
+        # trigger hashes while omitting many other Alpha Hunter objects.
+        # Inventory covers ALL alpha_hunter_ relations in public and private.
+        inventory_rows = conn.execute("""
+            SELECT n.nspname,
+                   COUNT(*)::integer AS total,
+                   COUNT(*) FILTER (WHERE c.relkind IN ('r','p'))::integer AS tables,
+                   COUNT(*) FILTER (WHERE c.relkind='v')::integer AS views,
+                   (SELECT COUNT(*)::integer FROM pg_trigger t
+                     JOIN pg_class c2 ON c2.oid=t.tgrelid
+                     JOIN pg_namespace n2 ON n2.oid=c2.relnamespace
+                     WHERE NOT t.tgisinternal AND t.tgenabled IN ('O','A')
+                       AND n2.nspname=n.nspname
+                       AND c2.relname LIKE 'alpha_hunter_%') AS enabled_hooks
+            FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname IN ('public','private')
+              AND c.relname LIKE 'alpha_hunter_%'
+              AND c.relkind IN ('r','p','v','m')
+            GROUP BY n.nspname
+        """).fetchall()
+        observed_inventory = {
+            namespace: {"relations":total,"tables":tables,"views":views,
+                        "enabled_hooks":hooks}
+            for namespace,total,tables,views,hooks in inventory_rows
+        }
+        issues.extend(inventory_failures(observed_inventory))
         rows = conn.execute("""
             SELECT c.relname,
                    count(*)::integer AS ncols,
@@ -213,6 +285,9 @@ def run():
         "clone_pg17_only":True,
         "schema_first_order_fingerprints":len(expected["canonical_tables"]),
         "trigger_first_order_fingerprints":len(expected["first_order_triggers"]),
+        "inventory_complete_count_only":not inventory_failures(observed_inventory),
+        "inventory_scope_counts":observed_inventory,
+        "inventory_objects_exact_identity_verified":False,
         "candidate_relation_count":len(graph["relations"]),
         "candidate_trigger_count":len(graph["trigger_metadata"]),
         "candidate_trigger_signatures_match":not issues,

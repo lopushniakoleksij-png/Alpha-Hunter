@@ -56,6 +56,29 @@ BEGIN
     IF v_expected < 1 OR v_expected > 1000 THEN
         RAISE EXCEPTION 'symbol_count outside bounded research contract';
     END IF;
+    -- A publication with source collection errors must not be marked
+    -- VERIFIED even when a caller fabricates complete downstream groups.
+    IF (p_parent ? 'error_count'
+        AND p_parent->>'error_count' IS DISTINCT FROM '0')
+       OR (p_parent->'payload' ? 'error_count'
+        AND p_parent->'payload'->>'error_count' IS DISTINCT FROM '0')
+    THEN
+        RAISE EXCEPTION 'nonzero or invalid source error_count cannot be verified';
+    END IF;
+    -- Nested read-only evidence is not allowed to contradict the false
+    -- exchange permission explicitly required at each five-stage row.
+    IF p_parent->'payload'->>'trade_permission' = 'true'
+        OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(p_parent->'payload'->'symbols') = 'array'
+                     THEN p_parent->'payload'->'symbols'
+                     ELSE '[]'::jsonb END
+            ) AS evidence
+            WHERE evidence->>'trade_permission' = 'true'
+        )
+    THEN
+        RAISE EXCEPTION 'forbidden permission in parent evidence payload';
+    END IF;
     IF jsonb_array_length(p_children) <> v_expected
        OR jsonb_array_length(p_signals) <> v_expected
        OR jsonb_array_length(p_features) <> v_expected
@@ -81,8 +104,18 @@ BEGIN
         SELECT 1 FROM jsonb_array_elements(p_children) AS child
         WHERE jsonb_typeof(child->'payload') IS DISTINCT FROM 'object'
           OR child->'payload'->>'symbol' IS DISTINCT FROM child->>'symbol'
+          OR child->'payload'->>'trade_permission' = 'true'
     ) THEN
-        RAISE EXCEPTION 'canonical child payload identity mismatch';
+        RAISE EXCEPTION 'canonical child payload identity or permission mismatch';
+    END IF;
+    IF exists (
+        SELECT 1 FROM jsonb_array_elements(p_signals) AS signal
+        WHERE signal->'payload'->>'trade_permission' = 'true'
+    ) OR exists (
+        SELECT 1 FROM jsonb_array_elements(p_features) AS feature
+        WHERE feature->'source_payload'->>'trade_permission' = 'true'
+    ) THEN
+        RAISE EXCEPTION 'forbidden permission in signal or feature evidence';
     END IF;
 
     SELECT array_agg(value->>'symbol' ORDER BY value->>'symbol')
@@ -103,6 +136,39 @@ BEGIN
        OR (SELECT count(DISTINCT s) FROM unnest(v_signal_ids) s) <> v_expected
     THEN
         RAISE EXCEPTION 'canonical symbol or signal identity mismatch';
+    END IF;
+    -- Sorted symbol lists and sorted ID lists can both match even if two
+    -- signal IDs have been SWAPPED between symbols. Assert actual pairs.
+    IF EXISTS (
+        SELECT 1 FROM (
+            SELECT value->>'symbol' AS symbol, value->>'signal_id' AS signal_id
+            FROM jsonb_array_elements(p_signals)
+            EXCEPT
+            SELECT value->>'symbol', value->>'signal_id'
+            FROM jsonb_array_elements(p_features)
+        ) mismatched
+    ) OR EXISTS (
+        SELECT 1 FROM (
+            SELECT value->>'symbol' AS symbol, value->>'signal_id' AS signal_id
+            FROM jsonb_array_elements(p_features)
+            EXCEPT
+            SELECT value->>'symbol', value->>'signal_id'
+            FROM jsonb_array_elements(p_signals)
+        ) mismatched
+    ) THEN
+        RAISE EXCEPTION 'canonical signal/feature symbol-id pairing mismatch';
+    END IF;
+    -- The compact parent contains the same symbol universe. A swapped
+    -- parent symbol cannot silently be promoted as VERIFIED evidence.
+    IF jsonb_typeof(p_parent->'payload'->'symbols') IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION 'canonical parent symbol inventory is missing';
+    END IF;
+    IF jsonb_array_length(p_parent->'payload'->'symbols') <> v_expected
+       OR (SELECT array_agg(value->>'symbol' ORDER BY value->>'symbol')
+           FROM jsonb_array_elements(p_parent->'payload'->'symbols'))
+             IS DISTINCT FROM v_children
+    THEN
+        RAISE EXCEPTION 'canonical parent/child symbol inventory mismatch';
     END IF;
     IF exists (SELECT 1 FROM public.alpha_hunter_snapshots WHERE run_id=v_run)
     THEN
@@ -147,7 +213,7 @@ BEGIN
 
     SELECT jsonb_agg(
       jsonb_build_object('trade_permission', false,
-                         'v7_trade_ready', false, 'created_at', now()) || e.value
+                         'v7_trade_ready', false, 'created_at', clock_timestamp()) || e.value
       ORDER BY e.ordinality)
       INTO v_readiness_normalized
     FROM jsonb_array_elements(p_readiness) WITH ORDINALITY AS e(value, ordinality);

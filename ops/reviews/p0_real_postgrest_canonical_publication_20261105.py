@@ -470,7 +470,9 @@ def test_atomic_five_stage_rpc(conn, report):
     """Actual PostgREST single-function-call transaction: separate from live writer."""
     capture = CaptureSchema()
 
-    def atomic(run, size=61, *, shorten_features=False, elevate_permission=False):
+    def atomic(run, size=61, *, shorten_features=False, elevate_permission=False,
+               nested_permission=None, source_error=False,
+               swap_feature_ids=False, mismatch_parent_symbol=False):
         capture.captured.clear()
         capture.save_snapshot(snapshot(run, size))
         payload = {
@@ -484,6 +486,30 @@ def test_atomic_five_stage_rpc(conn, report):
             payload["p_features"] = payload["p_features"][:-1]
         if elevate_permission:
             payload["p_signals"][0]["trade_permission"] = True
+        if nested_permission == "parent":
+            payload["p_parent"]["payload"]["trade_permission"] = True
+        elif nested_permission == "parent_symbol":
+            payload["p_parent"]["payload"]["symbols"][0]["trade_permission"] = True
+        elif nested_permission == "child":
+            payload["p_children"][0]["payload"]["trade_permission"] = True
+        elif nested_permission == "signal":
+            payload["p_signals"][0]["payload"]["trade_permission"] = True
+        elif nested_permission == "feature":
+            payload["p_features"][0].setdefault("source_payload", {})[
+                "trade_permission"
+            ] = True
+        elif nested_permission is not None:
+            raise AssertionError("Unknown synthetic permission mutation")
+        if source_error:
+            payload["p_parent"]["error_count"] = 1
+        if swap_feature_ids:
+            assert size >= 2
+            first = payload["p_features"][0]["signal_id"]
+            second = payload["p_features"][1]["signal_id"]
+            payload["p_features"][0]["signal_id"] = second
+            payload["p_features"][1]["signal_id"] = first
+        if mismatch_parent_symbol:
+            payload["p_parent"]["payload"]["symbols"][0]["symbol"] = "SYNTHETIC-WRONGUSDT"
         response = requests.post(
             BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
             json=payload,
@@ -544,7 +570,40 @@ def test_atomic_five_stage_rpc(conn, report):
     assert_counts(conn, "forged-permission", parent=0, child=0,
                   signal=0, feature=0, readiness=0, obs=0)
 
+    # Nested payloads are research evidence, not an alternative way to
+    # enable trading or falsely verify an errored snapshot. No partial
+    # canonical/paper rows may remain after any of these attempts.
+    for location in ("parent", "parent_symbol", "child", "signal", "feature"):
+        name = "nested-permission-" + location
+        attempt = atomic(name, 17, nested_permission=location)
+        assert attempt.status_code >= 400, (location, attempt.text)
+        assert_counts(conn, name, parent=0, child=0,
+                      signal=0, feature=0, readiness=0, obs=0)
+    source_error = atomic("nonzero-source-error", 17, source_error=True)
+    assert source_error.status_code >= 400, source_error.text
+    assert_counts(conn, "nonzero-source-error", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    # Pairwise identity regression: the same standalone ID and symbol
+    # sets must not permit two symbols to exchange signal IDs.
+    swapped_ids = atomic("swapped-feature-id-pairs", 17, swap_feature_ids=True)
+    assert swapped_ids.status_code >= 400, swapped_ids.text
+    assert "pairing mismatch" in swapped_ids.text
+    assert_counts(conn, "swapped-feature-id-pairs", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    wrong_parent = atomic("mismatched-parent-symbol", 17,
+                          mismatch_parent_symbol=True)
+    assert wrong_parent.status_code >= 400, wrong_parent.text
+    assert "parent/child symbol inventory mismatch" in wrong_parent.text
+    assert_counts(conn, "mismatched-parent-symbol", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
     report["isolated_atomic_rpc"] = {
+        "swapped_feature_symbol_id_pairs_rejected": True,
+        "parent_child_symbol_inventory_mismatch_rejected": True,
+        "nested_permission_forgery_rejected_at_five_locations": True,
+        "nonzero_source_error_cannot_be_verified": True,
         "five_stage_success": c,
         "duplicate_replay_rejected": True,
         "child_trigger_error_full_rollback": True,
@@ -835,6 +894,67 @@ def test_disposable_latency_and_concurrency(conn, report):
     }
 
 
+
+def test_transaction_local_function_tracking(dsn, report):
+    """Prove transaction-scoped trigger timing visibility on disposable DB.
+
+    The tracked functions are synthetic and not the production private graph.
+    A rollback prevents persistent paper or canonical rows from this test.
+    PostgreSQL's pg_stat_xact_user_functions measures per-scan function call
+    totals; per-call percentiles cannot be inferred when calls > 1.
+    """
+    run_id = "synthetic-xact-trigger-telemetry"
+    capture = CaptureSchema()
+    capture.save_snapshot(snapshot(run_id, 17))
+    args = [json.dumps(capture.captured[table][0] if table == TABLES[0]
+                       else capture.captured[table], separators=(",", ":"))
+            for table in TABLES]
+    query = ("SELECT public.ah_p0_research_atomic_canonical_v03("
+             "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb)")
+    observed = []
+    with psycopg.connect(dsn) as tx:
+        assert tx.execute("SELECT current_database()").fetchone()[0] == "isolated_research"
+        tx.execute("SET LOCAL track_functions = 'all'")
+        tx.execute("SET LOCAL statement_timeout = '15s'")
+        assert tx.execute("SHOW track_functions").fetchone()[0] == "all"
+        start = time.perf_counter()
+        value = tx.execute(query, args).fetchone()[0]
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 3)
+        assert value["status"] == "VERIFIED"
+        assert_counts(tx, run_id, parent=1, child=17, signal=17,
+                      feature=17, readiness=17, obs=170)
+        observed = tx.execute("""
+            SELECT s.schemaname,s.funcname,s.calls,s.total_time,s.self_time
+            FROM pg_stat_xact_user_functions s
+            WHERE s.calls>0 AND EXISTS (
+              SELECT 1 FROM pg_trigger t
+              WHERE t.tgfoid=s.funcid AND NOT t.tgisinternal
+            ) ORDER BY s.schemaname,s.funcname
+        """).fetchall()
+        assert observed, "No transaction-local trigger timing samples"
+        assert any(x[1] == "p0_test_symbol_trigger" and x[2] == 17
+                   for x in observed), observed
+        tx.rollback()
+    with psycopg.connect(dsn, autocommit=True) as verify:
+        assert_counts(verify, run_id, parent=0, child=0, signal=0,
+                      feature=0, readiness=0, obs=0)
+    report["synthetic_transaction_local_trigger_instrumentation"] = {
+        "proven_local_instrumentation": True,
+        "pg_stat_xact_user_functions_available": True,
+        "synthetic_trigger_samples": [
+            {"schema":schema, "function_name":name, "calls":calls,
+             "total_time_ms":round(total, 3), "self_time_ms":round(self_time, 3)}
+            for schema,name,calls,total,self_time in observed
+        ],
+        "in_transaction_rpc_ms": elapsed_ms,
+        "transaction_rolled_back": True,
+        "persistent_stage_rows_after_rollback": 0,
+        "production_function_p95_p99_verified": False,
+        "production_trigger_or_schema_equivalence": False,
+        "release_authority": False,
+    }
+
+
 def main():
     dsn = assert_disposable()
     disable_unrelated_paper_stage()
@@ -857,6 +977,7 @@ def main():
         test_atomic_rpc_lost_ack_readback(conn, report)
         test_real_http_role_matrix(conn, report)
         test_disposable_truncate_security_gap(dsn, report)
+        test_transaction_local_function_tracking(dsn, report)
         test_disposable_latency_and_concurrency(conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
