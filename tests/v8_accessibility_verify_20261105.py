@@ -108,6 +108,16 @@ def main():
                     else:
                         assert radar_table.is_visible()
                         assert not radar_cards.first.is_visible()
+                    assert page.locator(".v8-radar-card-state").nth(1).get_attribute("title") == (
+                        "Research status code: DIRECTION_EMERGING_LONG"
+                    )
+                    assert page.locator(".v8-radar-card-state").nth(1).inner_text() == "Direction Emerging Long"
+                    details = page.locator("#v8-view-research .v8-strategy-context")
+                    assert details.count() == 1 and details.get_attribute("open") is None
+                    details.locator("summary").click()
+                    assert details.locator(".v8-strategy-context-body").is_visible()
+                    audit_with_axe(page, f"{browser_name}-{width}-research-methodology-open", axe_js)
+                    details.locator("summary").click()
                     audit_with_axe(page, f"{browser_name}-{width}-research-radar", axe_js)
                     if width == 390:
                         page.screenshot(
