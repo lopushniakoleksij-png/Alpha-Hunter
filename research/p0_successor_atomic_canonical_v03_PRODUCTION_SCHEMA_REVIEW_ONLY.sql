@@ -56,6 +56,29 @@ BEGIN
     IF v_expected < 1 OR v_expected > 1000 THEN
         RAISE EXCEPTION 'symbol_count outside bounded research contract';
     END IF;
+    -- A publication with source collection errors must not be marked
+    -- VERIFIED even when a caller fabricates complete downstream groups.
+    IF (p_parent ? 'error_count'
+        AND p_parent->>'error_count' IS DISTINCT FROM '0')
+       OR (p_parent->'payload' ? 'error_count'
+        AND p_parent->'payload'->>'error_count' IS DISTINCT FROM '0')
+    THEN
+        RAISE EXCEPTION 'nonzero or invalid source error_count cannot be verified';
+    END IF;
+    -- Nested read-only evidence is not allowed to contradict the false
+    -- exchange permission explicitly required at each five-stage row.
+    IF p_parent->'payload'->>'trade_permission' = 'true'
+        OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements(
+                CASE WHEN jsonb_typeof(p_parent->'payload'->'symbols') = 'array'
+                     THEN p_parent->'payload'->'symbols'
+                     ELSE '[]'::jsonb END
+            ) AS evidence
+            WHERE evidence->>'trade_permission' = 'true'
+        )
+    THEN
+        RAISE EXCEPTION 'forbidden permission in parent evidence payload';
+    END IF;
     IF jsonb_array_length(p_children) <> v_expected
        OR jsonb_array_length(p_signals) <> v_expected
        OR jsonb_array_length(p_features) <> v_expected
@@ -81,8 +104,18 @@ BEGIN
         SELECT 1 FROM jsonb_array_elements(p_children) AS child
         WHERE jsonb_typeof(child->'payload') IS DISTINCT FROM 'object'
           OR child->'payload'->>'symbol' IS DISTINCT FROM child->>'symbol'
+          OR child->'payload'->>'trade_permission' = 'true'
     ) THEN
-        RAISE EXCEPTION 'canonical child payload identity mismatch';
+        RAISE EXCEPTION 'canonical child payload identity or permission mismatch';
+    END IF;
+    IF exists (
+        SELECT 1 FROM jsonb_array_elements(p_signals) AS signal
+        WHERE signal->'payload'->>'trade_permission' = 'true'
+    ) OR exists (
+        SELECT 1 FROM jsonb_array_elements(p_features) AS feature
+        WHERE feature->'source_payload'->>'trade_permission' = 'true'
+    ) THEN
+        RAISE EXCEPTION 'forbidden permission in signal or feature evidence';
     END IF;
 
     SELECT array_agg(value->>'symbol' ORDER BY value->>'symbol')
