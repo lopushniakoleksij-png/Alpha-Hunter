@@ -100,6 +100,59 @@ def test_current_flask_dashboard_renders_approved_v8_shell_without_backend_chang
     assert "/static/v8.css" in content and "/static/v8.js" in content
 
 
+def test_stage6_mobile_public_research_layout_and_private_boundary(monkeypatch):
+    content = _example_dashboard(monkeypatch).get_data(as_text=True)
+    assert 'class="v8-runtime-note v8-build-meta" data-v8-section="system"' in content
+    assert 'class="panel v8-private-boundary"' in content
+    assert "Private account information" in content
+    assert "Bitget Open Positions" not in content
+    assert "Underly" not in content or "Underlying engine" in content
+    css = dashboard.app.test_client().get("/static/v8.css").get_data(as_text=True)
+    assert ".v8-body .top h1" in css
+    assert "#v8-view-system > .v8-trust-panel {order:20}" in css
+
+
+def test_stage6_never_put_synthetic_private_account_fields_in_public_html(monkeypatch):
+    snapshot = _sample_snapshot()
+    snapshot["private_account"] = {
+        "status": "CONNECTED",
+        "open_positions": [{
+            "symbol": "PRIVATE_CANARY_PAIR_842",
+            "hold_side": "LONG",
+            "total": "PRIVATE_CANARY_SIZE_842",
+            "open_price_avg": "PRIVATE_CANARY_ENTRY_842",
+            "mark_price": "PRIVATE_CANARY_MARK_842",
+            "unrealized_pl": "PRIVATE_CANARY_PNL_842",
+            "leverage": 7,
+        }],
+    }
+    result = dashboard.dashboard_payload(
+        snapshot, test_engine={"spec_id":"TEST_ONLY","verdict":"NOT_PROVEN"},
+        paper_lifecycle={},
+    )
+    monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: result)
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    response = dashboard.app.test_client().get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "PRIVATE_CANARY_" not in html
+    assert "Bitget Open Positions" not in html
+    assert "Personal Bitget account positions" in html
+
+
+def test_stage6_public_reference_prices_secondary_disclosure(monkeypatch):
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: (
+        _ for _ in ()
+    ).throw(dashboard.CanonicalSnapshotIncomplete("synthetic incomplete")))
+    content = dashboard.app.test_client().get("/").get_data(as_text=True)
+    assert '<details class="v8-market-reference">' in content
+    assert "<summary>Public exchange reference prices" in content
+    assert "Not Alpha Hunter signals" in content
+    assert 'id="public-market-list"' in content
+    assert 'id="v8-scan-warning"' in content
+
+
 def test_v8_product_transparency_is_present_on_healthy_and_recovery_pages(monkeypatch):
     healthy = _example_dashboard(monkeypatch).get_data(as_text=True)
     assert 'id="v8-trust-title"' in healthy
