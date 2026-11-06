@@ -15,7 +15,7 @@ from werkzeug.serving import make_server
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows
+from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows, _synthetic_radar_rows
 import app as alpha
 
 
@@ -27,6 +27,7 @@ def fixture_data():
         paper_lifecycle={},
     )
     data["actionable"] = _synthetic_actionable_rows()
+    data["research"] = _synthetic_radar_rows()
     return data
 
 
@@ -76,6 +77,33 @@ def main():
                     assert nav.is_visible()
                 nav.click()
                 assert page.locator("#v8-view-research").is_visible()
+                radar_cards = page.locator("#v8-view-research .v8-radar-card")
+                radar_table = page.locator("#v8-view-research .v8-radar-table")
+                assert radar_cards.count() == 2
+                assert radar_table.locator("tbody tr").count() == 2
+                if width < 900:
+                    assert radar_cards.first.is_visible(), f"Radar mobile card absent at {width}"
+                    assert not radar_table.is_visible(), f"Radar desktop table squeezed at {width}"
+                    for card in radar_cards.all():
+                        rect = card.bounding_box()
+                        assert rect and rect["width"] >= 200
+                        assert rect["x"] >= -1 and rect["x"] + rect["width"] <= width + 1, (
+                            f"Radar card horizontal overflow at {width}: {rect}"
+                        )
+                    assert radar_cards.first.get_by_text("1.223688",exact=True).is_visible()
+                    assert radar_cards.nth(1).get_by_text("0.24",exact=True).is_visible()
+                    assert radar_cards.nth(1).get_by_text("BEST RETEST / LIMIT ZONE",exact=True).is_visible()
+                    rationale = radar_cards.first.locator(".v8-radar-reason")
+                    assert rationale.locator("p").is_hidden()
+                    rationale.locator("summary").click()
+                    assert rationale.locator("p").is_visible()
+                else:
+                    assert radar_table.is_visible()
+                    assert not radar_cards.first.is_visible()
+                if width in (390, 1280):
+                    page.screenshot(path=str(screenshot_dir / f"radar-{width}.png"),
+                                    full_page=True)
+                assert_no_root_overflow(page,width)
                 if width in (390, 1280):
                     page.screenshot(path=str(screenshot_dir / f"research-{width}.png"),
                                     full_page=True)
@@ -132,6 +160,15 @@ def main():
                 page.locator(f'{target} [data-v8-tab="results"]').click()
                 assert page.locator("#v8-view-results").is_visible()
                 assert page.get_by_text("Real-Time Profitability Test Engine").is_visible()
+                status_value = page.locator(".v8-integrity-metric .v8-status-value")
+                assert status_value.is_visible()
+                assert status_value.inner_text() == "Review Required"
+                assert status_value.get_attribute("title") == "Status code: REVIEW_REQUIRED"
+                if width < 900:
+                    bbox = status_value.bounding_box()
+                    assert bbox and bbox["width"] >= 160, (
+                        f"Unreadably narrow integrity status at {width}: {bbox}"
+                    )
                 cards = page.locator("#v8-view-results .v8-queue-card")
                 table = page.locator("#v8-view-results .v8-queue-table")
                 assert cards.count() == 2
