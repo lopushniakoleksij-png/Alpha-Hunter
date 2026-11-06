@@ -54,6 +54,8 @@ def main():
     if not axe_js.is_file():
         raise RuntimeError("Pinned local axe-core file missing; accessibility cannot be declared passed")
 
+    screenshot_dir = Path("artifacts/v8-browser/stage7").resolve()
+    screenshot_dir.mkdir(parents=True,exist_ok=True)
     alpha.bounded_dashboard_payload = fixture_data
     server = make_server("127.0.0.1", 0, alpha.app, threaded=True)
     origin = f"http://127.0.0.1:{server.server_port}"
@@ -77,6 +79,11 @@ def main():
                         f"{browser_name} {width}px horizontal overflow: {dimensions}"
                     )
                     if width < 900:
+                        assert page.locator(".v8-mobile-head").is_visible()
+                        title_rect = page.locator(".top h1").bounding_box()
+                        assert title_rect and title_rect["width"] <= 2, (
+                            "Mobile duplicate title is visible"
+                        )
                         safe_nav = page.locator(".v8-bottom-nav")
                         bottom_padding = safe_nav.evaluate(
                             "(e) => Number.parseFloat(getComputedStyle(e).paddingBottom)"
@@ -96,6 +103,16 @@ def main():
                     page.locator(f'{nav} [data-v8-tab="results"]').click()
                     audit_with_axe(page, f"{browser_name}-{width}-results", axe_js)
                     page.locator(f'{nav} [data-v8-tab="system"]').click()
+                    assert page.locator("#v8-view-system .v8-private-boundary").is_visible()
+                    assert page.locator("#v8-view-system .v8-build-meta").is_visible()
+                    trust_y = page.locator("#v8-view-system .v8-trust-panel").bounding_box()["y"]
+                    meta_y = page.locator("#v8-view-system .v8-build-meta").bounding_box()["y"]
+                    assert trust_y > meta_y, "System diagnostics are below trust disclosure"
+                    if width == 390:
+                        page.screenshot(
+                            path=str(screenshot_dir / f"{browser_name}-system-390.png"),
+                            full_page=True,
+                        )
                     audit_with_axe(page, f"{browser_name}-{width}-system", axe_js)
                     page.close()
                 browser.close()
@@ -127,6 +144,19 @@ def main():
                 assert "LATEST CANONICAL SCAN INCOMPLETE" in page.locator("body").inner_text()
                 assert page.locator("body.v8-body.v8-enhanced").count() == 1
                 assert page.locator("#v8-view-overview").is_visible()
+                market = page.locator(".v8-market-reference")
+                assert market.count() == 1
+                assert market.get_attribute("open") is None, "Public prices must be secondary"
+                assert market.locator("summary").is_visible()
+                page.screenshot(
+                    path=str(screenshot_dir / f"{browser_name}-recovery-390.png"),
+                    full_page=True,
+                )
+                market.locator("summary").click()
+                assert market.get_attribute("open") is not None
+                assert market.locator("#public-market-state").is_visible()
+                audit_with_axe(page,f"{browser_name}-390-market-disclosure",axe_js)
+                market.locator("summary").click()
                 nav = ".v8-bottom-nav" if 390 < 900 else ".v8-rail"
                 page.locator(f'{nav} [data-v8-tab="research"]').click()
                 assert page.locator("#v8-view-research").is_visible()
@@ -143,6 +173,10 @@ def main():
                     f"Recovery Results link exceeds iPhone viewport: {rect}"
                 )
                 assert "Report may be unavailable" in page.locator("#v8-view-results").inner_text()
+                page.screenshot(
+                    path=str(screenshot_dir / f"{browser_name}-results-390.png"),
+                    full_page=True,
+                )
                 audit_with_axe(page, f"{browser_name}-390-recovery-results-action", axe_js)
                 page.locator(f'{nav} [data-v8-tab="system"]').click()
                 assert page.locator("#v8-view-system").is_visible()
