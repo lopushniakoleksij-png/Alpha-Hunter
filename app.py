@@ -1714,12 +1714,7 @@ def dashboard_payload(
     ]
     best_action = combined_actionable[0] if combined_actionable else None
 
-    # Public Overview and /api/latest share this payload. Never serialize the
-    # private Bitget account body into a public HTML or JSON response.
-    # This shallow copy changes presentation only; canonical snapshot remains
-    # untouched and authenticated operator endpoints are separate.
-    public_snapshot = dict(snapshot)
-    public_snapshot.pop("private_account", None)
+    account = snapshot.get("private_account", {})
     universe = snapshot.get("universe", {})
     strategy_summary = snapshot.get("multi_strategy_summary", {})
     if not isinstance(strategy_summary, dict):
@@ -1745,7 +1740,7 @@ def dashboard_payload(
     ]
 
     return {
-        "snapshot": public_snapshot,
+        "snapshot": snapshot,
         "best_action": best_action,
         "actionable": combined_actionable[:10],
         "blocked_actions": blocked_actions[:25],
@@ -1764,8 +1759,12 @@ def dashboard_payload(
             [row for row in symbols if row["_reference"]],
             key=lambda row: row.get("symbol", ""),
         ),
-        "positions": [],
-        "account_status": "PRIVATE",
+        "positions": [
+            position_protection_view(position, snapshot.get("collected_at_utc"))
+            for position in account.get("open_positions", [])
+            if isinstance(position, dict)
+        ],
+        "account_status": account.get("status", "UNKNOWN"),
         "universe": universe,
         "updated": snapshot.get("collected_at_utc"),
         "btc_change_24h": safe_float(snapshot.get("btc_change_24h_pct")),
@@ -2933,6 +2932,24 @@ def _dashboard_recovery_response():
     return response
 
 
+def public_dashboard_projection(data: dict[str, Any]) -> dict[str, Any]:
+    """Restrict public HTML and /api/latest, not internal protection monitoring.
+
+    Never serialize a private exchange account state or position details to an
+    unauthenticated website visitor. Authenticated operator tools retain their
+    own source and checks; this is a web-response projection only.
+    """
+    public = dict(data)
+    snapshot = public.get("snapshot")
+    if isinstance(snapshot, dict):
+        public_snapshot = dict(snapshot)
+        public_snapshot.pop("private_account", None)
+        public["snapshot"] = public_snapshot
+    public["positions"] = []
+    public["account_status"] = "PRIVATE"
+    return public
+
+
 @app.get("/")
 def dashboard():
     if dashboard_read_circuit_open():
@@ -2940,7 +2957,7 @@ def dashboard():
     try:
         return render_template_string(
             PAGE,
-            data=bounded_dashboard_payload(),
+            data=public_dashboard_projection(bounded_dashboard_payload()),
         )
     except CanonicalSnapshotPublishing:
         app.logger.info("Newest canonical scan is publishing child evidence")
@@ -3005,7 +3022,7 @@ def api_historical_status():
 def api_latest():
     if not dashboard_read_circuit_open():
         try:
-            return jsonify(bounded_dashboard_payload())
+            return jsonify(public_dashboard_projection(bounded_dashboard_payload()))
         except CanonicalSnapshotPublishing:
             response = jsonify({
                 "error": "canonical_scan_publishing",
