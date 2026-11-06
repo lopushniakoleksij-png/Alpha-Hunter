@@ -34,6 +34,9 @@ STAGES = (
     "alpha_hunter_readiness_observations_v01",
 )
 PAPER = ("alpha_hunter_paper_orders_v01", "alpha_hunter_calibrated_paper_orders_v01")
+CROSS_SCHEMA_CANDIDATES = Path(__file__).with_name(
+    "p0_cross_schema_write_candidate_graph_20261105.json"
+)
 RPC_SIGNATURE = "public.ah_p0_research_atomic_canonical_v03(jsonb,jsonb,jsonb,jsonb,jsonb)"
 CLONE_MARKER = "P0_PRIVATE_DISPOSABLE_CLONE_EGRESS_DISABLED"
 
@@ -109,6 +112,14 @@ def validate_fixture(data, size):
             or len(set(signal_ids[1])) != size
             or set(signal_ids[0]) != set(signal_ids[1])):
         raise RuntimeError("Fixture signal IDs duplicated or stages differ")
+    # Matching symbol sets and ID sets separately permits swapped IDs.
+    # Validate exact symbol-to-ID pairs before even connecting to a clone.
+    by_symbol = [
+        {row["symbol"]: row["signal_id"] for row in data[group]}
+        for group in ("p_signals", "p_features")
+    ]
+    if by_symbol[0] != by_symbol[1]:
+        raise RuntimeError("Fixture signal IDs do not match per-symbol identities")
     return run_id
 
 
@@ -145,6 +156,67 @@ def gate():
     if fixtures == evidence:
         raise RuntimeError("Fixtures and output must use distinct private directories")
     return params,fixtures,evidence
+
+
+def declared_write_destinations():
+    """Only the known candidate map is allowed; anything else blocks release.
+
+    This map is not proof of complete trigger reachability. Unexpected observed
+    writes must fail rather than silently being omitted from the report.
+    """
+    manifest = json.loads(CROSS_SCHEMA_CANDIDATES.read_text(encoding="utf-8"))
+    relations = manifest.get("relations")
+    require(isinstance(relations, list) and len(relations) >= 7,
+            "Candidate write-destination manifest missing or incomplete")
+    names = [entry.get("qualified_name") for entry in relations]
+    require(all(isinstance(name, str) and "." in name for name in names),
+            "Malformed write destination in candidate manifest")
+    require(len(names) == len(set(names)), "Duplicate destination in manifest")
+    allowed = set(names)
+    require(all("public." + name in allowed for name in STAGES),
+            "Canonical tables missing from candidate manifest")
+    require(all("private." + name in allowed for name in PAPER),
+            "Known private paper-order tables missing from candidate manifest")
+    return allowed
+
+
+def verify_transaction_write_destinations(rows):
+    """Fail closed on undeclared PostgreSQL write targets in this transaction.
+
+    pg_stat_xact_user_tables includes public AND private, even for tables that
+    have no run_id or signal_id. This does not detect external network effects,
+    non-table writes, or prove that every possible trigger path was executed.
+    """
+    observed = {}
+    for schema, table, inserted, updated, deleted in rows:
+        key = str(schema) + "." + str(table)
+        values = {"inserted": int(inserted), "updated": int(updated),
+                  "deleted": int(deleted)}
+        require(all(value >= 0 for value in values.values()),
+                "Invalid transaction-local write counters")
+        if any(values.values()):
+            require(key not in observed, "Duplicate transaction write destination")
+            observed[key] = values
+    allowlist = declared_write_destinations()
+    unexpected = sorted(set(observed) - allowlist)
+    require(not unexpected,
+            "Undeclared transitive write destinations (NO-GO): "
+            + ", ".join(unexpected))
+    required = {"public." + table for table in STAGES}
+    require(required.issubset(observed),
+            "Five canonical publication stages not all observed as writes")
+    return observed
+
+
+def current_transaction_write_counters(conn):
+    """Return transaction-local table writes, including otherwise untraceable tables."""
+    require(conn.execute("SHOW track_counts").fetchone()[0] == "on",
+            "PostgreSQL transaction write statistics are disabled")
+    return conn.execute("""
+        SELECT schemaname, relname, n_tup_ins, n_tup_upd, n_tup_del
+        FROM pg_stat_xact_user_tables
+        WHERE n_tup_ins <> 0 OR n_tup_upd <> 0 OR n_tup_del <> 0
+    """).fetchall()
 
 
 def field_names(conn, schema, table):
@@ -234,6 +306,9 @@ def one_run(params, data, size):
             "%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb,%s::jsonb)",args
         ).fetchone()[0]
         ms = round((time.perf_counter()-ts)*1000,3)
+        destination_writes = verify_transaction_write_destinations(
+            current_transaction_write_counters(conn)
+        )
         require(isinstance(result,dict) and result.get("status") == "VERIFIED",
                 "Atomic candidate RPC failed or returned invalid status")
         require(result.get("run_id") == run_id
@@ -269,6 +344,7 @@ def one_run(params, data, size):
         observed = {
             "sql_roundtrip_ms":ms,
             "private_paper_rows":private_counts,
+            "transaction_write_destinations":destination_writes,
             "trigger_functions":{
                 schema+"."+name:{
                     "calls":int(calls),"total_ms":round(float(total),3),
@@ -311,6 +387,13 @@ def measure(params, fixtures, evidence, stats):
             one_run(params,fixtures[size],size)
         values = [one_run(params,fixtures[size],size) for _ in range(30)]
         latency = [v["sql_roundtrip_ms"] for v in values]
+        # Every transaction must have the same write destination footprint at
+        # each tested size. Divergence needs DBA review; do not average it away.
+        footprints = [
+            set(v["transaction_write_destinations"]) for v in values
+        ]
+        require(all(footprint == footprints[0] for footprint in footprints),
+                "Transaction write destinations differ across equivalent runs")
         function_names = set().union(*(v["trigger_functions"] for v in values))
         by_function = {}
         for name in sorted(function_names):
@@ -335,6 +418,9 @@ def measure(params, fixtures, evidence, stats):
                    max(v["private_paper_rows"][t] for v in values)] for t in PAPER
             },
             "nested_trigger_stats_by_function":by_function,
+            "observed_transaction_write_destinations":sorted(footprints[0]),
+            "all_write_destinations_within_candidate_manifest":True,
+            "untracked_network_or_non_table_side_effects_excluded":False,
             "database_transactions_rolled_back":32,
             "post_rollback_persistent_rows":0,
         }
