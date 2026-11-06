@@ -25,7 +25,8 @@ from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_acti
 def fixture_data():
     data = alpha.dashboard_payload(
         _sample_snapshot(),
-        test_engine={"spec_id": "ACCESSIBILITY_SYNTHETIC", "verdict": "NOT_PROVEN"},
+        test_engine={"spec_id": "ACCESSIBILITY_SYNTHETIC", "verdict": "NOT_PROVEN",
+                     "operational_status": "REVIEW_REQUIRED"},
         paper_lifecycle={},
     )
     data["actionable"] = _synthetic_actionable_rows()
