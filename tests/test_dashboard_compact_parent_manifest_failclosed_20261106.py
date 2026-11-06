@@ -31,8 +31,8 @@ def test_compact_parent_without_identity_manifest_fails_closed(monkeypatch, mani
     monkeypatch.setattr(dashboard, "supabase_get_rows", fake_rows)
     with pytest.raises(RuntimeError, match="symbol manifest is missing"):
         dashboard._hydrate_dashboard_snapshot(row, row["payload"])
-    assert len(reads) == 1
-    assert reads[0][0] == "alpha_hunter_symbol_snapshots"
+    # Malformed parent evidence must fail before a remote child read.
+    assert reads == []
 
 
 def test_valid_compact_parent_manifest_still_hydrates(monkeypatch):
