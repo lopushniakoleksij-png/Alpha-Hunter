@@ -434,21 +434,30 @@ class SupabaseStorage:
         if not run_id or not isinstance(children, list) or not children:
             raise IncompleteSnapshotError("Prior scan has no complete symbol list")
 
-        expected: set[str] = set()
+        # Match the existing writer: every symbol has a child row, only
+        # symbols WITHOUT an 'error' key receive readiness rows, and only
+        # those with a non-null last_price receive signal + feature rows.
+        # Missing market data must not be mistaken for a failed HTTP write.
+        observed_symbols: set[str] = set()
+        expected_readiness: set[str] = set()
+        expected_signal_ids: dict[str, str] = {}
         for child in children:
             if not isinstance(child, dict):
                 raise IncompleteSnapshotError("Prior scan has malformed symbol data")
-            symbol = str(child.get("symbol") or "").strip().upper()
-            if (
-                not symbol
-                or symbol in expected
-                or "error" in child
-                or child.get("last_price") is None
-            ):
-                raise IncompleteSnapshotError(
-                    "Prior scan has invalid or unpublishable symbol evidence"
-                )
-            expected.add(symbol)
+            raw_symbol = child.get("symbol")
+            if not isinstance(raw_symbol, str) or not raw_symbol.strip():
+                raise IncompleteSnapshotError("Prior scan has invalid symbol identity")
+            symbol = raw_symbol.strip().upper()
+            if symbol in observed_symbols:
+                raise IncompleteSnapshotError("Prior scan has duplicate symbols")
+            observed_symbols.add(symbol)
+            if "error" in child:
+                continue
+            expected_readiness.add(symbol)
+            if child.get("last_price") is not None:
+                expected_signal_ids[symbol] = hashlib.sha256(
+                    f"{run_id}|{raw_symbol}".encode("utf-8")
+                ).hexdigest()[:32]
 
         # Only necessary identifiers are read, never private account or paper
         # position payloads. A failed HTTP read is NOT treated as a missing
@@ -485,8 +494,11 @@ class SupabaseStorage:
         signals = read_stage("alpha_hunter_signals", "symbol,signal_id")
         features = read_stage("alpha_hunter_signal_features", "symbol,signal_id")
         readiness = read_stage(self.settings.readiness_table, "symbol")
-        expected_count = len(expected)
-        if any(len(group) != expected_count for group in (signals, features, readiness)):
+        if (
+            len(signals) != len(expected_signal_ids)
+            or len(features) != len(expected_signal_ids)
+            or len(readiness) != len(expected_readiness)
+        ):
             raise IncompleteSnapshotError(
                 "Prior scan has incomplete signal, feature or readiness rows"
             )
@@ -514,7 +526,7 @@ class SupabaseStorage:
 
         signal_ids = signal_identity(signals)
         feature_ids = signal_identity(features)
-        if set(signal_ids) != expected or signal_ids != feature_ids:
+        if signal_ids != expected_signal_ids or feature_ids != expected_signal_ids:
             raise IncompleteSnapshotError(
                 "Prior scan has mismatched signal and feature identities"
             )
@@ -529,7 +541,7 @@ class SupabaseStorage:
                     "Duplicate or invalid readiness symbol"
                 )
             observed_readiness.add(symbol)
-        if observed_readiness != expected:
+        if observed_readiness != expected_readiness:
             raise IncompleteSnapshotError(
                 "Prior scan readiness does not match canonical symbols"
             )
