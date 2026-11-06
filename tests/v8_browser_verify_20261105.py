@@ -15,17 +15,19 @@ from werkzeug.serving import make_server
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_v8_frontend_contract_20261105 import _sample_snapshot
+from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows
 import app as alpha
 
 
 def fixture_data():
-    return alpha.dashboard_payload(
+    data = alpha.dashboard_payload(
         _sample_snapshot(),
         test_engine={"spec_id":"SYNTHETIC_BROWSER_TEST","verdict":"NOT_PROVEN",
                      "operational_status":"REVIEW_REQUIRED","completed_paper_trades":0},
         paper_lifecycle={},
     )
+    data["actionable"] = _synthetic_actionable_rows()
+    return data
 
 
 def assert_no_root_overflow(page, width: int):
@@ -130,6 +132,37 @@ def main():
                 page.locator(f'{target} [data-v8-tab="results"]').click()
                 assert page.locator("#v8-view-results").is_visible()
                 assert page.get_by_text("Real-Time Profitability Test Engine").is_visible()
+                cards = page.locator("#v8-view-results .v8-queue-card")
+                table = page.locator("#v8-view-results .v8-queue-table")
+                assert cards.count() == 2
+                assert table.locator("tbody tr").count() == 2
+                if width < 900:
+                    assert cards.first.is_visible(), f"Mobile paper queue missing at {width}"
+                    assert not table.is_visible(), f"Squeezed desktop queue exposed at {width}"
+                    for card in cards.all():
+                        rect = card.bounding_box()
+                        assert rect is not None and rect["width"] >= 200
+                        assert rect["x"] >= -1 and rect["x"] + rect["width"] <= width + 1, (
+                            f"Paper queue card overflows {width}px: {rect}"
+                        )
+                    assert cards.first.get_by_text("0.10488", exact=True).is_visible()
+                    assert cards.first.get_by_text("6.46", exact=True).is_visible()
+                    assert cards.first.get_by_text("0.09%", exact=True).is_visible()
+                    reason = cards.first.locator(".v8-queue-reason")
+                    assert reason.locator("p").is_hidden()
+                    reason.locator("summary").click()
+                    assert reason.locator("p").is_visible()
+                    assert "No order authority" in cards.first.inner_text()
+                else:
+                    assert table.is_visible(), f"Desktop table missing at {width}"
+                    assert not cards.first.is_visible()
+                    assert table.evaluate("(t)=>t.scrollWidth >= t.clientWidth")
+                if width in (390, 768, 1280):
+                    page.screenshot(
+                        path=str(screenshot_dir / f"paper-queue-{width}.png"),
+                        full_page=True,
+                    )
+                assert_no_root_overflow(page, width)
                 page.locator(f'{target} [data-v8-tab="system"]').click()
                 assert page.locator("#v8-view-system").is_visible()
                 assert page.get_by_text("Safety Blocks").is_visible()
