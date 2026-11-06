@@ -1869,7 +1869,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <div class="v8-mobile-head"><strong>Alpha Hunter <span>V8</span></strong><span class="v8-kicker">Research only · No orders</span></div>
     <div class="wrap">
   <div class="top">
-    <div><h1>Alpha Hunter V8 · Market Intelligence</h1><div class="sub">Evidence-first market research. Paper-only, with real-order execution disabled.</div><div class="v8-runtime-note">Underlying engine {{ data.build.version }} · Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start timestamp){% endif %}</div></div>
+    <div><h1>Alpha Hunter V8 · Market Intelligence</h1><div class="sub">Evidence-first market research. Paper-only, with real-order execution disabled.</div><div class="v8-runtime-note v8-build-meta" data-v8-section="system">Underlying engine {{ data.build.version }} · Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start timestamp){% endif %}</div></div>
     <div><div class="toolbar"><div class="status">Latest accepted scan: {{ data.updated or 'Unavailable' }}</div><a class="v8-reset" href="/" aria-label="Refresh dashboard from the latest accepted canonical scan">Refresh view</a></div><div class="v8-runtime-note">Refresh reads saved canonical evidence only. The protected scanner runs separately; there is no manual scanner action in V8.</div></div>
   </div>
 
@@ -2082,12 +2082,11 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% endfor %}</tbody></table>
       </div>
 
-      <div class="panel" data-v8-section="system"><h2 style="margin-top:0">Bitget Open Positions</h2>
-      {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th><th>SL</th><th>TP</th><th>Protection</th></tr></thead><tbody>
-      {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td><td>{{ p._stop_loss_display }}</td><td>{{ p._take_profit_display }}</td><td><span class="badge {{ 'badge-ready' if p._protection_state=='OBSERVED' else 'badge-research' }}">{{ p._protection_state }}</span>{% if p._protection_warning %}<div class="small warning">{{ p._protection_warning }}</div>{% endif %}<div class="small muted">observer={{ p._protection_observation_status }} · {{ p._protection_observed_at_utc or 'time unavailable' }}</div></td></tr>{% endfor %}
-      </tbody></table>
-      {% elif data.account_status == 'CONNECTED' %}<div class="empty">No open Bitget positions observed in the completed account snapshot.</div>
-      {% else %}<div class="warning">Open-position observation unavailable (account status: {{ data.account_status }}). Do not infer that no position exists.</div>{% endif %}</div>
+      <div class="panel v8-private-boundary" data-v8-section="system" aria-label="Private account information">
+        <h2 style="margin-top:0">Private account information</h2>
+        <p class="small">Personal Bitget account positions, balances, protection levels and account connection details are not published on this public research dashboard.</p>
+        <p class="small">Only authorised operators should access account-specific evidence through a separately authenticated interface. No real-money trading permissions are provided here.</p>
+      </div>
     </main>
 
     <aside>
@@ -2664,11 +2663,16 @@ DASHBOARD_RECOVERY_PAGE = """
       </details>
     </div>
     <div class="card" data-v8-section="overview" aria-label="Bitget public reference market">
-      <h2 style="margin:0 0 10px;font-size:21px">Bitget public market prices</h2>
-      <p class="muted" style="margin-top:0">Independent USDT-futures reference quotes. Not Alpha Hunter verified signals, not paper-test evidence, and not trading authorization.</p>
-      <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
-      <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
-      <p id="public-market-time" class="muted" style="font-size:13px"></p>
+      <details class="v8-market-reference">
+        <summary>Public exchange reference prices <span class="v8-market-summary-note">Not Alpha Hunter signals</span></summary>
+        <div class="v8-market-reference-content">
+          <h2 class="v8-market-reference-title">Bitget public market prices</h2>
+          <p class="muted">Independent USDT-futures reference quotes. Not verified Alpha Hunter signals, not paper-test evidence, and not trading authorization.</p>
+          <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
+          <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
+          <p id="public-market-time" class="muted" style="font-size:13px"></p>
+        </div>
+      </details>
     </div>
     </div>
   </div>
