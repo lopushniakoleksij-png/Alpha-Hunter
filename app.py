@@ -2667,7 +2667,7 @@ DASHBOARD_RECOVERY_PAGE = """
         <summary>Public exchange reference prices <span class="v8-market-summary-note">Not Alpha Hunter signals</span></summary>
         <div class="v8-market-reference-content">
           <h2 class="v8-market-reference-title">Bitget public market prices</h2>
-          <p class="muted">Independent USDT-futures reference quotes. Not verified Alpha Hunter signals, not paper-test evidence, and not trading authorization.</p>
+          <p class="muted">Independent USDT-futures reference quotes. Not Alpha Hunter verified signals, not paper-test evidence, and not trading authorization.</p>
           <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
           <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
           <p id="public-market-time" class="muted" style="font-size:13px"></p>
