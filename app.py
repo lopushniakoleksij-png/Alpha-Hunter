@@ -540,15 +540,6 @@ def _hydrate_dashboard_snapshot(
     parent_stubs = snapshot.get("symbols")
     if not isinstance(parent_stubs, list):
         raise RuntimeError("Compact canonical parent symbol manifest is missing")
-    children = supabase_get_rows(
-        "alpha_hunter_symbol_snapshots",
-        {
-            "select": "symbol,payload",
-            "run_id": f"eq.{run_id}",
-            "order": "symbol.asc",
-            "limit": "2000",
-        },
-    )
     # A committed compact parent is not evidence that its child writes committed.
     # Never classify incomplete child evidence as complete.
     expected_count = row.get("symbol_count")
@@ -560,6 +551,15 @@ def _hydrate_dashboard_snapshot(
         or not (1 <= expected_count <= 2000)
     ):
         raise RuntimeError("Compact canonical parent symbol_count is invalid")
+    children = supabase_get_rows(
+        "alpha_hunter_symbol_snapshots",
+        {
+            "select": "symbol,payload",
+            "run_id": f"eq.{run_id}",
+            "order": "symbol.asc",
+            "limit": "2000",
+        },
+    )
     if len(children) != expected_count:
         # Canonical scanner persists the parent before the child batch. A
         # short-lived, incomplete newest parent is a publishing state, not a
