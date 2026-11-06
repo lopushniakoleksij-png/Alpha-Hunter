@@ -319,3 +319,48 @@ body.v8-body {
   .v8-body .v8-recovery-intro h1{font-size:clamp(23px,6.4vw,27px);line-height:1.18}
   .v8-body .v8-recovery-intro{margin-bottom:9px}
 }
+
+
+/* Stage 6: public mobile hierarchy and calm recovery reference prices.
+ * Preserve visible evidence and paper-only warnings; no source substitution. */
+.v8-workspace.v8-enhanced #v8-view-system.is-active{
+  display:flex;flex-direction:column;min-width:0;
+}
+#v8-view-system > .v8-view-heading {order:-10}
+#v8-view-system > .v8-build-meta,
+#v8-view-system > .v8-private-boundary {order:-8}
+#v8-view-system > .v8-trust-panel {order:20}
+#v8-view-system > .v8-build-meta {
+  padding:12px;border:1px solid var(--v8-border);
+  border-radius:11px;background:var(--v8-surface);margin:0 0 12px;
+}
+.v8-market-reference summary{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+  gap:7px;min-height:44px;cursor:pointer;color:var(--v8-blue);
+  font-size:14px;font-weight:700;line-height:1.45;
+}
+.v8-market-summary-note {
+  font-size:12px;font-weight:500;color:var(--v8-muted);
+}
+.v8-market-reference-content {
+  padding-top:12px;border-top:1px solid var(--v8-border);margin-top:8px;
+}
+.v8-market-reference-title {font-size:18px;margin:0 0 9px}
+.v8-market-reference-content p {font-size:13px;line-height:1.5}
+@media(max-width:899px) {
+  /* Preserve the semantic h1 for VoiceOver, while the fixed header gives
+   * the visible brand and each view supplies a visible h2. */
+  .v8-body .top h1 {
+    position:absolute!important;width:1px!important;height:1px!important;
+    padding:0!important;margin:-1px!important;overflow:hidden!important;
+    clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important;
+  }
+  .v8-body .top .sub{font-size:13px;line-height:1.45}
+  .v8-body .top .v8-runtime-note{font-size:11px}
+  .v8-shell-status{gap:8px;margin-bottom:12px}
+  .v8-status-card{padding:11px 12px;gap:9px;border-radius:12px}
+  .v8-status-icon{width:27px;height:27px;border-radius:8px}
+  .v8-status-card h2{font-size:14px}
+  .v8-status-card p{font-size:12px;line-height:1.4}
+  #v8-view-system > .v8-trust-panel{margin-top:10px}
+}
