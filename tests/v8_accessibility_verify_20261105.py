@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import app as alpha
-from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows
+from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows, _synthetic_radar_rows
 
 
 def fixture_data():
@@ -29,6 +29,7 @@ def fixture_data():
         paper_lifecycle={},
     )
     data["actionable"] = _synthetic_actionable_rows()
+    data["research"] = _synthetic_radar_rows()
     return data
 
 
@@ -95,6 +96,23 @@ def main():
                     nav = ".v8-bottom-nav" if width < 900 else ".v8-rail"
                     page.locator(f'{nav} [data-v8-tab="research"]').click()
                     assert page.locator("#v8-view-research").is_visible()
+                    radar_cards = page.locator(".v8-radar-card")
+                    radar_table = page.locator(".v8-radar-table")
+                    assert radar_cards.count() == 2
+                    if width < 900:
+                        assert radar_cards.first.is_visible()
+                        assert not radar_table.is_visible()
+                        radar_cards.first.locator(".v8-radar-reason summary").click()
+                        assert radar_cards.first.locator(".v8-radar-reason p").is_visible()
+                    else:
+                        assert radar_table.is_visible()
+                        assert not radar_cards.first.is_visible()
+                    audit_with_axe(page, f"{browser_name}-{width}-research-radar", axe_js)
+                    if width == 390:
+                        page.screenshot(
+                            path=str(screenshot_dir / f"{browser_name}-radar-390.png"),
+                            full_page=True,
+                        )
                     if width < 900:
                         page.locator(".v8-card-toggle").first.click()
                         assert page.locator(".v8-card-expanded").first.is_visible()
@@ -103,6 +121,9 @@ def main():
                         assert page.locator("#v8-detail-panel").is_visible()
                     audit_with_axe(page, f"{browser_name}-{width}-research-detail", axe_js)
                     page.locator(f'{nav} [data-v8-tab="results"]').click()
+                    status = page.locator(".v8-integrity-metric .v8-status-value")
+                    assert status.inner_text() == "Review Required"
+                    assert status.get_attribute("title") == "Status code: REVIEW_REQUIRED"
                     queue_cards = page.locator(".v8-queue-card")
                     queue_table = page.locator(".v8-queue-table")
                     assert queue_cards.count() == 2
