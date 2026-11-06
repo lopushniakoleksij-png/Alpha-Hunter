@@ -2056,10 +2056,37 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <h2 style="margin-top:0">Paper Action Queue</h2>
         <div class="small" style="margin-bottom:10px">PAPER ONLY · NO ORDER AUTHORITY · Canonical snapshot {{ data.updated or 'timestamp unavailable' }}</div>
         {% if data.actionable %}
-        <table><thead><tr><th>Symbol</th><th>Action</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Distance</th><th>Reason</th></tr></thead><tbody>
-        {% for row in data.actionable %}{% set a=row._action %}
-        <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
-        {% endfor %}</tbody></table>
+        <div class="v8-queue-scroll" role="region" aria-label="Paper Action Queue desktop comparison, horizontal scrolling available" tabindex="0">
+          <table class="v8-queue-table"><thead><tr><th scope="col">Symbol</th><th scope="col">Action</th><th scope="col">Side</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Target</th><th scope="col">R:R</th><th scope="col">Distance</th><th scope="col">Reason</th></tr></thead><tbody>
+          {% for row in data.actionable %}{% set a=row._action %}
+          <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
+          {% endfor %}</tbody></table>
+        </div>
+        <div class="v8-queue-cards" role="list" aria-label="Paper-only research actions">
+          {% for row in data.actionable %}{% set a=row._action %}
+          <article class="v8-queue-card" role="listitem">
+            <div class="v8-queue-card-head">
+              <div class="v8-queue-card-identity">
+                <h3>{{ row.symbol|symbol_label }}</h3>
+                <span class="v8-queue-side {{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction or '—' }}</span>
+              </div>
+              <span class="v8-queue-action badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span>
+            </div>
+            <dl class="v8-queue-metrics">
+              <div><dt>Entry</dt><dd>{{ a.entry if a.entry is not none else '—' }}</dd></div>
+              <div><dt>Stop</dt><dd>{{ a.stop if a.stop is not none else '—' }}</dd></div>
+              <div><dt>Target</dt><dd>{{ a.target if a.target is not none else '—' }}</dd></div>
+              <div><dt>R:R</dt><dd>{{ '%.2f'|format(a.rr) if a.rr is not none else '—' }}</dd></div>
+              <div><dt>Distance</dt><dd>{{ '%.2f'|format(a.distance_pct) ~ '%' if a.distance_pct is not none else '—' }}</dd></div>
+            </dl>
+            <details class="v8-queue-reason">
+              <summary>Research rationale</summary>
+              <p>{{ a.reason or 'No rationale supplied in the current canonical snapshot.' }}</p>
+            </details>
+            <p class="v8-queue-safety">Paper research only · No order authority</p>
+          </article>
+          {% endfor %}
+        </div>
         {% else %}<div class="empty">NO SAFE PAPER TRADE in the current canonical snapshot.</div>{% endif %}
       </div>
 
