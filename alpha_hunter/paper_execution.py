@@ -158,6 +158,18 @@ def _order_from_decision(
 
     minimum_quantity = _optional_float(instrument.get("minimum_trade_number"))
     minimum_notional = _optional_float(instrument.get("minimum_trade_usdt"))
+    # An explicitly supplied but malformed exchange minimum must not silently
+    # become "no minimum" and allow an unsupported paper order.
+    if "minimum_trade_number" in instrument and (
+        minimum_quantity is None or minimum_quantity <= 0
+    ):
+        blockers.append("BITGET_MINIMUM_QUANTITY_INVALID")
+    if "minimum_trade_usdt" in instrument and (
+        minimum_notional is None or minimum_notional <= 0
+    ):
+        blockers.append("BITGET_MINIMUM_NOTIONAL_INVALID")
+    if blockers:
+        return None, blockers
     if minimum_quantity is not None and quantity < minimum_quantity:
         blockers.append("BELOW_MINIMUM_TRADE_QUANTITY")
     if minimum_notional is not None and quantity * entry < minimum_notional:
