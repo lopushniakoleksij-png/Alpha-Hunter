@@ -470,7 +470,8 @@ def test_atomic_five_stage_rpc(conn, report):
     """Actual PostgREST single-function-call transaction: separate from live writer."""
     capture = CaptureSchema()
 
-    def atomic(run, size=61, *, shorten_features=False, elevate_permission=False):
+    def atomic(run, size=61, *, shorten_features=False, elevate_permission=False,
+               nested_permission=None, source_error=False):
         capture.captured.clear()
         capture.save_snapshot(snapshot(run, size))
         payload = {
@@ -484,6 +485,22 @@ def test_atomic_five_stage_rpc(conn, report):
             payload["p_features"] = payload["p_features"][:-1]
         if elevate_permission:
             payload["p_signals"][0]["trade_permission"] = True
+        if nested_permission == "parent":
+            payload["p_parent"]["payload"]["trade_permission"] = True
+        elif nested_permission == "parent_symbol":
+            payload["p_parent"]["payload"]["symbols"][0]["trade_permission"] = True
+        elif nested_permission == "child":
+            payload["p_children"][0]["payload"]["trade_permission"] = True
+        elif nested_permission == "signal":
+            payload["p_signals"][0]["payload"]["trade_permission"] = True
+        elif nested_permission == "feature":
+            payload["p_features"][0].setdefault("source_payload", {})[
+                "trade_permission"
+            ] = True
+        elif nested_permission is not None:
+            raise AssertionError("Unknown synthetic permission mutation")
+        if source_error:
+            payload["p_parent"]["error_count"] = 1
         response = requests.post(
             BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
             json=payload,
@@ -544,7 +561,23 @@ def test_atomic_five_stage_rpc(conn, report):
     assert_counts(conn, "forged-permission", parent=0, child=0,
                   signal=0, feature=0, readiness=0, obs=0)
 
+    # Nested payloads are research evidence, not an alternative way to
+    # enable trading or falsely verify an errored snapshot. No partial
+    # canonical/paper rows may remain after any of these attempts.
+    for location in ("parent", "parent_symbol", "child", "signal", "feature"):
+        name = "nested-permission-" + location
+        attempt = atomic(name, 17, nested_permission=location)
+        assert attempt.status_code >= 400, (location, attempt.text)
+        assert_counts(conn, name, parent=0, child=0,
+                      signal=0, feature=0, readiness=0, obs=0)
+    source_error = atomic("nonzero-source-error", 17, source_error=True)
+    assert source_error.status_code >= 400, source_error.text
+    assert_counts(conn, "nonzero-source-error", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
     report["isolated_atomic_rpc"] = {
+        "nested_permission_forgery_rejected_at_five_locations": True,
+        "nonzero_source_error_cannot_be_verified": True,
         "five_stage_success": c,
         "duplicate_replay_rejected": True,
         "child_trigger_error_full_rollback": True,
