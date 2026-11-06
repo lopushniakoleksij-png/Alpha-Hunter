@@ -531,9 +531,18 @@ def _hydrate_dashboard_snapshot(
     if snapshot.get("_storage_contract") != "snapshot-parent-v0.2":
         return snapshot
 
-    run_id = str(snapshot.get("run_id") or "")
-    if not run_id:
-        raise RuntimeError("Compact canonical snapshot is missing run_id")
+    # The parent row is the canonical identity; a payload-supplied run_id
+    # must not redirect child reads to a different scan's evidence.
+    row_run_id = row.get("run_id")
+    payload_run_id = snapshot.get("run_id")
+    if (
+        not isinstance(row_run_id, str)
+        or not row_run_id.strip()
+        or not isinstance(payload_run_id, str)
+        or payload_run_id != row_run_id
+    ):
+        raise RuntimeError("Compact canonical parent run_id identity mismatch")
+    run_id = row_run_id
 
     # Validate parent identity locally before any child evidence query.
     # Invalid compact manifests must not trigger a remote read.
