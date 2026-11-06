@@ -76,6 +76,57 @@ class PrivateCloneGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,"signal_id"):
             bench.validate_fixture(v,3)
 
+    def test_reject_swapped_signal_ids_even_when_the_id_sets_match(self):
+        sample = fixture()
+        a = sample["p_features"][0]["signal_id"]
+        b = sample["p_features"][1]["signal_id"]
+        sample["p_features"][0]["signal_id"] = b
+        sample["p_features"][1]["signal_id"] = a
+        with self.assertRaisesRegex(RuntimeError, "signal IDs"):
+            bench.validate_fixture(sample, 3)
+
+    def test_transaction_write_destination_manifest_covers_candidate_graph(self):
+        allowed = bench.declared_write_destinations()
+        self.assertGreaterEqual(len(allowed), 20)
+        self.assertTrue(all("public." + table in allowed for table in bench.STAGES))
+        self.assertTrue(all("private." + table in allowed for table in bench.PAPER))
+
+    def test_transaction_write_footprint_accepts_declared_tables(self):
+        records = [
+            ("public", name, 61 if name != bench.STAGES[0] else 1, 0, 0)
+            for name in bench.STAGES
+        ]
+        records.append(("private", bench.PAPER[0], 4, 0, 0))
+        observed = bench.verify_transaction_write_destinations(records)
+        self.assertEqual(set(observed), {
+            *("public." + name for name in bench.STAGES),
+            "private." + bench.PAPER[0],
+        })
+        self.assertEqual(observed["private." + bench.PAPER[0]]["inserted"], 4)
+
+    def test_transaction_write_footprint_blocks_undeclared_side_effect(self):
+        records = [
+            ("public", name, 1, 0, 0) for name in bench.STAGES
+        ]
+        records.append(("private", "alpha_hunter_undocumented_order_table", 1, 0, 0))
+        with self.assertRaisesRegex(RuntimeError, "Undeclared transitive write"):
+            bench.verify_transaction_write_destinations(records)
+
+    def test_transaction_write_footprint_blocks_missing_canonical_stage(self):
+        records = [
+            ("public", name, 1, 0, 0) for name in bench.STAGES[:-1]
+        ]
+        with self.assertRaisesRegex(RuntimeError, "Five canonical publication stages"):
+            bench.verify_transaction_write_destinations(records)
+
+    def test_transaction_write_footprint_rejects_negative_counters(self):
+        records = [
+            ("public", name, 1, 0, 0) for name in bench.STAGES
+        ]
+        records[0] = ("public", bench.STAGES[0], -1, 0, 0)
+        with self.assertRaisesRegex(RuntimeError, "Invalid transaction"):
+            bench.verify_transaction_write_destinations(records)
+
     def test_refuse_inconsistent_stage_symbol_sets(self):
         v=fixture()
         v["p_children"][0]["symbol"]="MISMATCHUSDT"
