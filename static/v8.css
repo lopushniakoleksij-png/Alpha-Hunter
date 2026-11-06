@@ -440,3 +440,90 @@ body.v8-body {
     color:var(--v8-muted);font-size:12px;margin:12px 0 0;
   }
 }
+
+
+/* V8 live iPhone acceptance: Discovery Radar is a research-only list on
+ * narrow screens; no ten-column table may be squeezed into 390px. */
+.v8-body .v8-radar-intro {margin-bottom:12px;line-height:1.5}
+.v8-body .v8-radar-scroll {
+  width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;border-radius:8px;
+}
+.v8-body .v8-radar-scroll:focus-visible{outline:3px solid var(--v8-blue);outline-offset:3px}
+.v8-body .v8-radar-table {
+  min-width:1180px;max-width:none;width:100%;table-layout:auto;border-collapse:collapse;
+}
+.v8-body .v8-radar-table th,.v8-body .v8-radar-table td {
+  padding:11px 12px;vertical-align:top;text-align:left;
+  overflow-wrap:normal;word-break:normal;
+}
+.v8-body .v8-radar-table th:nth-child(2),
+.v8-body .v8-radar-table td:nth-child(2){min-width:115px}
+.v8-body .v8-radar-table th:nth-child(9),
+.v8-body .v8-radar-table td:nth-child(9){min-width:160px}
+.v8-body .v8-radar-table th:last-child,
+.v8-body .v8-radar-table td:last-child {
+  min-width:250px;white-space:normal;overflow-wrap:anywhere;
+}
+.v8-body .v8-radar-table .badge {white-space:normal;overflow-wrap:normal}
+.v8-radar-cards {display:none}
+.v8-body .v8-status-value {
+  display:block;white-space:normal;word-break:normal;
+  overflow-wrap:normal;line-height:1.38;font-size:clamp(15px,1.4vw,19px);
+  text-transform:none;
+}
+@media(max-width:899px){
+  .v8-body .v8-radar-scroll {display:none!important}
+  .v8-body .v8-radar-cards {
+    display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:12px;
+  }
+  .v8-radar-card {
+    padding:14px;background:#0c1e2d;border:1px solid var(--v8-border);
+    border-radius:14px;min-width:0;overflow-wrap:anywhere;
+  }
+  .v8-radar-card-head {
+    display:flex;justify-content:space-between;align-items:flex-start;
+    flex-wrap:wrap;gap:9px;
+  }
+  .v8-radar-card-head h3{
+    margin:0;font-size:18px;line-height:1.3;
+    font-weight:800;overflow-wrap:anywhere;
+  }
+  .v8-radar-card-head .badge {
+    font-size:11px;max-width:100%;white-space:normal;
+    line-height:1.5;overflow-wrap:anywhere;
+  }
+  .v8-radar-card-state {
+    font-size:13px;font-weight:700;margin:9px 0 12px;
+    overflow-wrap:anywhere;
+  }
+  .v8-radar-metrics {
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;margin:0;
+  }
+  .v8-radar-metrics>div {
+    padding:9px 10px;min-width:0;border:1px solid #29455a;
+    border-radius:10px;background:#091724;
+  }
+  .v8-radar-metrics dt {font-size:11px;color:var(--v8-muted);margin:0 0 5px}
+  .v8-radar-metrics dd {
+    margin:0;font-size:14px;line-height:1.4;font-weight:700;
+    font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+  }
+  .v8-radar-reason {margin-top:12px;border-top:1px solid var(--v8-border);padding-top:7px}
+  .v8-radar-reason summary {
+    display:flex;align-items:center;min-height:44px;cursor:pointer;
+    color:var(--v8-blue);font-size:14px;font-weight:650;
+  }
+  .v8-radar-reason p {
+    margin:5px 0 9px;color:var(--v8-muted);
+    font-size:13px;line-height:1.55;overflow-wrap:anywhere;
+  }
+  .v8-radar-safety {font-size:12px;color:var(--v8-muted);margin:12px 0 0}
+  .v8-body .action-grid .v8-integrity-metric {
+    grid-column:1/-1;
+  }
+  .v8-body .v8-status-value {
+    font-size:17px;
+  }
+}
