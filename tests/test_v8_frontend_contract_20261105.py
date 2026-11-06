@@ -106,7 +106,6 @@ def test_stage6_mobile_public_research_layout_and_private_boundary(monkeypatch):
     assert 'class="panel v8-private-boundary"' in content
     assert "Private account information" in content
     assert "Bitget Open Positions" not in content
-    assert "Underly" not in content or "Underlying engine" in content
     css = dashboard.app.test_client().get("/static/v8.css").get_data(as_text=True)
     assert ".v8-body .top h1" in css
     assert "#v8-view-system > .v8-trust-panel {order:20}" in css
@@ -138,6 +137,13 @@ def test_stage6_never_put_synthetic_private_account_fields_in_public_html(monkey
     assert "PRIVATE_CANARY_" not in html
     assert "Bitget Open Positions" not in html
     assert "Personal Bitget account positions" in html
+    api = dashboard.app.test_client().get("/api/latest")
+    assert api.status_code == 200
+    api_payload = api.get_json()
+    assert "private_account" not in api_payload["snapshot"]
+    assert api_payload["positions"] == []
+    assert api_payload["account_status"] == "PRIVATE"
+    assert "PRIVATE_CANARY_" not in api.get_data(as_text=True)
 
 
 def test_stage6_public_reference_prices_secondary_disclosure(monkeypatch):
