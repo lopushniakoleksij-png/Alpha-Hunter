@@ -535,6 +535,11 @@ def _hydrate_dashboard_snapshot(
     if not run_id:
         raise RuntimeError("Compact canonical snapshot is missing run_id")
 
+    # Validate parent identity locally before any child evidence query.
+    # Invalid compact manifests must not trigger a remote read.
+    parent_stubs = snapshot.get("symbols")
+    if not isinstance(parent_stubs, list):
+        raise RuntimeError("Compact canonical parent symbol manifest is missing")
     children = supabase_get_rows(
         "alpha_hunter_symbol_snapshots",
         {
@@ -545,14 +550,8 @@ def _hydrate_dashboard_snapshot(
         },
     )
     # A committed compact parent is not evidence that its child writes committed.
-    # Never replace the parent stubs with an empty or partial child set and
-    # silently classify that canonical scan as complete.
+    # Never classify incomplete child evidence as complete.
     expected_count = row.get("symbol_count")
-    parent_stubs = snapshot.get("symbols")
-    # Compact parents must carry the identity manifest for their child rows.
-    # A matching count alone cannot establish which symbols were persisted.
-    if not isinstance(parent_stubs, list):
-        raise RuntimeError("Compact canonical parent symbol manifest is missing")
     if expected_count is None and isinstance(parent_stubs, list):
         expected_count = len(parent_stubs)
     if (
