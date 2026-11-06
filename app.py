@@ -1714,7 +1714,12 @@ def dashboard_payload(
     ]
     best_action = combined_actionable[0] if combined_actionable else None
 
-    account = snapshot.get("private_account", {})
+    # Public Overview and /api/latest share this payload. Never serialize the
+    # private Bitget account body into a public HTML or JSON response.
+    # This shallow copy changes presentation only; canonical snapshot remains
+    # untouched and authenticated operator endpoints are separate.
+    public_snapshot = dict(snapshot)
+    public_snapshot.pop("private_account", None)
     universe = snapshot.get("universe", {})
     strategy_summary = snapshot.get("multi_strategy_summary", {})
     if not isinstance(strategy_summary, dict):
@@ -1740,7 +1745,7 @@ def dashboard_payload(
     ]
 
     return {
-        "snapshot": snapshot,
+        "snapshot": public_snapshot,
         "best_action": best_action,
         "actionable": combined_actionable[:10],
         "blocked_actions": blocked_actions[:25],
@@ -1759,12 +1764,8 @@ def dashboard_payload(
             [row for row in symbols if row["_reference"]],
             key=lambda row: row.get("symbol", ""),
         ),
-        "positions": [
-            position_protection_view(position, snapshot.get("collected_at_utc"))
-            for position in account.get("open_positions", [])
-            if isinstance(position, dict)
-        ],
-        "account_status": account.get("status", "UNKNOWN"),
+        "positions": [],
+        "account_status": "PRIVATE",
         "universe": universe,
         "updated": snapshot.get("collected_at_utc"),
         "btc_change_24h": safe_float(snapshot.get("btc_change_24h_pct")),
