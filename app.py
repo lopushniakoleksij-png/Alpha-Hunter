@@ -1942,8 +1942,8 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <h2 style="margin-top:0">Real-Time Profitability Test Engine</h2>
     {% if data.test_engine %}
       <div class="action-grid">
-        <div class="metric"><span class="label">System integrity</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
-        <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
+        <div class="metric v8-integrity-metric"><span class="label">System integrity</span><b class="v8-status-value" title="Status code: {{ data.test_engine.get('operational_status','UNKNOWN') }}">{{ data.test_engine.get('operational_status','UNKNOWN')|replace('_', ' ')|title }}</b></div>
+        <div class="metric v8-verdict-metric"><span class="label">Verdict</span><b class="v8-status-value" title="Verdict code: {{ data.test_engine.get('verdict','NOT_PROVEN') }}">{{ data.test_engine.get('verdict','NOT_PROVEN')|replace('_', ' ')|title }}</b></div>
         <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration','Unavailable') }}</b></div>
         <div class="metric"><span class="label">Current cohort completions</span><b>{{ data.test_engine.get('completed_paper_trades','Unavailable') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
         <div class="metric"><span class="label">Historical lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
@@ -2102,11 +2102,36 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
       <div class="panel" data-v8-section="research">
         <h2 style="margin-top:0">Research / Discovery Radar</h2>
-        <div class="small" style="margin-bottom:10px">These rows are information, not trade recommendations. They become actionable only through the Money Action block above.</div>
-        <table><thead><tr><th>#</th><th>Symbol</th><th>Price</th><th>Phase</th><th>Timing</th><th>Behaviour</th><th>State</th><th>R:R</th><th>Execution</th><th>Reason</th></tr></thead><tbody>
-        {% for row in data.research %}
-        <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
-        {% endfor %}</tbody></table>
+        <div class="small v8-radar-intro">Research observations only, not trade recommendations. Paper actions appear separately in Results; no order authority is granted here.</div>
+        <div class="v8-radar-scroll" role="region" aria-label="Discovery Radar desktop comparison, horizontal scrolling available" tabindex="0">
+          <table class="v8-radar-table"><thead><tr><th scope="col">#</th><th scope="col">Symbol</th><th scope="col">Price</th><th scope="col">Phase</th><th scope="col">Timing</th><th scope="col">Behaviour</th><th scope="col">State</th><th scope="col">R:R</th><th scope="col">Research state</th><th scope="col">Reason</th></tr></thead><tbody>
+          {% for row in data.research %}
+          <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
+          {% endfor %}</tbody></table>
+        </div>
+        <div class="v8-radar-cards" role="list" aria-label="Research-only discovery observations">
+          {% for row in data.research %}
+          <article class="v8-radar-card" role="listitem">
+            <div class="v8-radar-card-head">
+              <h3>{{ row.symbol|symbol_label }}</h3>
+              <span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span>
+            </div>
+            <p class="v8-radar-card-state {{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</p>
+            <dl class="v8-radar-metrics">
+              <div><dt>Price</dt><dd>{{ row.last_price if row.last_price is not none else '—' }}</dd></div>
+              <div><dt>Phase</dt><dd>{{ row._phase or '—' }}</dd></div>
+              <div><dt>Timing</dt><dd>{{ row._timing or '—' }}</dd></div>
+              <div><dt>Behaviour</dt><dd>{{ '%.2f'|format(row._behaviour) }}</dd></div>
+              <div><dt>R:R (raw)</dt><dd>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</dd></div>
+            </dl>
+            <details class="v8-radar-reason">
+              <summary>Research rationale</summary>
+              <p>{{ row._action.reason or 'No research rationale supplied.' }}</p>
+            </details>
+            <p class="v8-radar-safety">Research only · No trading authorisation</p>
+          </article>
+          {% endfor %}
+        </div>
       </div>
 
       <div class="panel v8-private-boundary" data-v8-section="system" aria-label="Private account information">
