@@ -278,7 +278,9 @@ def run_auxiliary_jobs_with_deadline(
             deadline_utc - datetime.now(timezone.utc)
         ).total_seconds() - float(exit_buffer_seconds)
 
-        if remaining <= 0:
+        # A subprocess needs at least one whole second under the existing
+        # timeout floor; never launch it with less budget than that.
+        if remaining < 1.0:
             print(
                 "Auxiliary evidence deferred: scanner deadline reached.",
                 flush=True,
