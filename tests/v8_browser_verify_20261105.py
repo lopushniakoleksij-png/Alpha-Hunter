@@ -92,6 +92,10 @@ def main():
                         )
                     assert radar_cards.first.get_by_text("1.223688",exact=True).is_visible()
                     assert radar_cards.nth(1).get_by_text("0.24",exact=True).is_visible()
+                    assert radar_cards.nth(1).locator(".v8-radar-card-state").inner_text() == "Direction Emerging Long"
+                    assert radar_cards.nth(1).locator(".v8-radar-card-state").get_attribute("title") == (
+                        "Research status code: DIRECTION_EMERGING_LONG"
+                    )
                     assert radar_cards.nth(1).get_by_text("BEST RETEST / LIMIT ZONE",exact=True).is_visible()
                     rationale = radar_cards.first.locator(".v8-radar-reason")
                     assert rationale.locator("p").is_hidden()
@@ -103,6 +107,13 @@ def main():
                 if width in (390, 1280):
                     page.screenshot(path=str(screenshot_dir / f"radar-{width}.png"),
                                     full_page=True)
+                methodology = page.locator("#v8-view-research .v8-strategy-context")
+                assert methodology.count() == 1
+                assert methodology.get_attribute("open") is None
+                assert methodology.locator("summary").is_visible()
+                methodology.locator("summary").click()
+                assert methodology.locator(".v8-strategy-context-body").is_visible()
+                methodology.locator("summary").click()
                 assert_no_root_overflow(page,width)
                 if width in (390, 1280):
                     page.screenshot(path=str(screenshot_dir / f"research-{width}.png"),
@@ -160,6 +171,9 @@ def main():
                 page.locator(f'{target} [data-v8-tab="results"]').click()
                 assert page.locator("#v8-view-results").is_visible()
                 assert page.get_by_text("Real-Time Profitability Test Engine").is_visible()
+                assert page.locator(".top .v8-scan-time").count() == 1
+                assert page.locator(".top .v8-scan-time").get_attribute("datetime")
+                assert page.locator(".top .v8-scan-time").inner_text().endswith("UTC")
                 status_value = page.locator(".v8-integrity-metric .v8-status-value")
                 assert status_value.is_visible()
                 assert status_value.inner_text() == "Review Required"
