@@ -19,15 +19,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import app as alpha
-from test_v8_frontend_contract_20261105 import _sample_snapshot
+from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows
 
 
 def fixture_data():
-    return alpha.dashboard_payload(
+    data = alpha.dashboard_payload(
         _sample_snapshot(),
         test_engine={"spec_id": "ACCESSIBILITY_SYNTHETIC", "verdict": "NOT_PROVEN"},
         paper_lifecycle={},
     )
+    data["actionable"] = _synthetic_actionable_rows()
+    return data
 
 
 def audit_with_axe(page, label, axe_js):
@@ -101,7 +103,23 @@ def main():
                         assert page.locator("#v8-detail-panel").is_visible()
                     audit_with_axe(page, f"{browser_name}-{width}-research-detail", axe_js)
                     page.locator(f'{nav} [data-v8-tab="results"]').click()
+                    queue_cards = page.locator(".v8-queue-card")
+                    queue_table = page.locator(".v8-queue-table")
+                    assert queue_cards.count() == 2
+                    if width < 900:
+                        assert queue_cards.first.is_visible()
+                        assert not queue_table.is_visible()
+                        queue_cards.first.locator(".v8-queue-reason summary").click()
+                        assert queue_cards.first.locator(".v8-queue-reason p").is_visible()
+                    else:
+                        assert queue_table.is_visible()
+                        assert not queue_cards.first.is_visible()
                     audit_with_axe(page, f"{browser_name}-{width}-results", axe_js)
+                    if width == 390:
+                        page.screenshot(
+                            path=str(screenshot_dir / f"{browser_name}-paper-queue-390.png"),
+                            full_page=True,
+                        )
                     page.locator(f'{nav} [data-v8-tab="system"]').click()
                     assert page.locator("#v8-view-system .v8-private-boundary").is_visible()
                     assert page.locator("#v8-view-system .v8-build-meta").is_visible()
