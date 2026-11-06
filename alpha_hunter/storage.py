@@ -223,9 +223,14 @@ class SupabaseStorage:
         *,
         expected_identity: dict[str, Any] | None = None,
         require_strategy_context: bool = False,
+        require_complete_publication: bool = False,
         search_limit: int = 25,
     ) -> dict[str, Any] | None:
-        filtered = expected_identity is not None or require_strategy_context
+        filtered = (
+            expected_identity is not None
+            or require_strategy_context
+            or require_complete_publication
+        )
         limit = max(1, int(search_limit)) if filtered else 1
         response = self.request_with_retry(
             "get",
@@ -287,7 +292,10 @@ class SupabaseStorage:
                         break
                 else:
                     try:
-                        return self._hydrate_snapshot(row, payload)
+                        candidate = self._hydrate_snapshot(row, payload)
+                        if require_complete_publication:
+                            self._verify_complete_publication(candidate)
+                        return candidate
                     except IncompleteSnapshotError:
                         # The parent may have been committed before child-write
                         # failure. Continue only through the bounded
@@ -297,7 +305,10 @@ class SupabaseStorage:
                 continue
 
             try:
-                return self._hydrate_snapshot(row, payload)
+                candidate = self._hydrate_snapshot(row, payload)
+                if require_complete_publication:
+                    self._verify_complete_publication(candidate)
+                return candidate
             except IncompleteSnapshotError:
                 if not filtered:
                     # Single-row consumers must see the failed newest record,
@@ -406,6 +417,122 @@ class SupabaseStorage:
 
         snapshot["symbols"] = symbols
         return snapshot
+
+    def _verify_complete_publication(self, snapshot: dict[str, Any]) -> None:
+        """Read-only, five-stage predecessor guard; no production writes.
+
+        A valid compact parent and complete symbol rows alone are insufficient
+        when a later signals, features or readiness POST timed out.
+        Do not select such a parent as the previous research state.
+        """
+        if snapshot.get("_storage_contract") != PARENT_STORAGE_CONTRACT:
+            raise IncompleteSnapshotError(
+                "Legacy predecessor lacks five-stage publication evidence"
+            )
+        run_id = str(snapshot.get("run_id") or "")
+        children = snapshot.get("symbols")
+        if not run_id or not isinstance(children, list) or not children:
+            raise IncompleteSnapshotError("Prior scan has no complete symbol list")
+
+        expected: set[str] = set()
+        for child in children:
+            if not isinstance(child, dict):
+                raise IncompleteSnapshotError("Prior scan has malformed symbol data")
+            symbol = str(child.get("symbol") or "").strip().upper()
+            if (
+                not symbol
+                or symbol in expected
+                or "error" in child
+                or child.get("last_price") is None
+            ):
+                raise IncompleteSnapshotError(
+                    "Prior scan has invalid or unpublishable symbol evidence"
+                )
+            expected.add(symbol)
+
+        # Only necessary identifiers are read, never private account or paper
+        # position payloads. A failed HTTP read is NOT treated as a missing
+        # publication; it aborts verification instead of silently falling back.
+        def read_stage(table: str, columns: str) -> list[dict[str, Any]]:
+            response = self.request_with_retry(
+                "get",
+                f"{self.settings.url}/rest/v1/{table}",
+                params={
+                    "select": columns,
+                    "run_id": f"eq.{run_id}",
+                    "limit": "2001",
+                },
+                headers=self.headers,
+                timeout=self.settings.timeout_seconds,
+            )
+            if response.status_code != 200:
+                raise SupabaseStorageError(
+                    "Previous scan evidence read failed: "
+                    f"{table} HTTP {response.status_code}"
+                )
+            try:
+                rows = response.json()
+            except ValueError as exc:
+                raise SupabaseStorageError(
+                    "Previous scan evidence read returned invalid JSON"
+                ) from exc
+            if not isinstance(rows, list):
+                raise SupabaseStorageError(
+                    "Previous scan evidence read returned unexpected shape"
+                )
+            return rows
+
+        signals = read_stage("alpha_hunter_signals", "symbol,signal_id")
+        features = read_stage("alpha_hunter_signal_features", "symbol,signal_id")
+        readiness = read_stage(self.settings.readiness_table, "symbol")
+        expected_count = len(expected)
+        if any(len(group) != expected_count for group in (signals, features, readiness)):
+            raise IncompleteSnapshotError(
+                "Prior scan has incomplete signal, feature or readiness rows"
+            )
+
+        def signal_identity(rows: list[dict[str, Any]]) -> dict[str, str]:
+            mapping: dict[str, str] = {}
+            ids: set[str] = set()
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise IncompleteSnapshotError("Malformed signal/feature evidence")
+                symbol = str(row.get("symbol") or "").strip().upper()
+                signal_id = str(row.get("signal_id") or "").strip()
+                if (
+                    not symbol
+                    or not signal_id
+                    or symbol in mapping
+                    or signal_id in ids
+                ):
+                    raise IncompleteSnapshotError(
+                        "Duplicate or invalid signal/feature identity"
+                    )
+                mapping[symbol] = signal_id
+                ids.add(signal_id)
+            return mapping
+
+        signal_ids = signal_identity(signals)
+        feature_ids = signal_identity(features)
+        if set(signal_ids) != expected or signal_ids != feature_ids:
+            raise IncompleteSnapshotError(
+                "Prior scan has mismatched signal and feature identities"
+            )
+
+        observed_readiness: set[str] = set()
+        for row in readiness:
+            if not isinstance(row, dict):
+                raise IncompleteSnapshotError("Malformed readiness evidence")
+            symbol = str(row.get("symbol") or "").strip().upper()
+            if not symbol or symbol in observed_readiness:
+                raise IncompleteSnapshotError(
+                    "Duplicate or invalid readiness symbol"
+                )
+            observed_readiness.add(symbol)
+        if observed_readiness != expected:
+            raise IncompleteSnapshotError(
+                "Prior scan readiness does not match canonical symbols"
+            )
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
         if not rows:
