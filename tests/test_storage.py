@@ -575,7 +575,7 @@ def test_predecessor_read_errors_abort_instead_of_skipping():
     ])
     storage = SupabaseStorage(SupabaseConfig(
         url="https://example.supabase.co", key="synthetic",
-        max_retries=1, retry_backoff_seconds=0,
+        max_retries=0, retry_backoff_seconds=0,
     ), session=session)
     with pytest.raises(SupabaseStorageError, match="evidence read failed"):
         storage.load_latest_snapshot(
