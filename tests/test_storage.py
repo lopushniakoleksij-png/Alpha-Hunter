@@ -324,10 +324,12 @@ def test_compact_parent_snapshot_hydrates_from_symbol_rows():
         payload=[{
             "run_id": "run-1",
             "collected_at_utc": "2026-09-25T12:00:00+00:00",
+            "symbol_count": 2,
             "payload": {
                 "version": "0.7.1",
                 "product_type": "usdt-futures",
                 "_storage_contract": "snapshot-parent-v0.2",
+                "symbols": [{"symbol": "BTCUSDT"}, {"symbol": "ETHUSDT"}],
             },
         }],
     )
@@ -363,6 +365,118 @@ def test_compact_parent_snapshot_hydrates_from_symbol_rows():
         "ETHUSDT",
     ]
     assert session.calls[1][1]["params"]["run_id"] == "eq.run-1"
+
+
+def _stored_compact_parent(run_id, symbol_names, *, identity=None):
+    return {
+        "run_id": run_id,
+        "collected_at_utc": "2026-11-06T18:00:00+00:00",
+        "symbol_count": len(symbol_names),
+        "payload": {
+            "_storage_contract": "snapshot-parent-v0.2",
+            "symbols": [{"symbol": name} for name in symbol_names],
+            "validation_identity": identity or {"test_contract": "synthetic-contract"},
+            "multi_strategy_summary": {},
+            "microstructure_summary": {},
+            "catalyst_summary": {},
+        },
+    }
+
+
+def _stored_child(symbol):
+    return {"symbol": symbol, "payload": {"symbol": symbol, "last_price": 1.25}}
+
+
+def test_filtered_predecessor_skips_parent_without_children():
+    """A timed-out child write must not become the next scan's prior run."""
+    session = SequencedSession([
+        StatusResponse(200, payload=[
+            _stored_compact_parent("newer-partial", ["ALPHAUSDT", "BETAUSDT"]),
+            _stored_compact_parent("older-complete", ["GAMMAUSDT", "DELTAUSDT"]),
+        ]),
+        StatusResponse(200, payload=[]),  # Newer parent outlived failed write.
+        StatusResponse(200, payload=[
+            _stored_child("DELTAUSDT"), _stored_child("GAMMAUSDT"),
+        ]),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+
+    prior = storage.load_latest_snapshot(
+        expected_identity={"test_contract": "synthetic-contract"},
+        require_strategy_context=True,
+    )
+    assert prior is not None
+    assert prior["run_id"] == "older-complete"
+    assert {row["symbol"] for row in prior["symbols"]} == {
+        "GAMMAUSDT", "DELTAUSDT",
+    }
+    assert len(session.calls) == 3
+    assert session.calls[0][1]["params"]["limit"] == "25"
+    assert session.calls[1][1]["params"]["run_id"] == "eq.newer-partial"
+    assert session.calls[2][1]["params"]["run_id"] == "eq.older-complete"
+
+
+@pytest.mark.parametrize("children", [
+    [],
+    [_stored_child("ALPHAUSDT")],
+    [_stored_child("ALPHAUSDT"), _stored_child("ALPHAUSDT")],
+    [_stored_child("ALPHAUSDT"), _stored_child("WRONGUSDT")],
+    [_stored_child("ALPHAUSDT"), {"symbol": "BETAUSDT", "payload": None}],
+])
+def test_compact_parent_child_integrity_rejects_incomplete_shapes(children):
+    from alpha_hunter.storage import IncompleteSnapshotError
+    session = SequencedSession([
+        StatusResponse(200, payload=[
+            _stored_compact_parent("partial", ["ALPHAUSDT", "BETAUSDT"]),
+        ]),
+        StatusResponse(200, payload=children),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+    # Unfiltered single-latest consumers must fail visibly, not substitute an
+    # old scan and accidentally present stale findings as current.
+    with pytest.raises(IncompleteSnapshotError):
+        storage.load_latest_snapshot()
+
+
+def test_no_identity_matched_complete_predecessor_is_none():
+    session = SequencedSession([
+        StatusResponse(200, payload=[
+            _stored_compact_parent("partial", ["ALPHAUSDT"]),
+        ]),
+        StatusResponse(200, payload=[]),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+    assert storage.load_latest_snapshot(
+        expected_identity={"test_contract": "synthetic-contract"},
+        require_strategy_context=True,
+    ) is None
+
+
+def test_previous_snapshot_guard_keeps_legacy_full_payload():
+    # Older storage contracts already contain the complete symbol objects in
+    # the parent. The guard must not reject those solely because there are no
+    # compact child reads.
+    legacy = {
+        "run_id": "legacy",
+        "collected_at_utc": "2026-07-20T18:00:00+00:00",
+        "payload": {"symbols": [{"symbol": "BTCUSDT"}]},
+    }
+    session = SequencedSession([StatusResponse(200, payload=[legacy])])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+    assert storage.load_latest_snapshot()["symbols"] == [{"symbol": "BTCUSDT"}]
+    assert len(session.calls) == 1
 
 
 def test_signal_feature_and_parent_payloads_are_compact():
