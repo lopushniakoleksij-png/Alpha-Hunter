@@ -129,6 +129,8 @@ def test_stage6_never_put_synthetic_private_account_fields_in_public_html(monkey
         snapshot, test_engine={"spec_id":"TEST_ONLY","verdict":"NOT_PROVEN"},
         paper_lifecycle={},
     )
+    assert result["positions"][0]["symbol"] == "PRIVATE_CANARY_PAIR_842"
+    assert "private_account" in result["snapshot"]
     monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: result)
     monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
     response = dashboard.app.test_client().get("/")
