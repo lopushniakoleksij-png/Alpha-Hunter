@@ -1109,6 +1109,7 @@ def load_previous_snapshot(
             ).load_latest_snapshot(
                 expected_identity=expected_identity,
                 require_strategy_context=True,
+                require_complete_publication=True,
             )
         except SupabaseStorageError:
             cloud_snapshot = None
