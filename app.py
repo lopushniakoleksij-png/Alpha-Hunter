@@ -549,6 +549,10 @@ def _hydrate_dashboard_snapshot(
     # silently classify that canonical scan as complete.
     expected_count = row.get("symbol_count")
     parent_stubs = snapshot.get("symbols")
+    # Compact parents must carry the identity manifest for their child rows.
+    # A matching count alone cannot establish which symbols were persisted.
+    if not isinstance(parent_stubs, list):
+        raise RuntimeError("Compact canonical parent symbol manifest is missing")
     if expected_count is None and isinstance(parent_stubs, list):
         expected_count = len(parent_stubs)
     if (
