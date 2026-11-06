@@ -147,7 +147,7 @@ BEGIN
 
     SELECT jsonb_agg(
       jsonb_build_object('trade_permission', false,
-                         'v7_trade_ready', false, 'created_at', now()) || e.value
+                         'v7_trade_ready', false, 'created_at', clock_timestamp()) || e.value
       ORDER BY e.ordinality)
       INTO v_readiness_normalized
     FROM jsonb_array_elements(p_readiness) WITH ORDINALITY AS e(value, ordinality);
