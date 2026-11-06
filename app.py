@@ -24,6 +24,23 @@ from performance_page import PERFORMANCE_PAGE
 
 app = Flask(__name__)
 
+
+def v8_scan_time(value: Any) -> str:
+    """Format timestamp for display without changing canonical source evidence."""
+    if value is None or not str(value).strip():
+        return "Unavailable"
+    raw = str(value).strip()
+    try:
+        stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            return raw  # Do not invent a timezone for ambiguous source data.
+        return stamp.astimezone(timezone.utc).strftime("%d %b %Y · %H:%M UTC").lstrip("0")
+    except (ValueError, OverflowError):
+        return raw  # An invalid source timestamp must not be silently fabricated.
+
+
+app.add_template_filter(v8_scan_time, "v8_scan_time")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_TABLE = os.getenv("ALPHA_HUNTER_SNAPSHOT_TABLE", "alpha_hunter_snapshots")
@@ -1870,7 +1887,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <div class="wrap">
   <div class="top">
     <div><h1>Alpha Hunter V8 · Market Intelligence</h1><div class="sub">Evidence-first market research. Paper-only, with real-order execution disabled.</div><div class="v8-runtime-note v8-build-meta" data-v8-section="system">Underlying engine {{ data.build.version }} · Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start timestamp){% endif %}</div></div>
-    <div><div class="toolbar"><div class="status">Latest accepted scan: {{ data.updated or 'Unavailable' }}</div><a class="v8-reset" href="/" aria-label="Refresh dashboard from the latest accepted canonical scan">Refresh view</a></div><div class="v8-runtime-note">Refresh reads saved canonical evidence only. The protected scanner runs separately; there is no manual scanner action in V8.</div></div>
+    <div><div class="toolbar"><div class="status">Latest accepted scan: <time class="v8-scan-time" datetime="{{ data.updated or '' }}" title="{{ data.updated or 'Unavailable' }}">{{ data.updated|v8_scan_time }}</time></div><a class="v8-reset" href="/" aria-label="Refresh dashboard from the latest accepted canonical scan">Refresh view</a></div><div class="v8-runtime-note">Refresh reads saved canonical evidence only. The protected scanner runs separately; there is no manual scanner action in V8.</div></div>
   </div>
 
   <div class="v8-workspace" id="v8-workspace">
@@ -1908,7 +1925,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
   <div class="v8-shell-status" data-v8-section="overview" aria-label="Evidence and permissions">
     <div class="v8-status-card v8-source">
       <span class="v8-status-icon" aria-hidden="true">✓</span>
-      <div><span class="v8-kicker">Canonical source</span><h2>Latest symbol evidence loaded</h2><p>Scan: {{ data.updated or 'Timestamp unavailable' }}. Research is not independently verified as profitable.</p></div>
+      <div><span class="v8-kicker">Canonical source</span><h2>Latest symbol evidence loaded</h2><p>Scan: <time datetime="{{ data.updated or '' }}" title="{{ data.updated or 'Timestamp unavailable' }}">{{ data.updated|v8_scan_time }}</time>. Research is not independently verified as profitable.</p></div>
     </div>
     <div class="v8-status-card">
       <span class="v8-status-icon" aria-hidden="true">◇</span>
@@ -2006,7 +2023,11 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   <div class="panel v8-strategy-panel" data-v8-section="research">
     <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
-    <div class="small" style="margin-bottom:10px">S1-S10 scores and setup intents are uncalibrated shadow evidence, never exchange instructions. The Gate action column reflects the FINAL canonical paper safety gate, not the raw strategy intent. Candidate status and 10/10 scores do not override blocks. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
+    <p class="small v8-research-brief">Shadow strategy observations only. Scores are uncalibrated; no trading authority.</p>
+    <details class="v8-strategy-context">
+      <summary>Methodology and source details</summary>
+      <div class="small v8-strategy-context-body">S1-S10 scores and setup intents are uncalibrated shadow evidence, never exchange instructions. The Gate action column reflects the FINAL canonical paper safety gate, not the raw strategy intent. Candidate status and 10/10 scores do not override blocks. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · <time datetime="{{ data.previous_snapshot_context.get('collected_at_utc') }}">{{ data.previous_snapshot_context.get('collected_at_utc')|v8_scan_time }}</time>{% endif %}.</div>
+    </details>
     <details class="v8-coverage"><summary>Strategy coverage and diagnostic counts</summary><div class="toolbar">
       {% for row in data.strategy_coverage %}
       <span class="badge badge-research">{{ row.strategy_id }}: {{ row.evaluations }} eval / {{ row.candidates }} cand</span>
@@ -2054,7 +2075,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <main>
       <div class="panel" data-v8-section="results">
         <h2 style="margin-top:0">Paper Action Queue</h2>
-        <div class="small" style="margin-bottom:10px">PAPER ONLY · NO ORDER AUTHORITY · Canonical snapshot {{ data.updated or 'timestamp unavailable' }}</div>
+        <div class="small" style="margin-bottom:10px">PAPER ONLY · NO ORDER AUTHORITY · Canonical snapshot <time datetime="{{ data.updated or '' }}" title="{{ data.updated or 'Timestamp unavailable' }}">{{ data.updated|v8_scan_time }}</time></div>
         {% if data.actionable %}
         <div class="v8-queue-scroll" role="region" aria-label="Paper Action Queue desktop comparison, horizontal scrolling available" tabindex="0">
           <table class="v8-queue-table"><thead><tr><th scope="col">Symbol</th><th scope="col">Action</th><th scope="col">Side</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Target</th><th scope="col">R:R</th><th scope="col">Distance</th><th scope="col">Reason</th></tr></thead><tbody>
@@ -2116,7 +2137,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
               <h3>{{ row.symbol|symbol_label }}</h3>
               <span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span>
             </div>
-            <p class="v8-radar-card-state {{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</p>
+            <p class="v8-radar-card-state {{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}" title="Research status code: {{ row.state }}">{{ (row.state or 'UNKNOWN')|replace('_', ' ')|title }}</p>
             <dl class="v8-radar-metrics">
               <div><dt>Price</dt><dd>{{ row.last_price if row.last_price is not none else '—' }}</dd></div>
               <div><dt>Phase</dt><dd>{{ row._phase or '—' }}</dd></div>
