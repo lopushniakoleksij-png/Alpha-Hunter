@@ -39,6 +39,9 @@ def _load_model_config() -> dict[str, float]:
 
 
 def _optional_float(value: Any) -> float | None:
+    # Boolean JSON values are not numeric market or instrument evidence.
+    if isinstance(value, bool):
+        return None
     try:
         number = float(value)
     except (TypeError, ValueError):
