@@ -471,7 +471,8 @@ def test_atomic_five_stage_rpc(conn, report):
     capture = CaptureSchema()
 
     def atomic(run, size=61, *, shorten_features=False, elevate_permission=False,
-               nested_permission=None, source_error=False):
+               nested_permission=None, source_error=False,
+               swap_feature_ids=False, mismatch_parent_symbol=False):
         capture.captured.clear()
         capture.save_snapshot(snapshot(run, size))
         payload = {
@@ -501,6 +502,14 @@ def test_atomic_five_stage_rpc(conn, report):
             raise AssertionError("Unknown synthetic permission mutation")
         if source_error:
             payload["p_parent"]["error_count"] = 1
+        if swap_feature_ids:
+            assert size >= 2
+            first = payload["p_features"][0]["signal_id"]
+            second = payload["p_features"][1]["signal_id"]
+            payload["p_features"][0]["signal_id"] = second
+            payload["p_features"][1]["signal_id"] = first
+        if mismatch_parent_symbol:
+            payload["p_parent"]["payload"]["symbols"][0]["symbol"] = "SYNTHETIC-WRONGUSDT"
         response = requests.post(
             BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
             json=payload,
@@ -575,7 +584,24 @@ def test_atomic_five_stage_rpc(conn, report):
     assert_counts(conn, "nonzero-source-error", parent=0, child=0,
                   signal=0, feature=0, readiness=0, obs=0)
 
+    # Pairwise identity regression: the same standalone ID and symbol
+    # sets must not permit two symbols to exchange signal IDs.
+    swapped_ids = atomic("swapped-feature-id-pairs", 17, swap_feature_ids=True)
+    assert swapped_ids.status_code >= 400, swapped_ids.text
+    assert "pairing mismatch" in swapped_ids.text
+    assert_counts(conn, "swapped-feature-id-pairs", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
+    wrong_parent = atomic("mismatched-parent-symbol", 17,
+                          mismatch_parent_symbol=True)
+    assert wrong_parent.status_code >= 400, wrong_parent.text
+    assert "parent/child symbol inventory mismatch" in wrong_parent.text
+    assert_counts(conn, "mismatched-parent-symbol", parent=0, child=0,
+                  signal=0, feature=0, readiness=0, obs=0)
+
     report["isolated_atomic_rpc"] = {
+        "swapped_feature_symbol_id_pairs_rejected": True,
+        "parent_child_symbol_inventory_mismatch_rejected": True,
         "nested_permission_forgery_rejected_at_five_locations": True,
         "nonzero_source_error_cannot_be_verified": True,
         "five_stage_success": c,
