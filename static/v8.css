@@ -527,3 +527,34 @@ body.v8-body {
     font-size:17px;
   }
 }
+
+
+/* V8 on-device visual polish: show source times to the minute without
+ * exposing long ISO strings in the primary mobile layout. Raw ISO remains
+ * preserved in time[datetime] and title, never changed in source/API data. */
+.v8-body .v8-scan-time {font-weight:650;white-space:normal}
+.v8-body .v8-strategy-panel .v8-research-brief {
+  margin:0 0 9px;color:var(--v8-muted);line-height:1.5;
+}
+.v8-body .v8-strategy-context {
+  max-width:100%;margin:0 0 14px;
+  border-bottom:1px solid var(--v8-border);
+}
+.v8-body .v8-strategy-context summary {
+  display:flex;align-items:center;min-height:44px;
+  color:var(--v8-blue);font-size:14px;font-weight:650;cursor:pointer;
+}
+.v8-body .v8-strategy-context-body {
+  margin:0 0 12px;color:var(--v8-muted);line-height:1.55;
+}
+@media(max-width:899px){
+  .v8-body .top .toolbar .status {
+    width:100%;border-radius:11px;line-height:1.5;
+  }
+  .v8-body .top .toolbar .status time {display:inline}
+  .v8-body .v8-radar-card-state {
+    word-break:normal;overflow-wrap:break-word;
+    font-size:13px;line-height:1.5;text-transform:none;
+  }
+  .v8-body .v8-strategy-panel h2 {line-height:1.2}
+}
