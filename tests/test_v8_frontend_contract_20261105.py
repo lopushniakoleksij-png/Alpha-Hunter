@@ -69,6 +69,71 @@ def _sample_snapshot():
     }
 
 
+
+def _synthetic_actionable_rows():
+    """Synthetic display-only actions, NEVER sourced from exchange or paper logs."""
+    return [
+        {
+            "symbol": "SYNTHALPHAUSDT",
+            "_action": {
+                "status": "PLACE_LIMIT_PAPER",
+                "direction": "LONG",
+                "entry": 0.10488,
+                "stop": 0.10374,
+                "target": 0.11223,
+                "rr": 6.46,
+                "distance_pct": 0.09,
+                "reason": "Synthetic research rationale. No order authority; "
+                          "illustrative geometry only and not a real signal.",
+            },
+        },
+        {
+            "symbol": "SYNTHBETAUSDT",
+            "_action": {
+                "status": "WAIT_FOR_TRIGGER",
+                "direction": "SHORT",
+                "entry": 121.333333,
+                "stop": 126.444444,
+                "target": 88.777777,
+                "rr": 6.37,
+                "distance_pct": 0.28,
+                "reason": "Synthetic long explanation intended to validate "
+                          "readable iPhone layout without squeezed columns. "
+                          "No paper fill or exchange instruction.",
+            },
+        },
+    ]
+
+
+def test_stage8_paper_queue_has_mobile_card_and_desktop_table_without_value_changes(monkeypatch):
+    data = dashboard.dashboard_payload(
+        _sample_snapshot(), test_engine={"spec_id":"DISPLAY_TEST","verdict":"NOT_PROVEN"},
+        paper_lifecycle={},
+    )
+    data["actionable"] = _synthetic_actionable_rows()
+    monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: data)
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    response = dashboard.app.test_client().get("/")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'class="v8-queue-scroll"' in body
+    assert 'class="v8-queue-table"' in body
+    assert 'class="v8-queue-cards"' in body
+    assert body.count('class="v8-queue-card"') == 2
+    assert body.count("SYNTHALPHAUSDT") == 2
+    assert body.count("SYNTHBETAUSDT") == 2
+    assert "0.10488" in body and "0.10374" in body and "0.11223" in body
+    assert "6.46" in body and "0.09%" in body
+    assert "Research rationale" in body
+    assert "Paper research only · No order authority" in body
+    css = dashboard.app.test_client().get("/static/v8.css").get_data(as_text=True)
+    assert ".v8-body .v8-queue-table" in css
+    assert ".v8-body .v8-queue-scroll{display:none!important}" in css
+    assert ".v8-body .v8-queue-cards" in css
+    assert 'id="runScanButton"' not in body
+
+
+
 def _example_dashboard(monkeypatch):
     data = dashboard.dashboard_payload(
         _sample_snapshot(), test_engine={"spec_id": "TEST_ONLY", "verdict": "NOT_PROVEN"},
