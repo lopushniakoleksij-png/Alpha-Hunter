@@ -364,3 +364,79 @@ body.v8-body {
   .v8-status-card p{font-size:12px;line-height:1.4}
   #v8-view-system > .v8-trust-panel{margin-top:10px}
 }
+
+
+/* Stage 8 mobile acceptance: Paper Action Queue must never compress
+ * nine desktop columns into one viewport. Content is duplicated ONLY
+ * for responsive presentation; research values and gates are unchanged. */
+.v8-body .v8-queue-scroll{
+  max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;border-radius:8px;
+}
+.v8-body .v8-queue-scroll:focus-visible{outline:3px solid var(--v8-blue);outline-offset:3px}
+.v8-body .v8-queue-table{
+  width:100%;min-width:980px;max-width:none;table-layout:auto;
+  border-collapse:collapse;font-size:13px;
+}
+.v8-body .v8-queue-table th,
+.v8-body .v8-queue-table td{
+  padding:12px 10px;text-align:left;vertical-align:top;
+  overflow-wrap:normal;word-break:normal;
+}
+.v8-body .v8-queue-table th:nth-child(2),
+.v8-body .v8-queue-table td:nth-child(2){min-width:150px}
+.v8-body .v8-queue-table th:last-child,
+.v8-body .v8-queue-table td:last-child{
+  min-width:250px;white-space:normal;overflow-wrap:anywhere;
+}
+.v8-body .v8-queue-table .badge{
+  display:inline-block;white-space:normal;overflow-wrap:normal;
+}
+.v8-queue-cards{display:none}
+@media(max-width:899px){
+  .v8-body .v8-queue-scroll{display:none!important}
+  .v8-body .v8-queue-cards{
+    display:grid;grid-template-columns:minmax(0,1fr);gap:12px;
+    max-width:100%;margin-top:14px;
+  }
+  .v8-queue-card{
+    border:1px solid var(--v8-border);border-radius:14px;
+    background:#0c1e2d;padding:14px;min-width:0;overflow-wrap:anywhere;
+  }
+  .v8-queue-card-head{
+    display:flex;align-items:flex-start;justify-content:space-between;
+    flex-wrap:wrap;gap:8px;margin-bottom:14px;
+  }
+  .v8-queue-card-identity{display:flex;align-items:center;flex-wrap:wrap;gap:7px;min-width:0}
+  .v8-queue-card-identity h3{font-size:18px;line-height:1.25;margin:0;overflow-wrap:anywhere}
+  .v8-queue-side{font-size:12px;font-weight:750}
+  .v8-queue-action{
+    max-width:100%;white-space:normal;overflow-wrap:anywhere;
+    font-size:11px;letter-spacing:.01em;line-height:1.45;
+  }
+  .v8-queue-metrics{
+    display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;margin:0;
+  }
+  .v8-queue-metrics>div{
+    min-width:0;border:1px solid #29455a;
+    background:#091724;border-radius:10px;padding:9px 10px;
+  }
+  .v8-queue-metrics dt{font-size:11px;color:var(--v8-muted);margin:0 0 5px}
+  .v8-queue-metrics dd{
+    margin:0;font-size:15px;line-height:1.4;font-weight:700;
+    font-variant-numeric:tabular-nums;overflow-wrap:anywhere;
+  }
+  .v8-queue-reason{margin-top:12px;border-top:1px solid var(--v8-border);padding-top:7px}
+  .v8-queue-reason summary{
+    display:flex;align-items:center;min-height:44px;
+    color:var(--v8-blue);cursor:pointer;font-weight:650;font-size:14px;
+  }
+  .v8-queue-reason p{
+    color:var(--v8-muted);font-size:13px;line-height:1.55;margin:5px 0 9px;
+    overflow-wrap:anywhere;
+  }
+  .v8-queue-safety{
+    color:var(--v8-muted);font-size:12px;margin:12px 0 0;
+  }
+}
