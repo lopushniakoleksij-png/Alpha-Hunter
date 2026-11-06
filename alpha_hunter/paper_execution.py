@@ -251,6 +251,10 @@ def _fill_from_order(
         fill_price = cross_price * (1.0 + direction_sign * slippage_bps / 10000.0)
     if fee_bps is None:
         return None, ["MAKER_FEE_EVIDENCE_MISSING"]
+    # Negative fees can be legitimate rebates, but without an independently
+    # evidenced rebate schedule they must not silently reduce paper costs.
+    if fee_bps < 0:
+        return None, ["NEGATIVE_FEE_REBATE_UNVERIFIED"]
 
     if not _entry_geometry_valid(
         str(direction).upper(),
