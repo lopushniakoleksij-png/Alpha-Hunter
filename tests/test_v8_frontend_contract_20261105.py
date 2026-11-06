@@ -204,6 +204,38 @@ def test_stage8_radar_mobile_cards_and_raw_research_values(monkeypatch):
 
 
 
+
+def test_v8_display_time_respects_source_timestamp_and_utc():
+    assert dashboard.v8_scan_time("2026-11-06T18:05:45.125234+00:00") == "6 Nov 2026 · 18:05 UTC"
+    assert dashboard.v8_scan_time("2026-11-06T19:05:45+01:00") == "6 Nov 2026 · 18:05 UTC"
+    assert dashboard.v8_scan_time("2026-11-06T18:05:45Z") == "6 Nov 2026 · 18:05 UTC"
+    assert dashboard.v8_scan_time("2026-11-06T18:05:45") == "2026-11-06T18:05:45"
+    assert dashboard.v8_scan_time("invalid-source-time") == "invalid-source-time"
+    assert dashboard.v8_scan_time(None) == "Unavailable"
+
+
+def test_v8_mobile_radar_status_pretty_print_and_source_details(monkeypatch):
+    data = dashboard.dashboard_payload(
+        _sample_snapshot(),
+        test_engine={"spec_id": "UI_ONLY", "verdict": "NOT_PROVEN"},
+        paper_lifecycle={},
+    )
+    data["research"] = _synthetic_radar_rows()
+    monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: data)
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    html = dashboard.app.test_client().get("/").get_data(as_text=True)
+    assert "Direction Emerging Long" in html
+    assert 'title="Research status code: DIRECTION_EMERGING_LONG"' in html
+    assert 'class="v8-strategy-context"' in html
+    assert "<summary>Methodology and source details</summary>" in html
+    assert "Shadow strategy observations only" in html
+    assert '<time class="v8-scan-time" datetime="2026-11-05T00:55:00+00:00"' in html
+    assert "5 Nov 2026 · 00:55 UTC" in html
+    # Canonical projection and research definitions are never mutated.
+    assert data["research"][1]["state"] == "DIRECTION_EMERGING_LONG"
+
+
+
 def _example_dashboard(monkeypatch):
     data = dashboard.dashboard_payload(
         _sample_snapshot(), test_engine={"spec_id": "TEST_ONLY", "verdict": "NOT_PROVEN"},
