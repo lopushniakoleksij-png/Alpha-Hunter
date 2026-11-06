@@ -45,6 +45,10 @@ class SupabaseStorageError(RuntimeError):
     """Raised when configured Supabase persistence or retrieval fails."""
 
 
+class IncompleteSnapshotError(SupabaseStorageError):
+    """A stored parent cannot be trusted as a complete previous scan."""
+
+
 RETRYABLE_SUPABASE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
 
@@ -227,7 +231,7 @@ class SupabaseStorage:
             "get",
             f"{self.settings.url}/rest/v1/{self.settings.snapshot_table}",
             params={
-                "select": "run_id,collected_at_utc,payload",
+                "select": "run_id,collected_at_utc,symbol_count,payload",
                 "order": "collected_at_utc.desc",
                 "limit": str(limit),
             },
@@ -282,10 +286,24 @@ class SupabaseStorage:
                     if expected and actual_identity.get(key) != expected:
                         break
                 else:
-                    return self._hydrate_snapshot(row, payload)
+                    try:
+                        return self._hydrate_snapshot(row, payload)
+                    except IncompleteSnapshotError:
+                        # The parent may have been committed before child-write
+                        # failure. Continue only through the bounded
+                        # identity-matched predecessor window; never promote
+                        # this partial parent as a complete source.
+                        continue
                 continue
 
-            return self._hydrate_snapshot(row, payload)
+            try:
+                return self._hydrate_snapshot(row, payload)
+            except IncompleteSnapshotError:
+                if not filtered:
+                    # Single-row consumers must see the failed newest record,
+                    # not silently substitute a previous hour.
+                    raise
+                continue
 
         return None
 
@@ -338,12 +356,55 @@ class SupabaseStorage:
                 "Supabase snapshot hydration returned unexpected shape"
             )
 
-        snapshot["symbols"] = [
-            child.get("payload")
-            for child in rows
-            if isinstance(child, dict)
-            and isinstance(child.get("payload"), dict)
-        ]
+        # POST /snapshots writes the parent before /symbol_snapshots. A
+        # statement timeout during the child upsert leaves a durable but
+        # incomplete parent. It must never be used as the prior research run.
+        # Only read-only verification is performed here; no repair/backfill.
+        parent_symbols = payload.get("symbols")
+        expected_raw = row.get("symbol_count")
+        if expected_raw is None and isinstance(parent_symbols, list):
+            expected_raw = len(parent_symbols)
+        if type(expected_raw) is not int or not (1 <= expected_raw <= 2000):
+            raise IncompleteSnapshotError(
+                "Compact snapshot parent lacks a valid expected symbol count"
+            )
+        if len(rows) != expected_raw:
+            raise IncompleteSnapshotError(
+                "Compact snapshot parent/child symbol count mismatch"
+            )
+
+        symbols: list[dict[str, Any]] = []
+        observed: set[str] = set()
+        for child in rows:
+            if not isinstance(child, dict) or not isinstance(child.get("payload"), dict):
+                raise IncompleteSnapshotError(
+                    "Compact snapshot has a missing child payload"
+                )
+            symbol = str(child.get("symbol") or "").strip().upper()
+            payload_symbol = str(child["payload"].get("symbol") or "").strip().upper()
+            if not symbol or symbol != payload_symbol or symbol in observed:
+                raise IncompleteSnapshotError(
+                    "Compact snapshot has duplicate or mismatched symbol children"
+                )
+            observed.add(symbol)
+            symbols.append(child["payload"])
+
+        if isinstance(parent_symbols, list):
+            parent_names = [
+                str(item.get("symbol") or "").strip().upper()
+                for item in parent_symbols
+                if isinstance(item, dict)
+            ]
+            if (
+                len(parent_names) != expected_raw
+                or len(set(parent_names)) != expected_raw
+                or set(parent_names) != observed
+            ):
+                raise IncompleteSnapshotError(
+                    "Compact snapshot children disagree with parent symbol identities"
+                )
+
+        snapshot["symbols"] = symbols
         return snapshot
 
     def _upsert(self, table: str, rows: list[dict[str, Any]], on_conflict: str) -> None:
