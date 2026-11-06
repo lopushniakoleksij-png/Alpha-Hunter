@@ -134,6 +134,76 @@ def test_stage8_paper_queue_has_mobile_card_and_desktop_table_without_value_chan
 
 
 
+
+def _synthetic_radar_rows():
+    """Representative UI rows, not real signals or trade recommendations."""
+    return [
+        {
+            "symbol": "SYNTHRADARUSDT",
+            "last_price": 1.223688,
+            "_phase": "ACCUMULATION",
+            "_timing": "LATE",
+            "_behaviour": 6.82,
+            "state": "WATCH_LONG",
+            "_rr": None,
+            "_action": {
+                "status": "RESEARCH_ONLY",
+                "label": "RESEARCH / WATCH",
+                "reason": "Synthetic explanation of a research-only observation; "
+                          "no signal or executable permission.",
+            },
+        },
+        {
+            "symbol": "SYNTHRADAR2USDT",
+            "last_price": 0.001322,
+            "_phase": "IGNITION",
+            "_timing": "FAIR",
+            "_behaviour": 6.30,
+            "state": "DIRECTION_EMERGING_LONG",
+            "_rr": 0.24,
+            "_action": {
+                "status": "RETEST_PLAN",
+                "label": "BEST RETEST / LIMIT ZONE",
+                "reason": "Synthetic long label and long explanatory note to "
+                          "detect compressed columns on narrow mobile screens.",
+            },
+        },
+    ]
+
+
+def test_stage8_radar_mobile_cards_and_raw_research_values(monkeypatch):
+    data = dashboard.dashboard_payload(
+        _sample_snapshot(),
+        test_engine={"spec_id":"DISPLAY_TEST", "operational_status":"REVIEW_REQUIRED",
+                     "verdict":"NOT_PROVEN"},
+        paper_lifecycle={},
+    )
+    data["research"] = _synthetic_radar_rows()
+    monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: data)
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    response = dashboard.app.test_client().get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'class="v8-radar-scroll"' in html
+    assert 'class="v8-radar-table"' in html
+    assert 'class="v8-radar-cards"' in html
+    assert html.count('class="v8-radar-card"') == 2
+    assert html.count("SYNTHRADARUSDT") == 2
+    assert html.count("SYNTHRADAR2USDT") == 2
+    assert "1.223688" in html and "0.001322" in html
+    assert "0.24" in html and "6.82" in html
+    assert "BEST RETEST / LIMIT ZONE" in html
+    assert "No trading authorisation" in html
+    assert "Review Required" in html
+    assert "Not Proven" in html
+    assert 'title="Status code: REVIEW_REQUIRED"' in html
+    css = dashboard.app.test_client().get("/static/v8.css").get_data(as_text=True)
+    assert ".v8-body .v8-radar-scroll {display:none!important}" in css
+    assert ".v8-body .v8-radar-cards" in css
+    assert ".v8-body .action-grid .v8-integrity-metric" in css
+
+
+
 def _example_dashboard(monkeypatch):
     data = dashboard.dashboard_payload(
         _sample_snapshot(), test_engine={"spec_id": "TEST_ONLY", "verdict": "NOT_PROVEN"},
