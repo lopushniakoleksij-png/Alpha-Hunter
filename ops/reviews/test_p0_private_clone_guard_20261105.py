@@ -37,6 +37,21 @@ class PrivateCloneGuardTests(unittest.TestCase):
         self.assertEqual(bench.percentile([1,2,3,4],95),3.85)
         self.assertEqual(bench.percentile([1,2,3,4],99),3.97)
 
+    def test_atomic_readiness_timestamp_matches_live_column_default(self):
+        """Static parity guard; NOT a substitute for exact-clone SQL execution."""
+        source = (
+            ROOT.parent.parent
+            / "research"
+            / "p0_successor_atomic_canonical_v03_PRODUCTION_SCHEMA_REVIEW_ONLY.sql"
+        ).read_text(encoding="utf-8")
+        readiness_section = source.split("INTO v_features_normalized", 1)[1].split(
+            "INTO v_readiness_normalized", 1
+        )[0]
+        self.assertIn("'v7_trade_ready', false, 'created_at', clock_timestamp()", readiness_section)
+        self.assertNotIn("'v7_trade_ready', false, 'created_at', now()", readiness_section)
+        self.assertIn("SECURITY INVOKER", source)
+        self.assertIn("REVOKE ALL ON FUNCTION", source)
+
     def test_valid_fixture_only(self):
         self.assertEqual(bench.validate_fixture(fixture(),3),
                          "PRIVATE-DISPOSABLE-TEST")
