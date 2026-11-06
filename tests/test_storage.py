@@ -461,6 +461,130 @@ def test_no_identity_matched_complete_predecessor_is_none():
     ) is None
 
 
+def _complete_stage_rows(*symbols):
+    signal_rows = [
+        {"symbol": symbol, "signal_id": f"synthetic-id-{i}"}
+        for i, symbol in enumerate(symbols)
+    ]
+    feature_rows = [dict(row) for row in signal_rows]
+    readiness_rows = [{"symbol": symbol} for symbol in symbols]
+    return signal_rows, feature_rows, readiness_rows
+
+
+def test_predecessor_requires_all_five_stages_with_exact_identifiers():
+    first = _stored_compact_parent("complete", ["ALPHAUSDT", "BETAUSDT"])
+    sig, feat, ready = _complete_stage_rows("ALPHAUSDT", "BETAUSDT")
+    session = SequencedSession([
+        StatusResponse(200, payload=[first]),
+        StatusResponse(200, payload=[_stored_child("ALPHAUSDT"),
+                                      _stored_child("BETAUSDT")]),
+        StatusResponse(200, payload=sig),
+        StatusResponse(200, payload=feat),
+        StatusResponse(200, payload=ready),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+    prior = storage.load_latest_snapshot(
+        expected_identity={"test_contract": "synthetic-contract"},
+        require_strategy_context=True,
+        require_complete_publication=True,
+    )
+    assert prior is not None
+    assert prior["run_id"] == "complete"
+    assert len(session.calls) == 5
+    assert session.calls[2][0].endswith("/alpha_hunter_signals")
+    assert session.calls[3][0].endswith("/alpha_hunter_signal_features")
+    assert session.calls[4][0].endswith(
+        "/alpha_hunter_readiness_observations_v01"
+    )
+    assert session.calls[2][1]["params"] == {
+        "select": "symbol,signal_id", "run_id": "eq.complete", "limit": "2001",
+    }
+
+
+def test_predecessor_skips_complete_symbols_with_missing_later_stages():
+    # A separate-HTTP write can leave complete symbols but zero signals.
+    new = _stored_compact_parent("partial-new", ["ALPHAUSDT", "BETAUSDT"])
+    old = _stored_compact_parent("complete-old", ["GAMMAUSDT", "DELTAUSDT"])
+    sig, feat, ready = _complete_stage_rows("GAMMAUSDT", "DELTAUSDT")
+    session = SequencedSession([
+        StatusResponse(200, payload=[new, old]),
+        StatusResponse(200, payload=[_stored_child("ALPHAUSDT"),
+                                      _stored_child("BETAUSDT")]),
+        StatusResponse(200, payload=[]),
+        StatusResponse(200, payload=[]),
+        StatusResponse(200, payload=[]),
+        StatusResponse(200, payload=[_stored_child("GAMMAUSDT"),
+                                      _stored_child("DELTAUSDT")]),
+        StatusResponse(200, payload=sig),
+        StatusResponse(200, payload=feat),
+        StatusResponse(200, payload=ready),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+    prior = storage.load_latest_snapshot(
+        expected_identity={"test_contract": "synthetic-contract"},
+        require_strategy_context=True,
+        require_complete_publication=True,
+    )
+    assert prior is not None
+    assert prior["run_id"] == "complete-old"
+    assert len(session.calls) == 9
+
+
+@pytest.mark.parametrize("bad_group", ["signal", "feature", "readiness"])
+def test_predecessor_rejects_equal_counts_with_mismatched_identity(bad_group):
+    parent = _stored_compact_parent("identity-fail", ["ALPHAUSDT", "BETAUSDT"])
+    sig, feat, ready = _complete_stage_rows("ALPHAUSDT", "BETAUSDT")
+    if bad_group == "signal":
+        sig[1]["signal_id"] = sig[0]["signal_id"]
+    elif bad_group == "feature":
+        feat[1]["signal_id"] = "synthetic-wrong-id"
+    else:
+        ready[1]["symbol"] = "WRONGUSDT"
+    session = SequencedSession([
+        StatusResponse(200, payload=[parent]),
+        StatusResponse(200, payload=[_stored_child("ALPHAUSDT"),
+                                      _stored_child("BETAUSDT")]),
+        StatusResponse(200, payload=sig),
+        StatusResponse(200, payload=feat),
+        StatusResponse(200, payload=ready),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        retry_backoff_seconds=0,
+    ), session=session)
+    assert storage.load_latest_snapshot(
+        expected_identity={"test_contract": "synthetic-contract"},
+        require_strategy_context=True,
+        require_complete_publication=True,
+    ) is None
+
+
+def test_predecessor_read_errors_abort_instead_of_skipping():
+    session = SequencedSession([
+        StatusResponse(200, payload=[
+            _stored_compact_parent("read-fail", ["ALPHAUSDT"])
+        ]),
+        StatusResponse(200, payload=[_stored_child("ALPHAUSDT")]),
+        StatusResponse(503, text="synthetic read service unavailable"),
+    ])
+    storage = SupabaseStorage(SupabaseConfig(
+        url="https://example.supabase.co", key="synthetic",
+        max_retries=1, retry_backoff_seconds=0,
+    ), session=session)
+    with pytest.raises(SupabaseStorageError, match="evidence read failed"):
+        storage.load_latest_snapshot(
+            expected_identity={"test_contract": "synthetic-contract"},
+            require_strategy_context=True,
+            require_complete_publication=True,
+        )
+
+
 def test_previous_snapshot_guard_keeps_legacy_full_payload():
     # Older storage contracts already contain the complete symbol objects in
     # the parent. The guard must not reject those solely because there are no
