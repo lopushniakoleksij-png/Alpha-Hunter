@@ -196,9 +196,21 @@ def main():
                         assert rect["x"] >= -1 and rect["x"] + rect["width"] <= width + 1, (
                             f"Paper queue card overflows {width}px: {rect}"
                         )
-                    assert cards.first.get_by_text("0.10488", exact=True).is_visible()
+                    assert cards.first.locator(".v8-queue-metrics dd").first.inner_text() == "0.10488"
                     assert cards.first.get_by_text("6.46", exact=True).is_visible()
                     assert cards.first.get_by_text("0.09%", exact=True).is_visible()
+                    assert cards.first.locator(".v8-queue-action").inner_text() == "Limit setup · Paper only"
+                    assert cards.first.locator(".v8-queue-action").get_attribute("data-status-code") == "PLACE_LIMIT_PAPER"
+                    assert cards.nth(1).locator(".v8-queue-metrics dd").first.inner_text() == "79.080667"
+                    exact = cards.nth(1).locator(".v8-queue-exact")
+                    assert exact.locator("dd").first.is_hidden()
+                    exact.locator("summary").click()
+                    assert exact.locator("dd").first.inner_text() == "79.08066666666667"
+                    assert exact.locator("dd").first.is_visible()
+                    assert cards.nth(1).locator(".v8-queue-action").inner_text() == "Wait for trigger"
+                    assert page.locator(".v8-mobile-head").evaluate(
+                        "(e) => getComputedStyle(e).position"
+                    ) == "sticky"
                     reason = cards.first.locator(".v8-queue-reason")
                     assert reason.locator("p").is_hidden()
                     reason.locator("summary").click()
