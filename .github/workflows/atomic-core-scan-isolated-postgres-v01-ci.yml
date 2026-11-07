@@ -1,0 +1,77 @@
+name: Atomic Core Scan Isolated PostgreSQL QA
+
+on:
+  push:
+    branches:
+      - fix/supabase-write-timeout-qa
+    paths:
+      - 'ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_service_role_v01.sql'
+      - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
+      - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
+      - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
+      - 'tests/test_atomic_core_scan_rpc_candidate.py'
+      - 'ops/sql/readonly_core_scan_trigger_inventory_v01.sql'
+      - 'docs/atomic-core-scan-release-gate-20261107.md'
+      - '.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-sql-rollback:
+    name: Ephemeral PostgreSQL 17 rollback and idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated_test_password
+          POSTGRES_DB: isolated_atomic_scan_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d isolated_atomic_scan_qa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: isolated_test_password
+      PGDATABASE: isolated_atomic_scan_qa
+    steps:
+      - name: Check out isolated QA branch
+        uses: actions/checkout@v4
+      - name: Guard production branch and verify client
+        run: |
+          test "${GITHUB_REF_NAME}" = "fix/supabase-write-timeout-qa"
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+      - name: Re-run current Python persistence regressions
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install -q -r requirements.txt pytest
+          python -m pytest -q tests/test_storage.py tests/test_canonical_universe_scan_persistence_v02.py tests/test_scan_partial_persistence_characterization.py tests/test_atomic_core_scan_rpc_candidate.py
+      - name: Construct synthetic core schema and trigger graph
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
+      - name: Install candidate function in ephemeral test database ONLY
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
+      - name: Verify rollback, replay, completeness, and restricted privileges
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
+      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
+      - name: Validate service_role RPC invocation under RLS with denied public roles
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
+      - name: Compare payoff percentile query against 495k synthetic outcomes
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
