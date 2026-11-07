@@ -82,7 +82,8 @@ def evaluate_blocked_shadow(
                     continue
                 filled = True
                 # Intrabar ordering after entry is unknowable even when one barrier touched.
-                if low <= stop or high >= target:
+                if ((low <= stop or high >= target) if direction == "LONG"
+                    else (high >= stop or low <= target)):
                     return {**result, "classification": "BOTH_SAME_CANDLE_AMBIGUOUS",
                             "entry_touched": True}
                 continue
