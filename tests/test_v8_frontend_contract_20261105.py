@@ -161,6 +161,14 @@ def test_stage7_paper_prices_and_status_codes_keep_exact_source(monkeypatch):
     assert 'data-status-code="WAIT_FOR_TRIGGER"' in html
     assert "Wait for trigger" in html
     assert 'class="v8-private-details"' in html
+    assert 'class="v8-test-provenance"' in html
+    assert "Test provenance, timestamps and blockers" in html
+    assert "Unproven paper research." in html
+    assert 'data-status-code="PLACE_LIMIT_PAPER"' in html
+    js = dashboard.app.test_client().get("/static/v8.js").get_data(as_text=True)
+    assert 'SHADOW_CANDIDATE: "Shadow candidate"' in js
+    assert 'PAPER_SIGNAL_ONLY: "Paper signal only"' in js
+    assert 'make("details", "v8-source-codes")' in js
 
 
 def _synthetic_radar_rows():
