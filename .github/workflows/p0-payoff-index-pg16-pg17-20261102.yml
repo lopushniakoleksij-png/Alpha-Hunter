@@ -5,6 +5,7 @@ on:
       - ".github/workflows/p0-payoff-index-pg16-pg17-20261102.yml"
       - "ops/reviews/20261102_payoff_health_index_CANDIDATE_NOT_FOR_PRODUCTION.sql"
       - "ops/reviews/20261102_payoff_index_benchmark_pg16_pg17.sql"
+      - "ops/reviews/20261107_payoff_trigger_workload_benchmark_pg16_pg17.sql"
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,6 +13,7 @@ jobs:
   synthetic-payoff-index:
     name: Isolated PostgreSQL ${{ matrix.pg }}
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +35,10 @@ jobs:
         run: |
           docker exec -i "${{ job.services.db.id }}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
             < ops/reviews/20261102_payoff_index_benchmark_pg16_pg17.sql
+      - name: Benchmark 61-symbol times 10 nested percentile queries before and after (synthetic only)
+        run: |
+          docker exec -i "${{ job.services.db.id }}" psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            < ops/reviews/20261107_payoff_trigger_workload_benchmark_pg16_pg17.sql
       - name: Safety scope confirmation
         run: |
           echo "Synthetic isolated PostgreSQL only."
