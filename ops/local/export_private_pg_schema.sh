@@ -22,7 +22,8 @@ if ! docker image inspect postgres:17 >/dev/null 2>&1; then
 fi
 
 echo "ALPHA HUNTER — PRIVATE SCHEMA-ONLY EXPORT"
-echo "No data rows. No auth user records. No Vault content. No production writes."
+echo "Schema definitions only, no table data or production writes."
+echo "Function source may embed sensitive constants; never publish the archive."
 echo "Files stay outside Git under: $DEST"
 echo "For Supabase > Connect choose Session pooler (IPv4), port 5432."
 echo "Do not paste your database password into ChatGPT, GitHub, or this repo."
@@ -96,7 +97,7 @@ docker run --rm --network none --user "$(id -u):$(id -g)" \
   -v "$DEST:/qa:ro" postgres:17 \
   pg_restore --list /qa/production_schema.dump |
   awk '/ FUNCTION / {f++} / TRIGGER / {t++} / INDEX / {i++} / ACL / {a++}
-       END {printf "Archive inventory: functions=%d triggers=%d indexes=%d ACL entries=%d\\n", f,t,i,a}'
+       END {printf "Archive inventory: functions=%d triggers=%d indexes=%d ACL entries=%d\n", f,t,i,a}'
 printf 'SUCCESS: private schema archive and no-password role file saved.\n'
 printf 'Private folder: %s\n' "$DEST"
 printf 'Archive size: %s bytes\n' "$(wc -c < "$DEST/production_schema.dump")"
