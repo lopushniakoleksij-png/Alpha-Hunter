@@ -39,7 +39,43 @@ def v8_scan_time(value: Any) -> str:
         return raw  # An invalid source timestamp must not be silently fabricated.
 
 
+def v8_paper_price_display(value: Any) -> str:
+    """Round only paper-card display; preserve exact canonical values separately."""
+    if value is None:
+        return "—"
+    raw = str(value)
+    try:
+        from decimal import Decimal, ROUND_HALF_UP, localcontext
+
+        number = Decimal(raw)
+        if not number.is_finite():
+            return raw
+        if number.is_zero():
+            return "0"
+        with localcontext() as context:
+            context.prec = max(32, len(number.as_tuple().digits) + 2)
+            places = Decimal(1).scaleb(number.adjusted() - 7)
+            display = number.quantize(places, rounding=ROUND_HALF_UP)
+        return format(display.normalize(), "f")
+    except (ArithmeticError, ValueError):
+        return raw
+
+
+def v8_paper_status_label(value: Any) -> str:
+    """Human-readable paper-only labels. Original status codes remain in the DOM."""
+    raw = str(value or "UNKNOWN")
+    labels = {
+        "PLACE_LIMIT_PAPER": "Limit setup · Paper only",
+        "EXECUTE_NOW_PAPER": "Paper candidate · Now",
+        "WAIT_FOR_TRIGGER": "Wait for trigger",
+        "BLOCKED": "Blocked",
+    }
+    return labels.get(raw, raw.replace("_", " ").capitalize())
+
+
 app.add_template_filter(v8_scan_time, "v8_scan_time")
+app.add_template_filter(v8_paper_price_display, "v8_paper_price_display")
+app.add_template_filter(v8_paper_status_label, "v8_paper_status_label")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -2091,15 +2127,23 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
                 <h3>{{ row.symbol|symbol_label }}</h3>
                 <span class="v8-queue-side {{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction or '—' }}</span>
               </div>
-              <span class="v8-queue-action badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span>
+              <span class="v8-queue-action badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}" data-status-code="{{ a.status }}" title="Original paper status: {{ a.status }}">{{ a.status|v8_paper_status_label }}</span>
             </div>
             <dl class="v8-queue-metrics">
-              <div><dt>Entry</dt><dd>{{ a.entry if a.entry is not none else '—' }}</dd></div>
-              <div><dt>Stop</dt><dd>{{ a.stop if a.stop is not none else '—' }}</dd></div>
-              <div><dt>Target</dt><dd>{{ a.target if a.target is not none else '—' }}</dd></div>
+              <div><dt>Entry</dt><dd title="Display rounded; full source value available below">{{ a.entry|v8_paper_price_display }}</dd></div>
+              <div><dt>Stop</dt><dd title="Display rounded; full source value available below">{{ a.stop|v8_paper_price_display }}</dd></div>
+              <div><dt>Target</dt><dd title="Display rounded; full source value available below">{{ a.target|v8_paper_price_display }}</dd></div>
               <div><dt>R:R</dt><dd>{{ '%.2f'|format(a.rr) if a.rr is not none else '—' }}</dd></div>
               <div><dt>Distance</dt><dd>{{ '%.2f'|format(a.distance_pct) ~ '%' if a.distance_pct is not none else '—' }}</dd></div>
             </dl>
+            <details class="v8-queue-exact">
+              <summary>Full source price precision</summary>
+              <dl>
+                <div><dt>Entry</dt><dd>{{ a.entry if a.entry is not none else '—' }}</dd></div>
+                <div><dt>Stop</dt><dd>{{ a.stop if a.stop is not none else '—' }}</dd></div>
+                <div><dt>Target</dt><dd>{{ a.target if a.target is not none else '—' }}</dd></div>
+              </dl>
+            </details>
             <details class="v8-queue-reason">
               <summary>Research rationale</summary>
               <p>{{ a.reason or 'No rationale supplied in the current canonical snapshot.' }}</p>
@@ -2158,7 +2202,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       <div class="panel v8-private-boundary" data-v8-section="system" aria-label="Private account information">
         <h2 style="margin-top:0">Private account information</h2>
         <p class="small">Personal Bitget account positions, balances, protection levels and account connection details are not published on this public research dashboard.</p>
-        <p class="small">Only authorised operators should access account-specific evidence through a separately authenticated interface. No real-money trading permissions are provided here.</p>
+        <details class="v8-private-details"><summary>Why account details are private</summary><p class="small">Only authorised operators should access account-specific evidence through a separately authenticated interface. No real-money trading permissions are provided here.</p></details>
       </div>
     </main>
 
