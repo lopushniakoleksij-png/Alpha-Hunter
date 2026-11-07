@@ -130,6 +130,15 @@ begin
     current_setting('qa.fail_feature',true)='on' then
     raise exception 'INJECTED_FEATURE_TRIGGER_FAILURE';
   end if;
+  if tg_table_name='alpha_hunter_signal_features' and tg_when='BEFORE' then
+    -- Model the real feature enrichment trigger: mutate the inserted payload.
+    new.source_payload := coalesce(new.source_payload, '{}'::jsonb)
+      || pg_catalog.jsonb_build_object(
+        'timeframes', pg_catalog.jsonb_build_object('15m','QA_CONTEXT'),
+        '_geometry_context_version','geometry-context-v0.1',
+        '_geometry_context_source','CANONICAL_SYMBOL_SNAPSHOT_EXACT_RUN_SYMBOL'
+      );
+  end if;
   return new;
 end;
 $qa$;
