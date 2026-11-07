@@ -27,6 +27,7 @@ on:
       - research/p0-private-clone-fixture-permission-guard-20261105-1347
       - research/p0-clone-fixture-identity-guard-20261105-1544
       - research/p0-atomic-final-stage-rollback-20261107
+      - research/p0-atomic-partial-stage-cardinality-20261107
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
