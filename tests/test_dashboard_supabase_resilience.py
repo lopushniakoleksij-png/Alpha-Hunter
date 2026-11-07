@@ -17,6 +17,20 @@ class FakeResponse:
         return self._payload
 
 
+def test_v8_recovery_rate_limits_auto_reload_without_changing_server_circuit():
+    # The browser must respect degraded source state and never aggressively
+    # poll during a 75s read circuit. Canonical incomplete remains fail closed.
+    assert 'data-v8-retry-ms="75000"' in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert 'data-v8-retry-ms="60000"' in dashboard_app.DASHBOARD_INCOMPLETE_PAGE
+    assert 'data-v8-retry-ms="15000"' in dashboard_app.DASHBOARD_PUBLISHING_PAGE
+    assert "75 seconds" in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert "60 seconds" in dashboard_app.DASHBOARD_INCOMPLETE_PAGE
+    assert "15 seconds" in dashboard_app.DASHBOARD_PUBLISHING_PAGE
+    assert "const retryMs" in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert "setTimeout(() => location.reload(), retryMs)" in dashboard_app.DASHBOARD_RECOVERY_PAGE
+    assert dashboard_app.DASHBOARD_READ_FAILURE_COOLDOWN_SECONDS == 75.0
+
+
 def test_supabase_get_rows_retries_transient_then_succeeds(monkeypatch):
     calls = []
     responses = [
@@ -58,7 +72,12 @@ def test_dashboard_fails_closed_with_recovery_page(monkeypatch):
     body = response.get_data(as_text=True)
     assert "LIVE DATA TEMPORARILY UNAVAILABLE" in body
     assert "Trading actions are intentionally hidden" in body
-    assert 'http-equiv="refresh" content="10"' in body
+    # V8 provides controlled recovery rather than an unpausable timed redirect.
+    assert 'http-equiv="refresh"' not in body
+    assert 'id="v8-auto-retry"' in body
+    assert "Enable auto retry" in body
+    assert "Check latest scan" in body
+    assert 'aria-pressed="false"' in body
     assert "database unavailable" not in body
 
 

@@ -24,6 +24,59 @@ from performance_page import PERFORMANCE_PAGE
 
 app = Flask(__name__)
 
+
+def v8_scan_time(value: Any) -> str:
+    """Format timestamp for display without changing canonical source evidence."""
+    if value is None or not str(value).strip():
+        return "Unavailable"
+    raw = str(value).strip()
+    try:
+        stamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if stamp.tzinfo is None:
+            return raw  # Do not invent a timezone for ambiguous source data.
+        return stamp.astimezone(timezone.utc).strftime("%d %b %Y · %H:%M UTC").lstrip("0")
+    except (ValueError, OverflowError):
+        return raw  # An invalid source timestamp must not be silently fabricated.
+
+
+def v8_paper_price_display(value: Any) -> str:
+    """Round only paper-card display; preserve exact canonical values separately."""
+    if value is None:
+        return "—"
+    raw = str(value)
+    try:
+        from decimal import Decimal, ROUND_HALF_UP, localcontext
+
+        number = Decimal(raw)
+        if not number.is_finite():
+            return raw
+        if number.is_zero():
+            return "0"
+        with localcontext() as context:
+            context.prec = max(32, len(number.as_tuple().digits) + 2)
+            places = Decimal(1).scaleb(number.adjusted() - 7)
+            display = number.quantize(places, rounding=ROUND_HALF_UP)
+        return format(display.normalize(), "f")
+    except (ArithmeticError, ValueError):
+        return raw
+
+
+def v8_paper_status_label(value: Any) -> str:
+    """Human-readable paper-only labels. Original status codes remain in the DOM."""
+    raw = str(value or "UNKNOWN")
+    labels = {
+        "PLACE_LIMIT_PAPER": "Limit setup · Paper only",
+        "EXECUTE_NOW_PAPER": "Paper candidate · Now",
+        "WAIT_FOR_TRIGGER": "Wait for trigger",
+        "BLOCKED": "Blocked",
+    }
+    return labels.get(raw, raw.replace("_", " ").capitalize())
+
+
+app.add_template_filter(v8_scan_time, "v8_scan_time")
+app.add_template_filter(v8_paper_price_display, "v8_paper_price_display")
+app.add_template_filter(v8_paper_status_label, "v8_paper_status_label")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_TABLE = os.getenv("ALPHA_HUNTER_SNAPSHOT_TABLE", "alpha_hunter_snapshots")
@@ -1829,9 +1882,9 @@ PAGE = r"""
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="300">
-<title>Alpha Hunter V7.2 — Money Action</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- V8: avoid forced timed page refresh. User controls when evidence reloads. -->
+<title>Alpha Hunter V8 — Research Terminal</title>
 <style>
 :root{--bg:#071018;--panel:#0d1822;--line:#1c2c39;--text:#e8f0f6;--muted:#8ea1b2;--green:#24d18f;--red:#ff6474;--amber:#ffbf47;--blue:#4db6ff}
 *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#050b11,#09131c);color:var(--text);font-family:Inter,system-ui,-apple-system,sans-serif}
@@ -1843,18 +1896,92 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 .run-button{border:1px solid #1f6a50;background:#123b2d;color:var(--green);padding:10px 14px;border-radius:10px;font-weight:800;cursor:pointer}.run-button:disabled{opacity:.5}.status{padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:var(--panel);font-size:12px}.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.side-row{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid #142431;font-size:12px}.empty{color:var(--muted);padding:16px 0}.warning{color:var(--amber)}
 @media(max-width:1000px){.cards{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}.action-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:650px){.wrap{padding:12px}.top{align-items:flex-start;flex-direction:column}.cards{grid-template-columns:1fr 1fr}.action-grid{grid-template-columns:1fr 1fr}table{display:block;overflow-x:auto}h1{font-size:24px}}
+.v8-overview-preview .v8-preview-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.v8-overview-preview .v8-preview-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #294155;min-width:0;overflow-wrap:anywhere}
+.v8-overview-preview .v8-preview-item:last-child{border-bottom:0}
+.v8-overview-preview .v8-preview-meta{text-align:right;color:#ffca6c;font-size:14px}
+.v8-overview-preview .v8-preview-meta .small{color:#b2c6d5}
+@media(max-width:430px){.v8-overview-preview .v8-preview-item{align-items:flex-start;flex-direction:column;gap:5px}.v8-overview-preview .v8-preview-meta{text-align:left}}
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='v8.css') }}">
 </head>
-<body>
-<div class="wrap">
+<body class="v8-body">
+<div class="v8-shell">
+  <aside class="v8-rail" aria-label="Primary workspace navigation">
+    <div class="v8-brand">ALPHA HUNTER <span>V8</span></div>
+    <div class="v8-brand-note">Research terminal</div>
+    <nav class="v8-rail-nav" aria-label="Workspace">
+      <button type="button" class="v8-tab" data-v8-tab="overview" aria-current="page"><span class="v8-nav-icon" aria-hidden="true">▦</span>Overview</button>
+      <button type="button" class="v8-tab" data-v8-tab="research"><span class="v8-nav-icon" aria-hidden="true">⌕</span>Research</button>
+      <button type="button" class="v8-tab" data-v8-tab="results"><span class="v8-nav-icon" aria-hidden="true">▥</span>Paper Results</button>
+      <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
+    </nav>
+    <div class="v8-rail-foot"><strong>No real-money orders</strong>Paper and shadow research only. Research scores are not probabilities.</div>
+  </aside>
+  <div class="v8-content">
+    <div class="v8-mobile-head"><strong>Alpha Hunter <span>V8</span></strong><span class="v8-kicker">Research only · No orders</span></div>
+    <div class="wrap">
   <div class="top">
-    <div><h1>Alpha Hunter V{{ data.build.version }}</h1><div class="sub">Execution first. Discovery is research until it becomes a money action.</div><div class="small" style="margin-top:5px">Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · deployed {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start fallback){% endif %}</div></div>
-    <div><div class="toolbar"><a href="/execution-freeze" style="color:#24d18f;text-decoration:none;font-weight:800">Freeze Decision</a><a href="/control-tower" style="color:#4db6ff;text-decoration:none">V14 Control Tower</a><a href="/performance" style="color:#4db6ff;text-decoration:none">Performance</a><button id="runScanButton" class="run-button" onclick="runScan()">Run Fresh Scan</button><div class="status">Updated {{ data.updated or 'Unavailable' }}</div></div><div id="scanMessage" class="small" style="margin-top:7px;text-align:right">Scanner ready</div></div>
+    <div><h1>Alpha Hunter V8 · Market Intelligence</h1><div class="sub">Evidence-first market research. Paper-only, with real-order execution disabled.</div><div class="v8-runtime-note v8-build-meta" data-v8-section="system">Underlying engine {{ data.build.version }} · Build {{ data.build.git_commit_short }} · {{ data.build.git_branch }} · {{ data.build.deployed_at_utc }}{% if data.build.deployed_at_source == 'process_start_fallback' %} (instance-start timestamp){% endif %}</div></div>
+    <div><div class="toolbar"><div class="status">Latest accepted scan: <time class="v8-scan-time" datetime="{{ data.updated or '' }}" title="{{ data.updated or 'Unavailable' }}">{{ data.updated|v8_scan_time }}</time></div><a class="v8-reset" href="/" aria-label="Refresh dashboard from the latest accepted canonical scan">Refresh view</a></div><div class="v8-runtime-note">Refresh reads saved canonical evidence only. The protected scanner runs separately; there is no manual scanner action in V8.</div></div>
   </div>
 
-  <div class="cards">
+  <div class="v8-workspace" id="v8-workspace">
+    <section id="v8-view-overview" class="v8-view" aria-labelledby="v8-overview-title">
+      <div class="v8-view-heading"><h2 id="v8-overview-title">Overview</h2><p>Source health and market context</p></div>
+    </section>
+    <section id="v8-view-research" class="v8-view" aria-labelledby="v8-research-title" hidden>
+      <div class="v8-view-heading"><h2 id="v8-research-title">Research watchlist</h2><p>WATCH and shadow evidence are not trading instructions</p></div>
+    </section>
+    <section id="v8-view-results" class="v8-view" aria-labelledby="v8-results-title" hidden>
+      <div class="v8-view-heading"><h2 id="v8-results-title">Paper Results</h2><p>Scientific and operational evidence · unproven until validated</p></div>
+    </section>
+    <section id="v8-view-system" class="v8-view" aria-labelledby="v8-system-title" hidden>
+      <div class="v8-view-heading"><h2 id="v8-system-title">System &amp; diagnostics</h2><p>Preserved evidence and operational routes</p></div>
+
+      <section class="v8-trust-panel" aria-labelledby="v8-trust-title">
+        <div class="v8-trust-head">
+          <div><span class="v8-kicker">Product transparency</span><h3 id="v8-trust-title">What Alpha Hunter does—and does not prove</h3>
+            <p>A read-only research terminal for market observations, historical paper evidence and system diagnostics. Displayed information is not an instruction to trade.</p>
+          </div>
+        </div>
+        <div class="v8-trust-grid">
+          <div class="v8-trust-item"><h4>Research provenance</h4><p>Current observations appear only when canonical source checks pass. Historical records never replace incomplete or unavailable current evidence.</p></div>
+          <div class="v8-trust-item"><h4>Paper performance</h4><p>Paper results and shadow scores are not verified live returns, probability forecasts or a claim of scientific profitability.</p></div>
+          <div class="v8-trust-item"><h4>Execution and release</h4><p>Real-money order authority is disabled. Browser checks are not an independent security certification or production-release approval.</p></div>
+        </div>
+        <div class="v8-share-tools">
+          <button class="v8-reset" id="v8-copy-view-link" type="button">Copy link to this view</button>
+          <p class="v8-share-feedback" id="v8-share-feedback" role="status" aria-live="polite">You can share this read-only system overview without sharing credentials or private records.</p>
+          <input id="v8-share-manual" class="v8-share-input" type="text" readonly hidden aria-label="Select and copy this page link manually">
+        </div>
+      </section>
+    </section>
+  </div>
+  <div class="v8-shell-status" data-v8-section="overview" aria-label="Evidence and permissions">
+    <div class="v8-status-card v8-source">
+      <span class="v8-status-icon" aria-hidden="true">✓</span>
+      <div><span class="v8-kicker">Canonical source</span><h2>Latest symbol evidence loaded</h2><p>Scan: <time datetime="{{ data.updated or '' }}" title="{{ data.updated or 'Timestamp unavailable' }}">{{ data.updated|v8_scan_time }}</time>. Research is not independently verified as profitable.</p></div>
+    </div>
+    <div class="v8-status-card">
+      <span class="v8-status-icon" aria-hidden="true">◇</span>
+      <div><span class="v8-kicker">Paper research</span><h2>Execution not authorised</h2><p>WATCH, raw R:R and score do not grant paper or exchange-order permission.</p></div>
+    </div>
+    <div class="v8-status-card">
+      <span class="v8-status-icon" aria-hidden="true">⌁</span>
+      <div><span class="v8-kicker">Scanner continuity</span><h2>Protected separate process</h2><p>Web design does not launch a second scanner or alter source records.</p></div>
+    </div>
+  </div>
+  <div class="v8-system-links" data-v8-section="system" aria-label="Existing system routes">
+    <a href="/control-tower">V14 Control Tower</a>
+    <a href="/performance">Performance report</a>
+    <a href="/api/build">Build provenance</a>
+    <a href="/api/historical-status">Historical evidence</a>
+    <a href="/execution-freeze">Restricted evidence · operator login required</a>
+  </div>
+  <div class="cards" data-v8-section="overview">
     <div class="card"><div class="label">Universe</div><div class="value">{{ data.universe.get('selected_count',0) }}</div><div class="small">deep-scanned</div></div>
-    <div class="card"><div class="label">Ready now</div><div class="value ready">{{ data.trade_ready|length }}</div><div class="small">strict execution</div></div>
+    <div class="card"><div class="label">Strict paper gate</div><div class="value ready">{{ data.trade_ready|length }}</div><div class="small">strict execution</div></div>
     <div class="card"><div class="label">Retest plans</div><div class="value warning">{{ data.retest_plans|length }}</div><div class="small">price must come to us</div></div>
     <div class="card"><div class="label">Minimum R:R</div><div class="value">{{ '%.1f'|format(data.minimum_execution_rr) }}R</div><div class="small">not relaxed</div></div>
     <div class="card"><div class="label">BTC 24H</div><div class="value {{ 'long' if data.btc_change_24h>0 else 'short' if data.btc_change_24h<0 else '' }}">{{ '%.2f'|format(data.btc_change_24h) }}%</div><div class="small">regime reference</div></div>
@@ -1864,27 +1991,31 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
     <div class="card"><div class="label">Catalysts</div><div class="value">{{ data.catalyst_summary.get('fresh_bound_symbol_count',0) }}</div><div class="small">fresh official Bitget matches</div></div>
   </div>
 
-  <div class="panel">
+  <div class="panel" data-v8-section="results">
     <h2 style="margin-top:0">Real-Time Profitability Test Engine</h2>
     {% if data.test_engine %}
       <div class="action-grid">
-        <div class="metric"><span class="label">System integrity</span><b>{{ data.test_engine.get('operational_status','UNKNOWN') }}</b></div>
-        <div class="metric"><span class="label">Verdict</span><b>{{ data.test_engine.get('verdict','NOT_PROVEN') }}</b></div>
+        <div class="metric v8-integrity-metric"><span class="label">System integrity</span><b class="v8-status-value" title="Status code: {{ data.test_engine.get('operational_status','UNKNOWN') }}">{{ data.test_engine.get('operational_status','UNKNOWN')|replace('_', ' ')|title }}</b></div>
+        <div class="metric v8-verdict-metric"><span class="label">Verdict</span><b class="v8-status-value" title="Verdict code: {{ data.test_engine.get('verdict','NOT_PROVEN') }}">{{ data.test_engine.get('verdict','NOT_PROVEN')|replace('_', ' ')|title }}</b></div>
         <div class="metric"><span class="label">Real scans</span><b>{{ data.test_engine.get('real_scans_since_registration','Unavailable') }}</b></div>
         <div class="metric"><span class="label">Current cohort completions</span><b>{{ data.test_engine.get('completed_paper_trades','Unavailable') }}/{{ data.test_engine.get('minimum_completed_paper_trades',100) }}</b></div>
         <div class="metric"><span class="label">Historical lifecycle exits</span><b>{{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }}</b></div>
         <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
         <div class="metric"><span class="label">Separate 24H signal outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration','Unavailable') }}</b></div>
       </div>
-      <div class="reason">
-        <b>Real-time:</b> {{ data.test_engine.get('evaluated_at_utc') }}<br>
-        <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
-        <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
-        <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
-        <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
-        <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
-        <span class="small">Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams and are never added together. Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
-      </div>
+      <p class="small v8-integrity-note">Unproven paper research. Cohort completions, historical exits and 24-hour outcomes are separate evidence streams, not verified returns.</p>
+      <details class="v8-test-provenance">
+        <summary>Test provenance, timestamps and blockers</summary>
+        <div class="reason">
+          <b>Real-time:</b> <time datetime="{{ data.test_engine.get('evaluated_at_utc') or '' }}" title="{{ data.test_engine.get('evaluated_at_utc') or 'Unavailable' }}">{{ data.test_engine.get('evaluated_at_utc')|v8_scan_time }}</time><br>
+          <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
+          <b>Latest market scan:</b> <time datetime="{{ data.test_engine.get('latest_live_scan_at_utc') or '' }}" title="{{ data.test_engine.get('latest_live_scan_at_utc') or 'Unavailable' }}">{{ data.test_engine.get('latest_live_scan_at_utc')|v8_scan_time }}</time><br>
+          <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
+          <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
+          <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
+          <span class="small">Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams and are never added together. Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
+        </div>
+      </details>
     {% else %}
       <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
     {% endif %}
@@ -1892,12 +2023,12 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
 
   {% if data.best_action %}
     {% set row=data.best_action %}{% set a=row._action %}
-    <div class="panel {{ 'action-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'action-retest' }}">
+    <div class="panel {{ 'action-ready' if a.status in ['READY_NOW','STRATEGY_READY_NOW','STRATEGY_LIMIT_READY'] else 'action-retest' }}" data-v8-section="overview">
       <div class="action-title retest">PAPER CANDIDATE — {{ a.label }}</div>
       <div class="small">Simulated decision support. Profitability is unproven; this is not an exchange order instruction.</div>
       <h2 style="margin:8px 0 0">{{ row.symbol|symbol_label }} {{ a.direction }}</h2>
       <div class="action-grid">
-        <div class="metric"><span class="label">Status</span><b>{{ a.status }}</b></div>
+        <div class="metric"><span class="label">Status</span><b title="Original paper status: {{ a.status }}" data-status-code="{{ a.status }}">{{ a.status|v8_paper_status_label }}</b></div>
         <div class="metric"><span class="label">Entry / zone</span><b>{{ a.entry }}</b></div>
         <div class="metric"><span class="label">Stop / invalidation</span><b>{{ a.stop }}</b></div>
         <div class="metric"><span class="label">Target</span><b>{{ a.target }}</b></div>
@@ -1907,26 +2038,56 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       <div class="reason"><b>Why:</b> {{ a.reason }}<br><b>Cancel:</b> {{ a.cancel }}</div>
     </div>
   {% else %}
-    <div class="panel action-none">
-      <div class="action-title">MONEY ACTION NOW</div>
+    <div class="panel action-none" data-v8-section="overview">
+      <div class="action-title">FINAL PAPER EXECUTION GATE</div>
       <h2 style="margin:8px 0">NO VALID EXECUTION YET</h2>
-      <div class="reason">The app will not turn a discovery coin into a trade recommendation. Run a fresh scan or wait for the next scan; the first candidate that passes the execution contract will replace this block automatically.</div>
+      <div class="reason">A discovery symbol is not a trade recommendation. The protected scanner runs independently; a paper candidate may appear only after the final evidence gates are satisfied.</div>
     </div>
   {% endif %}
 
-  <div class="panel">
+  <section class="v8-overview-preview panel" data-v8-section="overview" aria-label="Top research observations">
+    <div class="v8-preview-heading">
+      <h2 style="margin:0">Top research observations</h2>
+      <button class="v8-reset" type="button" data-v8-tab="research">View all research</button>
+    </div>
+    <p class="small muted">Research observations from the accepted canonical scan. WATCH never authorises exchange execution or proves profitability.</p>
+    {% for s in data.strategy_shadow[:3] %}
+    <div class="v8-preview-item">
+      <div><strong>{{ s.symbol|symbol_label }}</strong><div class="small muted">{{ s.strategy_id }} {{ s.strategy_name }}</div></div>
+      <div class="v8-preview-meta"><strong>{{ s.status }}</strong><div class="small">Direction {{ s.direction or '—' }} · Raw R:R {{ '%.2f'|format(s.rr) if s.rr is not none else '—' }}</div></div>
+    </div>
+    {% else %}
+    <p class="small muted">No strategy research observations in this accepted snapshot.</p>
+    {% endfor %}
+  </section>
+
+  <div class="panel v8-strategy-panel" data-v8-section="research">
     <h2 style="margin-top:0">S1-S10 Strategy Matrix — Shadow</h2>
-    <div class="small" style="margin-bottom:10px">S1-S10 scores and setup intents are uncalibrated shadow evidence, never exchange instructions. The Gate action column reflects the FINAL canonical paper safety gate, not the raw strategy intent. Candidate status and 10/10 scores do not override blocks. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · {{ data.previous_snapshot_context.get('collected_at_utc') }}{% endif %}.</div>
-    <div class="toolbar" style="margin-bottom:12px">
+    <p class="small v8-research-brief">Shadow strategy observations only. Scores are uncalibrated; no trading authority.</p>
+    <details class="v8-strategy-context">
+      <summary>Methodology and source details</summary>
+      <div class="small v8-strategy-context-body">S1-S10 scores and setup intents are uncalibrated shadow evidence, never exchange instructions. The Gate action column reflects the FINAL canonical paper safety gate, not the raw strategy intent. Candidate status and 10/10 scores do not override blocks. Coverage: {{ data.strategy_summary.get('total_evaluations',0) }} evaluations across {{ data.strategy_summary.get('covered_symbol_count',0) }} symbols. Previous canonical context: {{ data.previous_snapshot_context.get('source','NONE') }}{% if data.previous_snapshot_context.get('collected_at_utc') %} · <time datetime="{{ data.previous_snapshot_context.get('collected_at_utc') }}">{{ data.previous_snapshot_context.get('collected_at_utc')|v8_scan_time }}</time>{% endif %}.</div>
+    </details>
+    <details class="v8-coverage"><summary>Strategy coverage and diagnostic counts</summary><div class="toolbar">
       {% for row in data.strategy_coverage %}
       <span class="badge badge-research">{{ row.strategy_id }}: {{ row.evaluations }} eval / {{ row.candidates }} cand</span>
       {% endfor %}
+    </div></details>
+    <div class="v8-research-controls" aria-label="Research filters">
+      <label class="v8-filter-wrap v8-search-wrap">Search symbol or strategy<input type="search" id="v8-search" placeholder="e.g. BEAMUSDT" autocomplete="off"></label>
+      <label class="v8-filter-wrap">Research status<select id="v8-status"><option value="">All statuses</option></select></label>
+      <label class="v8-filter-wrap">Direction<select id="v8-side"><option value="">All sides</option></select></label>
+      <label class="v8-filter-wrap">Strategy<select id="v8-strategy"><option value="">All strategies</option></select></label>
+      <label class="v8-filter-wrap">Sort research<select id="v8-sort"><option value="canonical">Canonical order</option><option value="symbol">Symbol A–Z</option><option value="rr">Raw R:R (highest)</option><option value="persistence">Consecutive scans (highest)</option></select></label>
+      <button class="v8-reset" id="v8-reset" type="button">Reset filters</button>
     </div>
+    <span class="v8-count" id="v8-result-count" role="status" aria-live="polite"></span>
+    <div class="v8-mobile-cards" id="v8-mobile-cards" aria-label="Expandable mobile research entries"></div>
     {% if data.strategy_shadow %}
-    <table><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence</th><th>Scans</th><th>Side</th><th>Final paper gate</th><th>Raw shadow intent (not executable)</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Why / blocker</th></tr></thead><tbody>
+    <table class="v8-strategy-table" aria-label="S1-S10 research comparison"><thead><tr><th>Symbol</th><th>Strategy</th><th>Status</th><th>Persistence · scans</th><th>Scans</th><th>Side</th><th>Final paper gate</th><th>Raw shadow intent (not executable)</th><th>Score</th><th>Entry</th><th>Stop</th><th>Target</th><th>Raw R:R</th><th>Why / blocker</th></tr></thead><tbody>
     {% for s in data.strategy_shadow %}
       <tr>
-        <td><b>{{ s.symbol|symbol_label }}</b></td>
+        <td><button type="button" class="v8-open-research" aria-label="View research details for {{ s.symbol|e }}">{{ s.symbol|symbol_label }}</button></td>
         <td><b>{{ s.strategy_id }}</b> {{ s.strategy_name }}</td>
         <td><span class="badge {{ 'badge-retest' if s.status in ('SHADOW_CANDIDATE','WATCH') else 'badge-research' }}">{{ s.status }}</span></td>
         <td>{{ s._persistence_state }}</td>
@@ -1943,25 +2104,62 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       </tr>
     {% endfor %}
     </tbody></table>
+    <div class="v8-detail-panel" id="v8-detail-panel" role="region" aria-label="Selected strategy research details" hidden></div>
     {% else %}
-      <div class="empty">No S1-S10 matrix in this snapshot yet. Run a fresh scan after this build is deployed.</div>
+      <div class="empty">No S1-S10 observations are available in this accepted snapshot.</div>
     {% endif %}
+    <button type="button" class="v8-load-more" id="v8-load-more" hidden>Show more research</button>
   </div>
 
   <div class="layout">
     <main>
-      <div class="panel">
+      <div class="panel" data-v8-section="results">
         <h2 style="margin-top:0">Paper Action Queue</h2>
-        <div class="small" style="margin-bottom:10px">PAPER ONLY · NO ORDER AUTHORITY · Canonical snapshot {{ data.updated or 'timestamp unavailable' }}</div>
+        <div class="small" style="margin-bottom:10px">PAPER ONLY · NO ORDER AUTHORITY · Canonical snapshot <time datetime="{{ data.updated or '' }}" title="{{ data.updated or 'Timestamp unavailable' }}">{{ data.updated|v8_scan_time }}</time></div>
         {% if data.actionable %}
-        <table><thead><tr><th>Symbol</th><th>Action</th><th>Side</th><th>Entry</th><th>Stop</th><th>Target</th><th>R:R</th><th>Distance</th><th>Reason</th></tr></thead><tbody>
-        {% for row in data.actionable %}{% set a=row._action %}
-        <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
-        {% endfor %}</tbody></table>
+        <div class="v8-queue-scroll" role="region" aria-label="Paper Action Queue desktop comparison, horizontal scrolling available" tabindex="0">
+          <table class="v8-queue-table"><thead><tr><th scope="col">Symbol</th><th scope="col">Action</th><th scope="col">Side</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Target</th><th scope="col">R:R</th><th scope="col">Distance</th><th scope="col">Reason</th></tr></thead><tbody>
+          {% for row in data.actionable %}{% set a=row._action %}
+          <tr><td><b>{{ row.symbol|symbol_label }}</b></td><td><span class="badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}">{{ a.status }}</span></td><td class="{{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction }}</td><td>{{ a.entry }}</td><td>{{ a.stop }}</td><td>{{ a.target }}</td><td>{{ '%.2f'|format(a.rr or 0) }}</td><td>{{ '%.2f'|format(a.distance_pct or 0) }}%</td><td class="wrap-cell muted">{{ a.reason }}</td></tr>
+          {% endfor %}</tbody></table>
+        </div>
+        <div class="v8-queue-cards" role="list" aria-label="Paper-only research actions">
+          {% for row in data.actionable %}{% set a=row._action %}
+          <article class="v8-queue-card" role="listitem">
+            <div class="v8-queue-card-head">
+              <div class="v8-queue-card-identity">
+                <h3>{{ row.symbol|symbol_label }}</h3>
+                <span class="v8-queue-side {{ 'long' if a.direction=='LONG' else 'short' }}">{{ a.direction or '—' }}</span>
+              </div>
+              <span class="v8-queue-action badge {{ 'badge-ready' if a.status in ['EXECUTE_NOW_PAPER','PLACE_LIMIT_PAPER'] else 'badge-retest' }}" data-status-code="{{ a.status }}" title="Original paper status: {{ a.status }}">{{ a.status|v8_paper_status_label }}</span>
+            </div>
+            <dl class="v8-queue-metrics">
+              <div><dt>Entry</dt><dd title="Display rounded; full source value available below">{{ a.entry|v8_paper_price_display }}</dd></div>
+              <div><dt>Stop</dt><dd title="Display rounded; full source value available below">{{ a.stop|v8_paper_price_display }}</dd></div>
+              <div><dt>Target</dt><dd title="Display rounded; full source value available below">{{ a.target|v8_paper_price_display }}</dd></div>
+              <div><dt>R:R</dt><dd>{{ '%.2f'|format(a.rr) if a.rr is not none else '—' }}</dd></div>
+              <div><dt>Distance</dt><dd>{{ '%.2f'|format(a.distance_pct) ~ '%' if a.distance_pct is not none else '—' }}</dd></div>
+            </dl>
+            <details class="v8-queue-exact">
+              <summary>Full source price precision</summary>
+              <dl>
+                <div><dt>Entry</dt><dd>{{ a.entry if a.entry is not none else '—' }}</dd></div>
+                <div><dt>Stop</dt><dd>{{ a.stop if a.stop is not none else '—' }}</dd></div>
+                <div><dt>Target</dt><dd>{{ a.target if a.target is not none else '—' }}</dd></div>
+              </dl>
+            </details>
+            <details class="v8-queue-reason">
+              <summary>Research rationale</summary>
+              <p>{{ a.reason or 'No rationale supplied in the current canonical snapshot.' }}</p>
+            </details>
+            <p class="v8-queue-safety">Paper research only · No order authority</p>
+          </article>
+          {% endfor %}
+        </div>
         {% else %}<div class="empty">NO SAFE PAPER TRADE in the current canonical snapshot.</div>{% endif %}
       </div>
 
-      <div class="panel">
+      <div class="panel" data-v8-section="system">
         <h2 style="margin-top:0">Safety Blocks</h2>
         {% if data.blocked_actions %}
         <table><thead><tr><th>Symbol</th><th>Side</th><th>State</th><th>Reason</th></tr></thead><tbody>
@@ -1971,34 +2169,64 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         {% else %}<div class="empty">No final action-gate blocks in this snapshot.</div>{% endif %}
       </div>
 
-      <div class="panel">
+      <div class="panel" data-v8-section="research">
         <h2 style="margin-top:0">Research / Discovery Radar</h2>
-        <div class="small" style="margin-bottom:10px">These rows are information, not trade recommendations. They become actionable only through the Money Action block above.</div>
-        <table><thead><tr><th>#</th><th>Symbol</th><th>Price</th><th>Phase</th><th>Timing</th><th>Behaviour</th><th>State</th><th>R:R</th><th>Execution</th><th>Reason</th></tr></thead><tbody>
-        {% for row in data.research %}
-        <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
-        {% endfor %}</tbody></table>
+        <div class="small v8-radar-intro">Research observations only, not trade recommendations. Paper actions appear separately in Results; no order authority is granted here.</div>
+        <div class="v8-radar-scroll" role="region" aria-label="Discovery Radar desktop comparison, horizontal scrolling available" tabindex="0">
+          <table class="v8-radar-table"><thead><tr><th scope="col">#</th><th scope="col">Symbol</th><th scope="col">Price</th><th scope="col">Phase</th><th scope="col">Timing</th><th scope="col">Behaviour</th><th scope="col">State</th><th scope="col">R:R</th><th scope="col">Research state</th><th scope="col">Reason</th></tr></thead><tbody>
+          {% for row in data.research %}
+          <tr><td>{{ loop.index }}</td><td><b>{{ row.symbol|symbol_label }}</b></td><td>{{ row.last_price }}</td><td>{{ row._phase }}</td><td>{{ row._timing }}</td><td>{{ '%.2f'|format(row._behaviour) }}</td><td class="{{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}">{{ row.state }}</td><td>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</td><td><span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span></td><td class="wrap-cell muted">{{ row._action.reason }}</td></tr>
+          {% endfor %}</tbody></table>
+        </div>
+        <div class="v8-radar-cards" role="list" aria-label="Research-only discovery observations">
+          {% for row in data.research %}
+          <article class="v8-radar-card" role="listitem">
+            <div class="v8-radar-card-head">
+              <h3>{{ row.symbol|symbol_label }}</h3>
+              <span class="badge {{ 'badge-ready' if row._action.status=='READY_NOW' else 'badge-retest' if row._action.status=='RETEST_PLAN' else 'badge-research' }}">{{ row._action.label }}</span>
+            </div>
+            <p class="v8-radar-card-state {{ 'long' if 'LONG' in row.state else 'short' if 'SHORT' in row.state else '' }}" title="Research status code: {{ row.state }}">{{ (row.state or 'UNKNOWN')|replace('_', ' ')|title }}</p>
+            <dl class="v8-radar-metrics">
+              <div><dt>Price</dt><dd>{{ row.last_price if row.last_price is not none else '—' }}</dd></div>
+              <div><dt>Phase</dt><dd>{{ row._phase or '—' }}</dd></div>
+              <div><dt>Timing</dt><dd>{{ row._timing or '—' }}</dd></div>
+              <div><dt>Behaviour</dt><dd>{{ '%.2f'|format(row._behaviour) }}</dd></div>
+              <div><dt>R:R (raw)</dt><dd>{{ '%.2f'|format(row._rr) if row._rr is not none else '—' }}</dd></div>
+            </dl>
+            <details class="v8-radar-reason">
+              <summary>Research rationale</summary>
+              <p>{{ row._action.reason or 'No research rationale supplied.' }}</p>
+            </details>
+            <p class="v8-radar-safety">Research only · No trading authorisation</p>
+          </article>
+          {% endfor %}
+        </div>
       </div>
 
-      <div class="panel"><h2 style="margin-top:0">Bitget Open Positions</h2>
-      {% if data.positions %}<table><thead><tr><th>Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Leverage</th><th>Unrealized P/L</th><th>SL</th><th>TP</th><th>Protection</th></tr></thead><tbody>
-      {% for p in data.positions %}<tr><td><b>{{ p.symbol|symbol_label }}</b></td><td>{{ p.hold_side }}</td><td>{{ p.total }}</td><td>{{ p.open_price_avg }}</td><td>{{ p.mark_price }}</td><td>{{ p.leverage }}×</td><td>{{ p.unrealized_pl }}</td><td>{{ p._stop_loss_display }}</td><td>{{ p._take_profit_display }}</td><td><span class="badge {{ 'badge-ready' if p._protection_state=='OBSERVED' else 'badge-research' }}">{{ p._protection_state }}</span>{% if p._protection_warning %}<div class="small warning">{{ p._protection_warning }}</div>{% endif %}<div class="small muted">observer={{ p._protection_observation_status }} · {{ p._protection_observed_at_utc or 'time unavailable' }}</div></td></tr>{% endfor %}
-      </tbody></table>
-      {% elif data.account_status == 'CONNECTED' %}<div class="empty">No open Bitget positions observed in the completed account snapshot.</div>
-      {% else %}<div class="warning">Open-position observation unavailable (account status: {{ data.account_status }}). Do not infer that no position exists.</div>{% endif %}</div>
+      <div class="panel v8-private-boundary" data-v8-section="system" aria-label="Private account information">
+        <h2 style="margin-top:0">Private account information</h2>
+        <p class="small">Personal Bitget account positions, balances, protection levels and account connection details are not published on this public research dashboard.</p>
+        <details class="v8-private-details"><summary>Why account details are private</summary><p class="small">Only authorised operators should access account-specific evidence through a separately authenticated interface. No real-money trading permissions are provided here.</p></details>
+      </div>
     </main>
 
     <aside>
-      <div class="panel"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
-      <div class="panel"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>EXECUTE_NOW_PAPER and PLACE_LIMIT_PAPER require canonical freshness, one direction per symbol, valid bounded geometry, public fee/spread evidence and Bitget price precision.<br><br>WAIT_FOR_TRIGGER is monitoring only. BLOCKED rows retain their evidence and state the failed gate.<br><br>No screen grants real-order authority and no threshold is relaxed.</div></div>
+      <div class="panel" data-v8-section="overview"><h2 style="margin-top:0">Reference / Regime</h2>{% for row in data.references %}<div class="side-row"><span><b>{{ row.symbol|symbol_label }}</b></span><span>{{ row.last_price }}</span></div>{% else %}<div class="empty">No reference assets.</div>{% endfor %}</div>
+      <div class="panel" data-v8-section="system"><h2 style="margin-top:0">Product Contract</h2><div class="small">Discovery ≠ recommendation.<br><br>EXECUTE_NOW_PAPER and PLACE_LIMIT_PAPER require canonical freshness, one direction per symbol, valid bounded geometry, public fee/spread evidence and Bitget price precision.<br><br>WAIT_FOR_TRIGGER is monitoring only. BLOCKED rows retain their evidence and state the failed gate.<br><br>No screen grants real-order authority and no threshold is relaxed.</div></div>
     </aside>
   </div>
 </div>
-<script>
-let scanPollTimer=null;
-async function runScan(){const b=document.getElementById('runScanButton'),m=document.getElementById('scanMessage');b.disabled=true;m.textContent='Starting fresh scan...';try{const r=await fetch('/api/run-scan',{method:'POST'}),x=await r.json();if(!r.ok)throw new Error(x.error||'Unable to start scan');m.textContent='Scan running...';if(scanPollTimer)clearInterval(scanPollTimer);scanPollTimer=setInterval(checkScanStatus,3000)}catch(e){m.textContent='Scan failed: '+e.message;b.disabled=false}}
-async function checkScanStatus(){const b=document.getElementById('runScanButton'),m=document.getElementById('scanMessage');try{const r=await fetch('/api/scan-status'),x=await r.json();if(x.running){m.textContent='Scan running...';b.disabled=true;return}if(x.status==='completed'){clearInterval(scanPollTimer);m.textContent='Scan complete. Refreshing...';setTimeout(()=>location.reload(),700);return}if(x.status==='failed'){clearInterval(scanPollTimer);m.textContent='Scan failed: '+(x.error||'unknown error');b.disabled=false;return}b.disabled=false}catch(e){m.textContent='Unable to read scan status';b.disabled=false}}
-</script>
+</div>
+<nav class="v8-bottom-nav" aria-label="Mobile workspace navigation">
+  <button type="button" class="v8-tab" data-v8-tab="overview" aria-current="page"><span class="v8-nav-icon" aria-hidden="true">▦</span>Overview</button>
+  <button type="button" class="v8-tab" data-v8-tab="research"><span class="v8-nav-icon" aria-hidden="true">⌕</span>Research</button>
+  <button type="button" class="v8-tab" data-v8-tab="results"><span class="v8-nav-icon" aria-hidden="true">▥</span>Results</button>
+  <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
+</nav>
+</div>
+<!-- Manual scanner JavaScript intentionally absent from the public V8 UI.
+     The legacy backend endpoint is a separate security review item. -->
+<script src="{{ url_for('static', filename='v8.js') }}" defer></script>
 </body>
 </html>
 """
@@ -2431,39 +2659,176 @@ CONTROL_TOWER_PAGE = """
 
 DASHBOARD_RECOVERY_PAGE = """
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="10">
-  <title>Alpha Hunter — recovering</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <!-- V8: retry reloads are user-controllable; no unpausable meta refresh. -->
+  <title>Alpha Hunter V8 — Source Integrity</title>
   <style>
-    body{margin:0;background:#071018;color:#e7edf2;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    .wrap{max-width:720px;margin:0 auto;padding:28px 18px}
-    .card{margin-top:18px;background:#0d1923;border:1px solid #1b3040;border-radius:16px;padding:20px}
-    h1{margin:0 0 8px;font-size:28px}.muted{color:#91a3b1;line-height:1.55}
-    .warn{color:#ffbf69;font-weight:700}.ok{color:#75e6b5}
+    :root{color-scheme:dark}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(1100px 700px at 85% 0%,#153047 0%,transparent 72%),#07111c;color:#eef5fb;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
+    .wrap{max-width:1040px;margin:0 auto;padding:24px clamp(12px,3vw,32px) 38px;min-width:0}
+    .card{margin-top:14px;background:#101e2c;border:1px solid #294155;border-radius:16px;padding:clamp(14px,2vw,22px);max-width:100%;min-width:0;overflow-wrap:anywhere}
+    h1{margin:0 0 8px;font-size:clamp(23px,3vw,30px);letter-spacing:-.5px}.muted{color:#b2c6d5;line-height:1.55}
+    .warn{color:#ffca6c;font-weight:750;font-size:16px}.ok{color:#3be4aa}
+    .v8-banner{margin:0 0 14px;color:#b2c6d5;font-size:14px;letter-spacing:.01em}
+    .v8-banner strong{color:#3be4aa}
+    .card h2{color:#eef5fb}
+    .v8-retry-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .v8-retry-controls a,.v8-retry-controls button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border:1px solid #3b6985;border-radius:10px;padding:10px 14px;background:#183247;color:#eef5fb;font:inherit;text-decoration:none;cursor:pointer}
+    .v8-retry-controls a:focus-visible,.v8-retry-controls button:focus-visible{outline:3px solid #6bc0ff;outline-offset:3px}
+    @media(min-width:900px){.wrap{padding-top:38px}.card{padding:24px}}
+    @media(max-width:400px){.wrap{padding:16px 11px 32px}.card{padding:15px}}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+    .v8-recovery-intro{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+    .v8-recovery-intro h1{margin:0;font-size:clamp(23px,3vw,30px)}
+    .v8-recovery-intro .v8-banner{margin:5px 0 0}
+    .v8-recovery-hint{font-size:13px;color:#b2c6d5;padding:7px 11px;border-radius:10px;border:1px solid #41596e}
+    .v8-recovery-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .v8-recovery-info .card{margin:0}
+    .v8-recovery-info p{margin:8px 0 0;font-size:14px}
+    .v8-body .v8-view-heading h2{font-size:21px}
+    .v8-body .v8-retry-controls a,.v8-body .v8-retry-controls button{font-size:14px}
+    .v8-body .v8-view .card{margin-bottom:14px}
+    @media(max-width:899px){.v8-recovery-info{grid-template-columns:1fr}}
+    @media(max-width:390px){.v8-body .v8-retry-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+      .v8-body .v8-retry-controls a,.v8-body .v8-retry-controls button{padding:10px 8px;text-align:center;font-size:13px}}
   </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='v8.css') }}">
 </head>
-<body>
-  <div class="wrap">
-    <h1>Alpha Hunter Dashboard</h1>
-    <div class="card">
-      <div class="warn">LIVE DATA TEMPORARILY UNAVAILABLE</div>
-      <p class="muted">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
-      <p class="muted">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
-      <p class="muted">This page retries automatically every 10 seconds.</p>
-      <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
+<body class="v8-body">
+<div class="v8-shell">
+  <aside class="v8-rail" aria-label="Primary workspace navigation">
+    <div class="v8-brand">ALPHA HUNTER <span>V8</span></div>
+    <div class="v8-brand-note">Research terminal</div>
+    <nav class="v8-rail-nav" aria-label="Workspace">
+      <button type="button" class="v8-tab" data-v8-tab="overview" aria-current="page"><span class="v8-nav-icon" aria-hidden="true">▦</span>Overview</button>
+      <button type="button" class="v8-tab" data-v8-tab="research"><span class="v8-nav-icon" aria-hidden="true">⌕</span>Research</button>
+      <button type="button" class="v8-tab" data-v8-tab="results"><span class="v8-nav-icon" aria-hidden="true">▥</span>Paper Results</button>
+      <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
+    </nav>
+    <div class="v8-rail-foot"><strong>Evidence first</strong>Current signals are unavailable when the canonical scan is incomplete. Real-order execution is disabled.</div>
+  </aside>
+  <div class="v8-content">
+    <div class="v8-mobile-head"><strong>Alpha Hunter <span>V8</span></strong><span class="v8-kicker">Research only · No orders</span></div>
+    <div class="wrap">
+      <div class="v8-recovery-intro">
+        <div><h1>Market intelligence</h1>
+        <div class="v8-banner">Source integrity · Paper-only research · Real orders disabled</div></div>
+        <div class="v8-recovery-hint">Web service online · Current research restricted</div>
+      </div>
+      <div class="v8-workspace" id="v8-workspace">
+        <section id="v8-view-overview" class="v8-view" aria-labelledby="v8-overview-title">
+          <div class="v8-view-heading"><h2 id="v8-overview-title">Overview</h2><p>Current evidence and market reference</p></div>
+        </section>
+        <section id="v8-view-research" class="v8-view" aria-labelledby="v8-research-title" hidden>
+          <div class="v8-view-heading"><h2 id="v8-research-title">Research</h2><p>Historical storage only · no current strategy setup</p></div>
+          <div class="card"><h2>Current signals withheld</h2>
+            <p class="muted">The latest canonical scan has not passed symbol-evidence verification. There are no current Alpha Hunter entry, stop, target or research recommendations to display.</p>
+            <p class="muted">Previous complete storage runs may be described below solely as historical evidence. They are not promoted into live signals.</p>
+          </div>
+        </section>
+        <section id="v8-view-results" class="v8-view" aria-labelledby="v8-results-title" hidden>
+          <div class="v8-view-heading"><h2 id="v8-results-title">Paper Results</h2><p>Scientific performance requires independently verified data</p></div>
+          <div class="card"><h2>Performance evidence temporarily unavailable</h2>
+            <p class="muted">This recovery screen cannot establish a current scientific profitability result. A scanner, performance or database fault must not be mistaken for positive trading performance.</p>
+            <p class="muted">Paper/shadow-only operation is preserved. No exchange-order authority or profitability promotion is granted.</p>
+            <a href="/performance" class="v8-report-link">View historical performance report <span aria-hidden="true">↗</span></a><p class="v8-report-disclaimer muted">Report may be unavailable during a source outage. Historical figures are not verified live returns.</p>
+          </div>
+        </section>
+        <section id="v8-view-system" class="v8-view" aria-labelledby="v8-system-title" hidden>
+          <div class="v8-view-heading"><h2 id="v8-system-title">System</h2><p>Build provenance and operational diagnostics</p></div>
+      <section class="v8-trust-panel" aria-labelledby="v8-trust-title">
+        <div class="v8-trust-head">
+          <div><span class="v8-kicker">Product transparency</span><h3 id="v8-trust-title">What Alpha Hunter does—and does not prove</h3>
+            <p>A read-only research terminal for market observations, historical paper evidence and system diagnostics. Displayed information is not an instruction to trade.</p>
+          </div>
+        </div>
+        <div class="v8-trust-grid">
+          <div class="v8-trust-item"><h4>Research provenance</h4><p>Current observations appear only when canonical source checks pass. Historical records never replace incomplete or unavailable current evidence.</p></div>
+          <div class="v8-trust-item"><h4>Paper performance</h4><p>Paper results and shadow scores are not verified live returns, probability forecasts or a claim of scientific profitability.</p></div>
+          <div class="v8-trust-item"><h4>Execution and release</h4><p>Real-money order authority is disabled. Browser checks are not an independent security certification or production-release approval.</p></div>
+        </div>
+        <div class="v8-share-tools">
+          <button class="v8-reset" id="v8-copy-view-link" type="button">Copy link to this view</button>
+          <p class="v8-share-feedback" id="v8-share-feedback" role="status" aria-live="polite">You can share this read-only system overview without sharing credentials or private records.</p>
+          <input id="v8-share-manual" class="v8-share-input" type="text" readonly hidden aria-label="Select and copy this page link manually">
+        </div>
+      </section>
+          <div class="card"><h2>System status</h2>
+            <p class="muted">Web application responding. Current scanner evidence is not fully verified. This page does not prove scanner or database health.</p>
+            <p class="muted">Build {{ build.git_commit_short }} · {{ build.git_branch }}</p>
+            <div class="v8-retry-controls">
+              <a href="/api/build">Build provenance</a>
+              <a href="/api/historical-status">Historical storage status</a>
+              <a href="/control-tower">Control Tower (may be unavailable)</a>
+            </div>
+          </div>
+        </section>
+      </div>
+    <div class="card v8-recovery-card" data-v8-section="overview" aria-labelledby="v8-scan-warning">
+      <div class="warn" id="v8-scan-warning">LIVE DATA TEMPORARILY UNAVAILABLE</div>
+      <p class="muted v8-recovery-summary">The web service is running, but current canonical Supabase evidence could not be read after bounded retries.</p>
+      <p class="muted v8-recovery-limits">Trading actions are intentionally hidden until live data is available again. No stale snapshot is promoted as current evidence.</p>
+      <div class="v8-retry-controls" role="group" aria-label="Dashboard recovery">
+        <a href="/" aria-label="Check latest canonical scan again">Check latest scan</a>
+        <button type="button" id="v8-auto-retry" data-v8-retry-ms="75000" aria-pressed="false">Enable auto retry</button>
+      </div>
+      <details class="v8-recovery-details">
+        <summary>Recovery and retry details</summary>
+        <p class="muted">You can refresh saved evidence now or enable automatic retries every 75 seconds. Auto retry can be paused at any time.</p>
+        <p class="muted">The warning remains visible until the latest complete canonical scan is verified.</p>
+      </details>
     </div>
-    <div class="card" aria-label="Bitget public reference market">
-      <h2 style="margin:0 0 10px;font-size:21px">Bitget public market prices</h2>
-      <p class="muted" style="margin-top:0">Independent USDT-futures reference quotes. Not Alpha Hunter verified signals, not paper-test evidence, and not trading authorization.</p>
-      <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
-      <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
-      <p id="public-market-time" class="muted" style="font-size:13px"></p>
+    <div class="card" data-v8-section="overview" aria-label="Bitget public reference market">
+      <details class="v8-market-reference">
+        <summary>Public exchange reference prices <span class="v8-market-summary-note">Not Alpha Hunter signals</span></summary>
+        <div class="v8-market-reference-content">
+          <h2 class="v8-market-reference-title">Bitget public market prices</h2>
+          <p class="muted">Independent USDT-futures reference quotes. Not Alpha Hunter verified signals, not paper-test evidence, and not trading authorization.</p>
+          <div id="public-market-state" class="muted" role="status" aria-live="polite">Checking fresh exchange quotes…</div>
+          <div id="public-market-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:10px;margin-top:12px"></div>
+          <p id="public-market-time" class="muted" style="font-size:13px"></p>
+        </div>
+      </details>
+    </div>
     </div>
   </div>
+  <nav class="v8-bottom-nav" aria-label="Mobile workspace navigation">
+    <button type="button" class="v8-tab" data-v8-tab="overview" aria-current="page"><span class="v8-nav-icon" aria-hidden="true">▦</span>Overview</button>
+    <button type="button" class="v8-tab" data-v8-tab="research"><span class="v8-nav-icon" aria-hidden="true">⌕</span>Research</button>
+    <button type="button" class="v8-tab" data-v8-tab="results"><span class="v8-nav-icon" aria-hidden="true">▥</span>Results</button>
+    <button type="button" class="v8-tab" data-v8-tab="system"><span class="v8-nav-icon" aria-hidden="true">⚙</span>System</button>
+  </nav>
+</div>
   <script>
+  (function () {
+    const button = document.getElementById("v8-auto-retry");
+    if (!button) return;
+    let enabled = false;
+    try { enabled = sessionStorage.getItem("alpha-v8-auto-retry") === "enabled"; } catch (_) {}
+    let refreshTimer = null;
+    // The browser must not hammer a degraded Supabase service. The outage
+    // page waits out the server circuit cooldown before another read.
+    const configuredRetryMs = Number(button.dataset.v8RetryMs);
+    const retryMs = [15000, 60000, 75000].includes(configuredRetryMs)
+      ? configuredRetryMs : 75000;
+    function update() {
+      button.setAttribute("aria-pressed", enabled ? "true" : "false");
+      button.textContent = enabled ? "Pause auto retry" : "Enable auto retry";
+      if (refreshTimer) clearTimeout(refreshTimer);
+      if (enabled) refreshTimer = setTimeout(() => location.reload(), retryMs);
+    }
+    button.addEventListener("click", () => {
+      enabled = !enabled;
+      try { sessionStorage.setItem("alpha-v8-auto-retry", enabled ? "enabled" : "paused"); } catch (_) {}
+      update();
+    });
+    update();
+  }());
   (async function () {
     const state = document.getElementById("public-market-state");
     const list = document.getElementById("public-market-list");
@@ -2512,6 +2877,7 @@ DASHBOARD_RECOVERY_PAGE = """
     }
   }());
   </script>
+  <script src="{{ url_for('static', filename='v8.js') }}" defer></script>
 </body>
 </html>
 """
@@ -2568,6 +2934,8 @@ def bounded_dashboard_payload() -> dict[str, Any]:
 DASHBOARD_PUBLISHING_PAGE = (
     DASHBOARD_RECOVERY_PAGE
     .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST SCAN IS PUBLISHING")
+    .replace("every 75 seconds", "every 15 seconds")
+    .replace('data-v8-retry-ms="75000"', 'data-v8-retry-ms="15000"')
     .replace(
         "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
         "The newest canonical scan has arrived, but its per-symbol evidence is still being committed. Trading decisions remain hidden until the complete scan is verified.",
@@ -2578,6 +2946,8 @@ DASHBOARD_PUBLISHING_PAGE = (
 DASHBOARD_INCOMPLETE_PAGE = (
     DASHBOARD_RECOVERY_PAGE
     .replace("LIVE DATA TEMPORARILY UNAVAILABLE", "LATEST CANONICAL SCAN INCOMPLETE")
+    .replace("every 75 seconds", "every 60 seconds")
+    .replace('data-v8-retry-ms="75000"', 'data-v8-retry-ms="60000"')
     .replace(
         "The web service is running, but current canonical Supabase evidence could not be read after bounded retries.",
         "The scanner reported a canonical run, but its verified symbol evidence did not finish publishing. No trade signals or execution recommendations are available from this run.",
@@ -2592,7 +2962,7 @@ DASHBOARD_INCOMPLETE_PAGE = (
 # Historical-only research summary: deliberately separate from /api/latest,
 # which must keep blocking invalid canonical evidence.
 ARCHIVED_RESEARCH_CARD = """
-    <div class="card" aria-label="Historical Alpha Hunter research status">
+    <div class="card" data-v8-section="research" aria-label="Historical Alpha Hunter research status">
       <h2 style="margin:0 0 8px;font-size:21px">Last stored complete scan</h2>
       <p class="muted" style="margin:0 0 12px">Historical research status only. This does not indicate that the latest scan succeeded, and no historical pair can be traded from this panel.</p>
       <div id="historical-data-status" class="muted" role="status" aria-live="polite">Checking recent verified storage records…</div>
@@ -2646,7 +3016,7 @@ ARCHIVED_RESEARCH_CARD = """
     }());
     </script>
 """
-ARCHIVE_INSERT_ANCHOR = '    <div class="card" aria-label="Bitget public reference market">'
+ARCHIVE_INSERT_ANCHOR = '    <div class="card" data-v8-section="overview" aria-label="Bitget public reference market">'
 def _attach_historical_status(page: str) -> str:
     return page.replace(ARCHIVE_INSERT_ANCHOR, ARCHIVED_RESEARCH_CARD + ARCHIVE_INSERT_ANCHOR, 1)
 
@@ -2683,6 +3053,24 @@ def _dashboard_recovery_response():
     return response
 
 
+def public_dashboard_projection(data: dict[str, Any]) -> dict[str, Any]:
+    """Restrict public HTML and /api/latest, not internal protection monitoring.
+
+    Never serialize a private exchange account state or position details to an
+    unauthenticated website visitor. Authenticated operator tools retain their
+    own source and checks; this is a web-response projection only.
+    """
+    public = dict(data)
+    snapshot = public.get("snapshot")
+    if isinstance(snapshot, dict):
+        public_snapshot = dict(snapshot)
+        public_snapshot.pop("private_account", None)
+        public["snapshot"] = public_snapshot
+    public["positions"] = []
+    public["account_status"] = "PRIVATE"
+    return public
+
+
 @app.get("/")
 def dashboard():
     if dashboard_read_circuit_open():
@@ -2690,7 +3078,7 @@ def dashboard():
     try:
         return render_template_string(
             PAGE,
-            data=bounded_dashboard_payload(),
+            data=public_dashboard_projection(bounded_dashboard_payload()),
         )
     except CanonicalSnapshotPublishing:
         app.logger.info("Newest canonical scan is publishing child evidence")
@@ -2755,7 +3143,7 @@ def api_historical_status():
 def api_latest():
     if not dashboard_read_circuit_open():
         try:
-            return jsonify(bounded_dashboard_payload())
+            return jsonify(public_dashboard_projection(bounded_dashboard_payload()))
         except CanonicalSnapshotPublishing:
             response = jsonify({
                 "error": "canonical_scan_publishing",
@@ -2895,15 +3283,24 @@ def api_build():
 
 @app.post("/api/run-scan")
 def api_run_scan():
-    with scan_lock:
-        if scan_state["running"]:
-            return jsonify({"status": "running", "message": "A scan is already running"}), 202
-        scan_state["running"] = True
-        scan_state["status"] = "starting"
-        scan_state["error"] = None
-
-    threading.Thread(target=run_scan_worker, daemon=True).start()
-    return jsonify({"status": "started", "message": "Alpha Hunter V7.2 scan started"}), 202
+    # V8 release-safety boundary: this public web service is a reader,
+    # never a scheduler. The protected hourly scanner runs independently
+    # as a Render Cron Job. No public request may launch run.py.
+    #
+    # The old HTTP path is retained as a fail-closed compatibility response
+    # so existing clients get an explicit refusal rather than a surprise
+    # 404 or an accidental scan. The inactive optional Supabase fast-scan
+    # schedule must remain inactive until separately re-engineered.
+    response = jsonify({
+        "error": "manual_web_scanning_disabled",
+        "message": "Web scanning is disabled; the independent scheduled scanner is unchanged.",
+        "scanner_started": False,
+        "trade_permission": False,
+        "order_path": "NONE",
+    })
+    response.status_code = 403
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/api/scan-status")

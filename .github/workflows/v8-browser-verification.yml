@@ -1,0 +1,48 @@
+name: V8 Browser Verification
+on:
+  pull_request:
+    paths:
+      - 'app.py'
+      - 'static/v8.css'
+      - 'static/v8.js'
+      - 'tests/v8_browser_verify_20261105.py'
+      - 'tests/v8_accessibility_verify_20261105.py'
+      - 'tests/test_v8_frontend_contract_20261105.py'
+      - '.github/workflows/v8-browser-verification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-browser:
+    runs-on: ubuntu-latest
+    # Prebuilt, version-pinned browser & OS dependencies. Avoid repeated apt
+    # downloads that exhausted the prior 25-minute CI budget before testing.
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.64.1-noble
+      options: --user 1001
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install exact matching Playwright Python driver
+        run: python -m pip install --no-cache-dir -r requirements.txt pytest playwright==1.64.1
+      - name: Verify pinned browser installation offline (no apt)
+        run: |
+          python -m playwright --version
+          test -d /ms-playwright
+      - name: Chromium seven-width synthetic Flask interface
+        run: python tests/v8_browser_verify_20261105.py
+      - name: Install pinned offline WCAG checker
+        run: npm install --no-save --package-lock=false axe-core@4.10.3
+      - name: Chromium and WebKit WCAG AA verification
+        run: python tests/v8_accessibility_verify_20261105.py
+      - name: Preserve tested mobile and desktop screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-browser-phase6-screenshots
+          path: artifacts/v8-browser/
+          if-no-files-found: ignore
+          retention-days: 7

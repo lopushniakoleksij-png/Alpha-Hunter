@@ -1,0 +1,267 @@
+"""Phase 6 independent WCAG 2.0/2.1/2.2 AA and WebKit smoke.
+
+Synthetic Flask evidence only. No production service, scanner, database, orders,
+API keys, network feeds, or test-trade execution. axe-core is loaded locally
+from a pinned CI npm development package, never an external runtime CDN.
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+import threading
+from pathlib import Path
+
+from playwright.sync_api import sync_playwright
+from werkzeug.serving import make_server
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import app as alpha
+from test_v8_frontend_contract_20261105 import _sample_snapshot, _synthetic_actionable_rows, _synthetic_radar_rows
+
+
+def fixture_data():
+    data = alpha.dashboard_payload(
+        _sample_snapshot(),
+        test_engine={"spec_id": "ACCESSIBILITY_SYNTHETIC", "verdict": "NOT_PROVEN",
+                     "operational_status": "REVIEW_REQUIRED"},
+        paper_lifecycle={},
+    )
+    data["actionable"] = _synthetic_actionable_rows()
+    data["research"] = _synthetic_radar_rows()
+    return data
+
+
+def audit_with_axe(page, label, axe_js):
+    page.add_script_tag(path=str(axe_js))
+    result = page.evaluate("""async () => {
+        const r = await axe.run(document, {
+            runOnly: {type: 'tag', values: [
+                'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'
+            ]}
+        });
+        return r.violations.map(v => ({
+            id: v.id, impact: v.impact, description: v.description,
+            affected: v.nodes.slice(0, 4).map(n => n.target)
+        }));
+    }""")
+    if result:
+        print("ACCESSIBILITY VIOLATIONS " + label + "\n" + json.dumps(result, indent=2), flush=True)
+    assert not result, f"WCAG A/AA axe violations in {label}: {[v['id'] for v in result]}"
+    print("PASS: WCAG A/AA axe-core", label, flush=True)
+
+
+def main():
+    axe_js = Path(os.environ.get("V8_AXE_CORE_PATH", "node_modules/axe-core/axe.min.js")).resolve()
+    if not axe_js.is_file():
+        raise RuntimeError("Pinned local axe-core file missing; accessibility cannot be declared passed")
+
+    screenshot_dir = Path("artifacts/v8-browser/stage7").resolve()
+    screenshot_dir.mkdir(parents=True,exist_ok=True)
+    alpha.bounded_dashboard_payload = fixture_data
+    server = make_server("127.0.0.1", 0, alpha.app, threaded=True)
+    origin = f"http://127.0.0.1:{server.server_port}"
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        with sync_playwright() as p:
+            for browser_name, widths in (("chromium", (390, 1280)), ("webkit", (390, 1280))):
+                browser = getattr(p, browser_name).launch(headless=True)
+                for width in widths:
+                    page = browser.new_page(viewport={"width": width, "height": 860},
+                                            device_scale_factor=1)
+                    response = page.goto(origin, wait_until="networkidle", timeout=30000)
+                    assert response.status == 200
+                    assert page.locator("body.v8-body.v8-enhanced").count() == 1
+                    dimensions = page.evaluate("""() => ({
+                        inner: innerWidth, root: document.documentElement.scrollWidth,
+                        body: document.body.scrollWidth
+                    })""")
+                    assert dimensions["root"] <= width + 1 and dimensions["body"] <= width + 1, (
+                        f"{browser_name} {width}px horizontal overflow: {dimensions}"
+                    )
+                    if width < 900:
+                        assert page.locator(".v8-mobile-head").is_visible()
+                        title_rect = page.locator(".top h1").bounding_box()
+                        assert title_rect and title_rect["width"] <= 2, (
+                            "Mobile duplicate title is visible"
+                        )
+                        safe_nav = page.locator(".v8-bottom-nav")
+                        bottom_padding = safe_nav.evaluate(
+                            "(e) => Number.parseFloat(getComputedStyle(e).paddingBottom)"
+                        )
+                        assert bottom_padding >= 24, f"iPhone safe area nav lacks clearance: {bottom_padding}"
+                    audit_with_axe(page, f"{browser_name}-{width}-overview", axe_js)
+                    nav = ".v8-bottom-nav" if width < 900 else ".v8-rail"
+                    page.locator(f'{nav} [data-v8-tab="research"]').click()
+                    assert page.locator("#v8-view-research").is_visible()
+                    radar_cards = page.locator(".v8-radar-card")
+                    radar_table = page.locator(".v8-radar-table")
+                    assert radar_cards.count() == 2
+                    if width < 900:
+                        assert radar_cards.first.is_visible()
+                        assert not radar_table.is_visible()
+                        radar_cards.first.locator(".v8-radar-reason summary").click()
+                        assert radar_cards.first.locator(".v8-radar-reason p").is_visible()
+                    else:
+                        assert radar_table.is_visible()
+                        assert not radar_cards.first.is_visible()
+                    assert page.locator(".v8-radar-card-state").nth(1).get_attribute("title") == (
+                        "Research status code: DIRECTION_EMERGING_LONG"
+                    )
+                    assert page.locator(".v8-radar-card-state").nth(1).inner_text() == "Direction Emerging Long"
+                    details = page.locator("#v8-view-research .v8-strategy-context")
+                    assert details.count() == 1 and details.get_attribute("open") is None
+                    details.locator("summary").click()
+                    assert details.locator(".v8-strategy-context-body").is_visible()
+                    audit_with_axe(page, f"{browser_name}-{width}-research-methodology-open", axe_js)
+                    details.locator("summary").click()
+                    audit_with_axe(page, f"{browser_name}-{width}-research-radar", axe_js)
+                    if width == 390:
+                        page.screenshot(
+                            path=str(screenshot_dir / f"{browser_name}-radar-390.png"),
+                            full_page=True,
+                        )
+                    if width < 900:
+                        page.locator(".v8-card-toggle").first.click()
+                        assert page.locator(".v8-card-expanded").first.is_visible()
+                    else:
+                        page.locator(".v8-open-research").first.click()
+                        assert page.locator("#v8-detail-panel").is_visible()
+                    audit_with_axe(page, f"{browser_name}-{width}-research-detail", axe_js)
+                    page.locator(f'{nav} [data-v8-tab="results"]').click()
+                    status = page.locator(".v8-integrity-metric .v8-status-value")
+                    assert status.inner_text() == "Review Required"
+                    assert status.get_attribute("title") == "Status code: REVIEW_REQUIRED"
+                    queue_cards = page.locator(".v8-queue-card")
+                    queue_table = page.locator(".v8-queue-table")
+                    assert queue_cards.count() == 2
+                    if width < 900:
+                        assert queue_cards.first.is_visible()
+                        assert not queue_table.is_visible()
+                        queue_cards.first.locator(".v8-queue-reason summary").click()
+                        assert queue_cards.first.locator(".v8-queue-reason p").is_visible()
+                    else:
+                        assert queue_table.is_visible()
+                        assert not queue_cards.first.is_visible()
+                    audit_with_axe(page, f"{browser_name}-{width}-results", axe_js)
+                    if width == 390:
+                        page.screenshot(
+                            path=str(screenshot_dir / f"{browser_name}-paper-queue-390.png"),
+                            full_page=True,
+                        )
+                    page.locator(f'{nav} [data-v8-tab="system"]').click()
+                    assert page.locator("#v8-view-system .v8-private-boundary").is_visible()
+                    assert page.locator("#v8-view-system .v8-build-meta").is_visible()
+                    trust_y = page.locator("#v8-view-system .v8-trust-panel").bounding_box()["y"]
+                    meta_y = page.locator("#v8-view-system .v8-build-meta").bounding_box()["y"]
+                    assert trust_y > meta_y, "System diagnostics are below trust disclosure"
+                    if width == 390:
+                        page.screenshot(
+                            path=str(screenshot_dir / f"{browser_name}-system-390.png"),
+                            full_page=True,
+                        )
+                    audit_with_axe(page, f"{browser_name}-{width}-system", axe_js)
+                    page.close()
+                browser.close()
+            # Independently verify the incomplete-current-source screen. Any
+            # public reference fetches are replaced with synthetic responses;
+            # this harness must never request live Bitget or Supabase services.
+            def source_incomplete():
+                raise alpha.CanonicalSnapshotIncomplete("synthetic incomplete scan")
+            alpha.bounded_dashboard_payload = source_incomplete
+            alpha.public_market_reference = lambda: {
+                "quotes": [], "canonical_evidence": False,
+                "paper_test_evidence": False, "trade_permission": False
+            }
+            alpha.cached_historical_status = lambda: {
+                "mode": "HISTORICAL_STORAGE_STATUS_ONLY",
+                "historical_only": True, "trade_permission": False,
+                "verified_live_trade_signal": False,
+                "source_run_not_substituted": True,
+                "latest_reported_scan_at_utc": "2026-11-05T00:55:00+00:00",
+                "latest_reported_declared_symbols": 2,
+                "historical_completed_scan": None,
+            }
+            for browser_name in ("chromium", "webkit"):
+                browser = getattr(p, browser_name).launch(headless=True)
+                page = browser.new_page(viewport={"width": 390, "height": 860})
+                response = page.goto(origin, wait_until="networkidle", timeout=30000)
+                assert response.status == 200
+                assert response.headers.get("x-alpha-hunter-evidence-state") == "INCOMPLETE"
+                assert "LATEST CANONICAL SCAN INCOMPLETE" in page.locator("body").inner_text()
+                assert page.locator("body.v8-body.v8-enhanced").count() == 1
+                assert page.locator("#v8-view-overview").is_visible()
+                market = page.locator(".v8-market-reference")
+                assert market.count() == 1
+                assert market.get_attribute("open") is None, "Public prices must be secondary"
+                assert market.locator("summary").is_visible()
+                page.screenshot(
+                    path=str(screenshot_dir / f"{browser_name}-recovery-390.png"),
+                    full_page=True,
+                )
+                market.locator("summary").click()
+                assert market.get_attribute("open") is not None
+                assert market.locator("#public-market-state").is_visible()
+                audit_with_axe(page,f"{browser_name}-390-market-disclosure",axe_js)
+                market.locator("summary").click()
+                nav = ".v8-bottom-nav" if 390 < 900 else ".v8-rail"
+                page.locator(f'{nav} [data-v8-tab="research"]').click()
+                assert page.locator("#v8-view-research").is_visible()
+                assert "Current signals withheld" in page.locator("#v8-view-research").inner_text()
+                page.locator(f'{nav} [data-v8-tab="results"]').click()
+                assert page.locator("#v8-view-results").is_visible()
+                assert "Performance evidence temporarily unavailable" in page.locator("#v8-view-results").inner_text()
+                report_link = page.locator("#v8-view-results .v8-report-link")
+                assert report_link.count() == 1
+                assert report_link.is_visible()
+                rect = report_link.bounding_box()
+                assert rect and rect["width"] >= 44 and rect["height"] >= 44
+                assert rect["x"] >= 0 and rect["x"] + rect["width"] <= 391, (
+                    f"Recovery Results link exceeds iPhone viewport: {rect}"
+                )
+                assert "Report may be unavailable" in page.locator("#v8-view-results").inner_text()
+                page.screenshot(
+                    path=str(screenshot_dir / f"{browser_name}-results-390.png"),
+                    full_page=True,
+                )
+                audit_with_axe(page, f"{browser_name}-390-recovery-results-action", axe_js)
+                page.locator(f'{nav} [data-v8-tab="system"]').click()
+                assert page.locator("#v8-view-system").is_visible()
+                page.locator(f'{nav} [data-v8-tab="overview"]').click()
+                assert page.locator("#v8-view-overview").is_visible()
+                assert page.get_by_role("link", name="Check latest canonical scan again").is_visible()
+                button = page.locator("#v8-auto-retry")
+                assert button.inner_text() == "Enable auto retry"
+                assert button.get_attribute("data-v8-retry-ms") == "60000"
+                assert button.get_attribute("aria-pressed") == "false"
+                audit_with_axe(page, f"{browser_name}-390-incomplete-source", axe_js)
+                disclosure = page.locator(".v8-recovery-details")
+                assert disclosure.count() == 1
+                assert disclosure.get_attribute("open") is None
+                assert page.locator("#v8-scan-warning").is_visible()
+                disclosure.locator("summary").click()
+                assert disclosure.get_attribute("open") is not None
+                assert disclosure.get_by_text("You can refresh saved evidence now", exact=False).is_visible()
+                audit_with_axe(page, f"{browser_name}-390-recovery-instructions-open", axe_js)
+                disclosure.locator("summary").click()
+                button.click()
+                assert button.get_attribute("aria-pressed") == "true"
+                button.click()
+                assert button.get_attribute("aria-pressed") == "false"
+                assert page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1")
+                latest = page.request.get(origin + "/api/latest", timeout=15000)
+                assert latest.status == 503
+                assert latest.json().get("trade_permission") is False
+                page.close()
+                browser.close()
+            print("PASS: Chromium and WebKit WCAG A/AA for all four views and incomplete-source recovery")
+
+    finally:
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    main()
