@@ -7,6 +7,7 @@ on:
     paths:
       - 'ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql'
       - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
       - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
       - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
@@ -67,5 +68,7 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
       - name: Verify rollback, replay, completeness, and restricted privileges
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
+      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
       - name: Compare payoff percentile query against 495k synthetic outcomes
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
