@@ -82,6 +82,8 @@ def test_atomic_rpc_replaces_five_core_writes_and_checks_receipt():
     assert len(session.calls) == 1
     url, args = session.calls[0]
     assert url.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
+    # Table upserts use return=minimal, but this RPC must return a receipt.
+    assert args["headers"]["Prefer"] == "return=representation"
     payload = json.loads(args["data"])
     assert payload["p_parent"][0]["run_id"] == run_id
     assert len(payload["p_children"]) == 1
@@ -98,6 +100,13 @@ def test_rpc_failure_fails_closed_without_rest_fallback():
         SupabaseStorage(config(), session=session).save_snapshot(sample_snapshot())
     assert len(session.calls) == 1
     assert "/rpc/alpha_hunter_commit_core_scan_v01" in session.calls[0][0]
+
+
+def test_rpc_minimal_response_is_rejected_not_assumed_committed():
+    session = RPCSession(mutate=lambda result: result.clear())
+    with pytest.raises(SupabaseStorageError, match="confirmation did not match"):
+        SupabaseStorage(config(), session=session).save_snapshot(sample_snapshot())
+    assert session.calls[0][1]["headers"]["Prefer"] == "return=representation"
 
 
 def test_rpc_incomplete_receipt_is_rejected():
