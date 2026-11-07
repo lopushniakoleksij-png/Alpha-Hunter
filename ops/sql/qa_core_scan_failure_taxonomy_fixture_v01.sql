@@ -20,9 +20,9 @@ create table public.alpha_hunter_readiness_observations_v01 (
 );
 
 insert into public.alpha_hunter_snapshots values
-  ('QA_COMPLETE','2026-11-07T12:02:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2"}'::jsonb),
+  ('QA_COMPLETE','2026-11-07T12:02:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON"}}'::jsonb),
   ('QA_READY_MISSING','2026-11-07T12:01:00Z',1,0,'{"legacy":true}'::jsonb),
-  ('QA_PARENT_ONLY','2026-11-07T12:00:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2"}'::jsonb);
+  ('QA_PARENT_ONLY','2026-11-07T12:00:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON"}}'::jsonb);
 insert into public.alpha_hunter_symbol_snapshots values
   ('QA_COMPLETE','BTCUSDT'),('QA_READY_MISSING','ETHUSDT');
 insert into public.alpha_hunter_signals values
