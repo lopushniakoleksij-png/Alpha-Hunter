@@ -71,3 +71,19 @@ def test_no_net_profit_or_verified_fill_claim():
     assert result["gross_only"] is True
     assert result["net_return"] is None
     assert result["fill_verified"] is False
+
+
+def test_later_missing_candle_cannot_be_hidden_by_early_target():
+    rows = candles((99, 101), (101, 111), (100, 102))
+    rows[2]["verified"] = False
+    assert classify(rows) == "INSUFFICIENT_DATA"
+
+
+def test_later_chronology_conflict_cannot_be_hidden_by_early_stop():
+    rows = candles((99, 101), (94, 101), (100, 102))
+    rows[2]["known_at"] = rows[2]["closed_at"] - timedelta(minutes=1)
+    assert classify(rows) == "INSUFFICIENT_DATA"
+
+
+def test_complete_window_still_classifies_early_target():
+    assert classify(candles((99, 101), (101, 111), (100, 102))) == "TARGET_FIRST"
