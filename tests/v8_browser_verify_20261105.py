@@ -125,6 +125,14 @@ def main():
                     assert first.get_attribute("aria-expanded") == "false"
                     first.click()
                     assert first.get_attribute("aria-expanded") == "true"
+                    status_label = page.locator(".v8-mobile-card").first.locator(".v8-card-status")
+                    assert status_label.inner_text() == "Watch"
+                    assert status_label.get_attribute("data-source-code") == "WATCH"
+                    source_codes = page.locator(".v8-mobile-card").first.locator(".v8-source-codes")
+                    assert source_codes.locator("p").is_hidden()
+                    source_codes.locator("summary").click()
+                    assert "WATCH" in source_codes.locator("p").inner_text()
+                    assert source_codes.locator("p").is_visible()
                     if width == 390:
                         page.screenshot(path=str(screenshot_dir / "research-detail-390.png"),
                                         full_page=True)
@@ -171,6 +179,11 @@ def main():
                 page.locator(f'{target} [data-v8-tab="results"]').click()
                 assert page.locator("#v8-view-results").is_visible()
                 assert page.get_by_text("Real-Time Profitability Test Engine").is_visible()
+                provenance = page.locator("#v8-view-results .v8-test-provenance")
+                assert provenance.locator(".reason").is_hidden()
+                provenance.locator("summary").click()
+                assert provenance.locator(".reason").is_visible()
+                provenance.locator("summary").click()
                 assert page.locator(".top .v8-scan-time").count() == 1
                 assert page.locator(".top .v8-scan-time").get_attribute("datetime")
                 assert page.locator(".top .v8-scan-time").inner_text().endswith("UTC")
