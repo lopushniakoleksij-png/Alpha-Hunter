@@ -73,7 +73,7 @@ begin
      or receipt->>'signal_count'<>'1'
      or receipt->>'feature_count'<>'1'
      or receipt->>'readiness_count'<>'2'
-     or (select count(*) from public.qa_atomic_trigger_events)<>7 then
+     or (select count(*) from public.qa_atomic_trigger_events)<>8 then
     raise exception 'SUCCESS_COUNT_MISMATCH: %',receipt;
   end if;
   raise notice 'PASS: all five core families and synthetic trigger events committed';
@@ -125,7 +125,7 @@ begin
      or (select count(*) from public.alpha_hunter_signals)<>1
      or (select count(*) from public.alpha_hunter_signal_features)<>1
      or (select count(*) from public.alpha_hunter_readiness_observations_v01)<>2
-     or (select count(*) from public.qa_atomic_trigger_events)<>7 then
+     or (select count(*) from public.qa_atomic_trigger_events)<>8 then
     raise exception 'FINAL_STATE_NOT_COMPLETE';
   end if;
   if pg_catalog.has_function_privilege('anon','public.alpha_hunter_commit_core_scan_v01(jsonb,jsonb,jsonb,jsonb,jsonb)','EXECUTE')
