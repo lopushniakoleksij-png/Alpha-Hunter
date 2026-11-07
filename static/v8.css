@@ -608,3 +608,31 @@ body.v8-body {
   font-variant-numeric:tabular-nums;
 }
 .v8-private-details p{margin-top:0}
+
+/* Stage 7 follow-up: concise paper evidence and readable research status codes. */
+.v8-integrity-note{
+  margin:11px 0 5px;line-height:1.5;
+}
+.v8-test-provenance{margin-top:5px;min-width:0}
+.v8-test-provenance summary,
+.v8-source-codes summary{
+  min-height:44px;display:flex;align-items:center;
+  cursor:pointer;color:var(--v8-blue);font-size:13px;font-weight:650;
+}
+.v8-test-provenance .reason{
+  margin-top:5px;max-width:100%;overflow-wrap:anywhere;line-height:1.55;
+}
+.v8-source-codes{
+  margin-top:6px;max-width:100%;overflow-wrap:anywhere;
+}
+.v8-source-codes p{
+  margin:3px 0 8px;font-size:12px;line-height:1.5;overflow-wrap:anywhere;
+}
+@media(max-width:899px){
+  .v8-card-status{
+    max-width:100%;white-space:normal;overflow-wrap:break-word;
+    line-height:1.4;
+  }
+  .v8-detail-field dd{overflow-wrap:break-word}
+  .v8-body .v8-test-provenance .reason{font-size:13px}
+}
