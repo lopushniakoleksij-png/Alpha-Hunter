@@ -11,6 +11,8 @@ on:
       - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
       - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
       - 'tests/test_atomic_core_scan_rpc_candidate.py'
+      - 'ops/sql/readonly_core_scan_trigger_inventory_v01.sql'
+      - 'docs/atomic-core-scan-release-gate-20261107.md'
       - '.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml'
   workflow_dispatch:
 
