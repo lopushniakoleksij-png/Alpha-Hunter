@@ -64,7 +64,9 @@ def evaluate_blocked_shadow(
         if interval_minutes != 60:
             return result  # v1 supports only closed hourly candles
         first_open += interval
-        filled = False
+        # Validate the entire evidence window before classifying any outcome.
+        # Otherwise an early target can hide a later missing or forged candle.
+        validated = []
         for index, candle in enumerate(candles):
             opened = _time(candle["open_at"])
             closed = _time(candle["closed_at"])
@@ -77,6 +79,9 @@ def evaluate_blocked_shadow(
             low, high = _number(candle["low"]), _number(candle["high"])
             if low > high:
                 return result
+            validated.append((low, high))
+        filled = False
+        for low, high in validated:
             if not filled:
                 if not (low <= entry <= high):
                     continue
