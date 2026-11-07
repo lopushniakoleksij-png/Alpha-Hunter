@@ -58,11 +58,7 @@ jobs:
           python3 -m venv .venv
           . .venv/bin/activate
           python -m pip install -q -r requirements.txt pytest
-          python -m pytest -q \\
-            tests/test_storage.py \\
-            tests/test_canonical_universe_scan_persistence_v02.py \\
-            tests/test_scan_partial_persistence_characterization.py \\
-            tests/test_atomic_core_scan_rpc_candidate.py
+          python -m pytest -q tests/test_storage.py tests/test_canonical_universe_scan_persistence_v02.py tests/test_scan_partial_persistence_characterization.py tests/test_atomic_core_scan_rpc_candidate.py
       - name: Construct synthetic core schema and trigger graph
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
       - name: Install candidate function in ephemeral test database ONLY
