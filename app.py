@@ -2003,15 +2003,19 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
         <div class="metric"><span class="label">Test days</span><b>{{ '%.2f'|format(data.test_engine.get('test_days_elapsed',0) or 0) }}/{{ data.test_engine.get('minimum_test_days',30) }}</b></div>
         <div class="metric"><span class="label">Separate 24H signal outcomes</span><b>{{ data.test_engine.get('real_24h_forward_outcomes_since_registration','Unavailable') }}</b></div>
       </div>
-      <div class="reason">
-        <b>Real-time:</b> {{ data.test_engine.get('evaluated_at_utc') }}<br>
-        <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
-        <b>Latest market scan:</b> {{ data.test_engine.get('latest_live_scan_at_utc') }}<br>
-        <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
-        <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
-        <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
-        <span class="small">Current cohort completions, historical lifecycle exits and 24H signal outcomes are separate evidence streams and are never added together. Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
-      </div>
+      <p class="small v8-integrity-note">Unproven paper research. Cohort completions, historical exits and 24-hour outcomes are separate evidence streams, not verified returns.</p>
+      <details class="v8-test-provenance">
+        <summary>Test provenance, timestamps and blockers</summary>
+        <div class="reason">
+          <b>Real-time:</b> <time datetime="{{ data.test_engine.get('evaluated_at_utc') or '' }}" title="{{ data.test_engine.get('evaluated_at_utc') or 'Unavailable' }}">{{ data.test_engine.get('evaluated_at_utc')|v8_scan_time }}</time><br>
+          <b>Test identity:</b> {{ data.test_engine.get('spec_id','Unavailable') }}<br>
+          <b>Latest market scan:</b> <time datetime="{{ data.test_engine.get('latest_live_scan_at_utc') or '' }}" title="{{ data.test_engine.get('latest_live_scan_at_utc') or 'Unavailable' }}">{{ data.test_engine.get('latest_live_scan_at_utc')|v8_scan_time }}</time><br>
+          <b>Profitability status:</b> {{ data.test_engine.get('profitability_status') }}<br>
+          <b>Blockers:</b> {{ (data.test_engine.get('blockers') or [])|join(', ') if data.test_engine.get('blockers') else 'NONE' }}<br>
+          <b>Historical lifecycle totals:</b> {{ data.paper_lifecycle.get('valid_completed_trades','Unavailable') }} closed · {{ data.paper_lifecycle.get('active_valid_positions','Unavailable') }} active · {{ data.paper_lifecycle.get('invalid_geometry_quarantined','Unavailable') }} geometry-quarantined<br>
+          <span class="small">Collection activity does not prove profitability. Forward-only real market evidence; historical replay/backtest is not counted. Paper-only; no order authority.</span>
+        </div>
+      </details>
     {% else %}
       <div class="empty">No test-engine evaluation has been persisted yet. The hourly real-time test runner will populate this panel.</div>
     {% endif %}
@@ -2024,7 +2028,7 @@ h1{margin:0;font-size:28px}.sub,.muted,.small{color:var(--muted)}.small{font-siz
       <div class="small">Simulated decision support. Profitability is unproven; this is not an exchange order instruction.</div>
       <h2 style="margin:8px 0 0">{{ row.symbol|symbol_label }} {{ a.direction }}</h2>
       <div class="action-grid">
-        <div class="metric"><span class="label">Status</span><b>{{ a.status }}</b></div>
+        <div class="metric"><span class="label">Status</span><b title="Original paper status: {{ a.status }}" data-status-code="{{ a.status }}">{{ a.status|v8_paper_status_label }}</b></div>
         <div class="metric"><span class="label">Entry / zone</span><b>{{ a.entry }}</b></div>
         <div class="metric"><span class="label">Stop / invalidation</span><b>{{ a.stop }}</b></div>
         <div class="metric"><span class="label">Target</span><b>{{ a.target }}</b></div>
