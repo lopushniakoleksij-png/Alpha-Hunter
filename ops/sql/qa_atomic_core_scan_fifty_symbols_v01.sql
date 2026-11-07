@@ -73,7 +73,7 @@ BEGIN
   END;
   PERFORM set_config('qa.fail_feature','off',true);
 
-  IF (SELECT count(*) FROM public.alpha_hunter_snapshots WHERE run_id=run_id)<>0
+  IF (SELECT count(*) FROM public.alpha_hunter_snapshots x WHERE x.run_id=run_id)<>0
       OR (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots x WHERE x.run_id=run_id)<>0
       OR (SELECT count(*) FROM public.alpha_hunter_signals x WHERE x.run_id=run_id)<>0
       OR (SELECT count(*) FROM public.alpha_hunter_signal_features x WHERE x.run_id=run_id)<>0
