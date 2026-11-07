@@ -56,10 +56,15 @@ CREATE TABLE p0_bench.payoff_receipts (
   PRIMARY KEY(run_id,symbol,strategy_id)
 );
 
+-- Disposable, explicit fault switch; only this local test database can enable it.
+-- Failure occurs AFTER four earlier nested receipts for TEST000USDT.
+CREATE TABLE p0_bench.payoff_failure_switch (run_id text PRIMARY KEY);
+INSERT INTO p0_bench.payoff_failure_switch VALUES ('bad-payoff-nested-atomic');
+
 -- Deliberately SECURITY INVOKER. The disposable local PostgREST writer is
 -- granted only SELECT on the fake market evidence and INSERT on receipts.
 GRANT USAGE ON SCHEMA p0_bench TO ah_p0_local_writer;
-GRANT SELECT ON p0_bench.payoff_outcomes TO ah_p0_local_writer;
+GRANT SELECT ON p0_bench.payoff_outcomes, p0_bench.payoff_failure_switch TO ah_p0_local_writer;
 GRANT INSERT ON p0_bench.payoff_receipts TO ah_p0_local_writer;
 
 CREATE FUNCTION p0_bench.capture_payoff_observation() RETURNS trigger
@@ -95,6 +100,13 @@ BEGIN
   VALUES
    (NEW.run_id,NEW.symbol,NEW.strategy_id,
     v_n,v_mae50,v_mae75,v_mfe50,v_mfe90);
+  IF NEW.symbol = 'TEST000USDT' AND NEW.strategy_id = 5
+     AND EXISTS (SELECT 1 FROM p0_bench.payoff_failure_switch
+                 WHERE run_id = NEW.run_id)
+  THEN
+    RAISE EXCEPTION 'synthetic nested payoff trigger cancellation'
+      USING ERRCODE = '57014';
+  END IF;
   RETURN NEW;
 END $p0_trigger$;
 
