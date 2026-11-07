@@ -139,6 +139,9 @@ create trigger qa_atomic_symbol_after after insert or update on public.alpha_hun
 for each row execute function public.qa_track_atomic_side_effects();
 create trigger qa_atomic_signal_after after insert or update on public.alpha_hunter_signals
 for each row execute function public.qa_track_atomic_side_effects();
+-- Production has a BEFORE INSERT feature enrichment trigger. Cover replay semantics.
+create trigger qa_atomic_feature_before before insert on public.alpha_hunter_signal_features
+for each row execute function public.qa_track_atomic_side_effects();
 create trigger qa_atomic_feature_after after insert or update on public.alpha_hunter_signal_features
 for each row execute function public.qa_track_atomic_side_effects();
 create trigger qa_atomic_readiness_after after insert or update on public.alpha_hunter_readiness_observations_v01
