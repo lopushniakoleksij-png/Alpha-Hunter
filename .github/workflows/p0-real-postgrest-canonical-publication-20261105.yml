@@ -30,6 +30,7 @@ on:
       - research/p0-atomic-final-stage-rollback-20261107
       - research/p0-atomic-partial-stage-cardinality-20261107
       - research/p0-integrated-atomic-payoff-20261107
+      - research/p0-nested-payoff-rollback-retry-20261107
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
       - 'ops/reviews/p0_integrated_atomic_payoff_fixture_20261107.sql'
