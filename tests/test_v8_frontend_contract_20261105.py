@@ -92,7 +92,7 @@ def _synthetic_actionable_rows():
             "_action": {
                 "status": "WAIT_FOR_TRIGGER",
                 "direction": "SHORT",
-                "entry": 121.333333,
+                "entry": 79.08066666666667,
                 "stop": 126.444444,
                 "target": 88.777777,
                 "rr": 6.37,
@@ -133,6 +133,34 @@ def test_stage8_paper_queue_has_mobile_card_and_desktop_table_without_value_chan
     assert 'id="runScanButton"' not in body
 
 
+
+
+def test_stage7_paper_prices_and_status_codes_keep_exact_source(monkeypatch):
+    """Display-only formatting must never change original paper evidence."""
+    assert dashboard.v8_paper_price_display(79.08066666666667) == "79.080667"
+    assert dashboard.v8_paper_price_display("0.0000000123456789") == "0.000000012345679"
+    assert dashboard.v8_paper_price_display(None) == "—"
+    assert dashboard.v8_paper_status_label("PLACE_LIMIT_PAPER") == "Limit setup · Paper only"
+    assert dashboard.v8_paper_status_label("WAIT_FOR_TRIGGER") == "Wait for trigger"
+
+    data = dashboard.dashboard_payload(
+        _sample_snapshot(), test_engine={"spec_id": "STAGE7_SYNTHETIC"},
+        paper_lifecycle={},
+    )
+    data["actionable"] = _synthetic_actionable_rows()
+    monkeypatch.setattr(dashboard, "bounded_dashboard_payload", lambda: data)
+    monkeypatch.setattr(dashboard, "_DASHBOARD_READ_UNAVAILABLE_UNTIL", 0.0)
+    response = dashboard.app.test_client().get("/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "79.080667" in html  # Compact mobile card display
+    assert "79.08066666666667" in html  # Full exact value in disclosure
+    assert 'class="v8-queue-exact"' in html
+    assert 'data-status-code="PLACE_LIMIT_PAPER"' in html
+    assert "Limit setup · Paper only" in html
+    assert 'data-status-code="WAIT_FOR_TRIGGER"' in html
+    assert "Wait for trigger" in html
+    assert 'class="v8-private-details"' in html
 
 
 def _synthetic_radar_rows():
