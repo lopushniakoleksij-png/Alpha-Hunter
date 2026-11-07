@@ -3,7 +3,8 @@
 -- complete parent+children, parent-only, and last-stage readiness missing.
 create table public.alpha_hunter_snapshots (
   run_id text primary key, collected_at_utc timestamptz not null,
-  symbol_count integer not null, error_count integer not null
+  symbol_count integer not null, error_count integer not null,
+  payload jsonb not null
 );
 create table public.alpha_hunter_symbol_snapshots (
   run_id text not null, symbol text not null, primary key(run_id,symbol)
@@ -19,9 +20,9 @@ create table public.alpha_hunter_readiness_observations_v01 (
 );
 
 insert into public.alpha_hunter_snapshots values
-  ('QA_COMPLETE','2026-11-07T12:02:00Z',1,0),
-  ('QA_READY_MISSING','2026-11-07T12:01:00Z',1,0),
-  ('QA_PARENT_ONLY','2026-11-07T12:00:00Z',1,0);
+  ('QA_COMPLETE','2026-11-07T12:02:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2"}'::jsonb),
+  ('QA_READY_MISSING','2026-11-07T12:01:00Z',1,0,'{"legacy":true}'::jsonb),
+  ('QA_PARENT_ONLY','2026-11-07T12:00:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2"}'::jsonb);
 insert into public.alpha_hunter_symbol_snapshots values
   ('QA_COMPLETE','BTCUSDT'),('QA_READY_MISSING','ETHUSDT');
 insert into public.alpha_hunter_signals values
