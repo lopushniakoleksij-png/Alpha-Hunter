@@ -1014,6 +1014,182 @@ def test_disposable_latency_and_concurrency(conn, report):
 
 
 
+def test_integrated_atomic_payoff_index(dsn, conn, report):
+    """An atomic PostgREST scan + actual nested synthetic percentile trigger.
+
+    Unlike the prior separate index-vs-RPC tests, this tests both candidates
+    IN THE SAME disposable transaction workload. Real production functions,
+    indexes, schemas, papers and Supabase network remain untested.
+    """
+    if os.getenv("AH_P0_LOCAL_POSTGREST_ONLY") != "1":
+        raise RuntimeError("Refusing integrated benchmark outside localhost")
+    if conn.execute("SELECT current_database()").fetchone()[0] != "isolated_research":
+        raise RuntimeError("Refusing any non-disposable database")
+    fixture_sql = Path(
+        "ops/reviews/p0_integrated_atomic_payoff_fixture_20261107.sql"
+    ).read_text(encoding="utf-8")
+    conn.execute(fixture_sql)
+
+    assert conn.execute("SELECT count(*) FROM p0_bench.payoff_outcomes").fetchone()[0] == 160000
+    # The workload invokes the SELECT from the actual nested trigger function
+    # for each of 61*10 independently persisted synthetic observations.
+    def arguments(run, *, missing_price=False):
+        value = snapshot(run, 61 if not missing_price else 17)
+        if missing_price:
+            value["symbols"][-1]["last_price"] = None
+        cap = CaptureSchema()
+        cap.save_snapshot(value)
+        return {
+            "p_parent": cap.captured["alpha_hunter_snapshots"][0],
+            "p_children": cap.captured["alpha_hunter_symbol_snapshots"],
+            "p_signals": cap.captured.get("alpha_hunter_signals", []),
+            "p_features": cap.captured.get("alpha_hunter_signal_features", []),
+            "p_readiness": cap.captured.get("alpha_hunter_readiness_observations_v01", []),
+        }
+
+    def receipt_check(run, *, expected=610):
+        receipt = conn.execute("""
+            SELECT count(*)::integer, min(eligible),max(eligible),
+                   count(DISTINCT(symbol,strategy_id)),
+                   min(p50_mae),max(p50_mae),
+                   min(p75_mae),max(p75_mae),
+                   min(p50_mfe),max(p50_mfe),
+                   min(p90_mfe),max(p90_mfe)
+              FROM p0_bench.payoff_receipts WHERE run_id=%s
+        """, (run,)).fetchone()
+        assert receipt[0] == expected, (run, receipt)
+        assert receipt[1:4] == (126, 126, expected), (run, receipt)
+        assert all(receipt[i] == receipt[i+1] for i in (4, 6, 8, 10)), (run, receipt)
+        return (receipt[1],receipt[4],receipt[6],receipt[8],receipt[10])
+
+    def publish(run, *, missing_price=False):
+        args = arguments(run, missing_price=missing_price)
+        started = time.perf_counter()
+        res = requests.post(
+            BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+            json=args, timeout=15,
+        )
+        ms = round((time.perf_counter() - started)*1000, 3)
+        assert res.status_code == 200, (run, res.status_code, res.text[:320])
+        n = 17 if missing_price else 61
+        signal_n = 16 if missing_price else 61
+        assert_counts(conn, run, parent=1, child=n, signal=signal_n,
+                      feature=signal_n, readiness=n, obs=n*10)
+        receipt = receipt_check(run, expected=n*10)
+        got = conn.execute("""
+            SELECT payload->>'_canonical_publication_state'
+            FROM public.alpha_hunter_snapshots WHERE run_id=%s
+        """, (run,)).fetchone()
+        assert got == ("VERIFIED",), (run, got)
+        return ms,receipt,args
+
+    # The candidate index is ABSENT at the baseline.
+    assert conn.execute("""
+        SELECT to_regclass('p0_bench.p0_payoff_candidate') IS NULL
+    """).fetchone()[0]
+    _ = publish("integrated-baseline-warm")
+    baseline = []
+    for i in range(3):
+        ms,identity,_ = publish(f"integrated-baseline-{i}")
+        baseline.append(ms)
+    assert len(baseline) == 3
+
+    # Isolated candidate, not production DDL or an actual migration. This
+    # connection uses autocommit, as required for CREATE INDEX CONCURRENTLY.
+    conn.execute("""
+        CREATE INDEX CONCURRENTLY p0_payoff_candidate
+        ON p0_bench.payoff_outcomes(strategy_id,direction,evaluated_at_utc)
+        INCLUDE (max_adverse_excursion_pct,max_favorable_excursion_pct)
+        WHERE horizon_hours=24
+          AND entry_trigger_status IN ('TRIGGERED_EXECUTE_NOW','TRIGGERED_LIMIT')
+          AND path_measurement_quality='COMPLETE_ENOUGH'
+          AND ordering_ambiguous=false
+          AND max_adverse_excursion_pct IS NOT NULL
+          AND max_favorable_excursion_pct IS NOT NULL
+    """)
+    conn.execute("ANALYZE p0_bench.payoff_outcomes")
+    # Real query-plan evidence for the same nested percentile predicate.
+    plan = conn.execute("""
+        EXPLAIN (COSTS TRUE) SELECT count(*)::integer,
+             percentile_cont(0.5) WITHIN GROUP(ORDER BY o.max_adverse_excursion_pct)
+        FROM p0_bench.payoff_outcomes o
+        WHERE o.horizon_hours=24 AND o.strategy_id='S6' AND o.direction='SHORT'
+         AND o.entry_trigger_status IN ('TRIGGERED_EXECUTE_NOW','TRIGGERED_LIMIT')
+         AND o.path_measurement_quality='COMPLETE_ENOUGH'
+         AND o.ordering_ambiguous=false
+         AND o.evaluated_at_utc<=timestamptz '2026-11-02 08:23:00+00'
+         AND o.max_adverse_excursion_pct IS NOT NULL
+         AND o.max_favorable_excursion_pct IS NOT NULL
+    """).fetchall()
+    assert any("p0_payoff_candidate" in row[0] for row in plan), plan
+    candidate_bytes = conn.execute("""
+        SELECT pg_relation_size('p0_bench.p0_payoff_candidate'::regclass)
+    """).fetchone()[0]
+
+    _ = publish("integrated-indexed-warm")
+    indexed = []
+    for i in range(3):
+        ms,index_identity,_ = publish(f"integrated-indexed-{i}")
+        indexed.append(ms)
+    assert len(indexed) == 3
+    assert identity == index_identity, (identity,index_identity)
+
+    # Invalid final-stage evidence must undo the parent, child records,
+    # synthetic observations AND nested payoff-side-effect receipts.
+    failing = "bad-readiness-atomic"
+    response = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+        json=arguments(failing), timeout=15,
+    )
+    assert response.status_code >= 400, response.text[:320]
+    assert_counts(conn, failing, parent=0, child=0, signal=0,
+                  feature=0, readiness=0, obs=0)
+    assert conn.execute("""
+        SELECT count(*) FROM p0_bench.payoff_receipts WHERE run_id=%s
+    """,(failing,)).fetchone()[0] == 0
+
+    partial_ms,partial_identity,partial_args = publish(
+        "integrated-missing-price", missing_price=True
+    )
+    assert partial_identity == identity
+    duplicate = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+        json=partial_args, timeout=15,
+    )
+    assert duplicate.status_code >= 400, duplicate.text[:320]
+    assert_counts(conn, "integrated-missing-price", parent=1, child=17,
+                  signal=16, feature=16, readiness=17, obs=170)
+    assert receipt_check("integrated-missing-price", expected=170) == identity
+
+    # Candidate rollback is verifiable and restricted to this fake schema.
+    conn.execute("DROP INDEX CONCURRENTLY p0_bench.p0_payoff_candidate")
+    assert conn.execute("""
+        SELECT to_regclass('p0_bench.p0_payoff_candidate') IS NULL
+    """).fetchone()[0]
+
+    report["integrated_atomic_and_payoff_index"] = {
+        "scope": "DISPOSABLE_LOCAL_POSTGREST_AND_SYNTHETIC_NESTED_PAYOFF_TRIGGER_ONLY",
+        "synthetic_outcomes": 160000,
+        "synthetic_matched_payoff_outcomes": identity[0],
+        "synthetic_nested_trigger_invocations_per_61_symbols": 610,
+        "full_scan_stages_and_nested_receipts_verified": True,
+        "mixed_price_stage_cardinality_and_idempotency_verified": True,
+        "late_stage_error_rolled_back_nested_receipts": True,
+        "payoff_percentiles_unchanged": True,
+        "candidate_index_used_by_planner": True,
+        "candidate_index_bytes_synthetic": candidate_bytes,
+        "candidate_index_rolled_back": True,
+        "baseline_http_samples_ms": baseline,
+        "indexed_http_samples_ms": indexed,
+        "baseline_median_ms": _p0_sample_percentile(baseline,50),
+        "indexed_median_ms": _p0_sample_percentile(indexed,50),
+        "partial_price_indexed_http_ms": partial_ms,
+        "real_production_trigger_graph_equivalence": False,
+        "real_production_volume_or_concurrency_equivalence": False,
+        "real_production_side_effects_or_release_approved": False,
+    }
+
+
 def test_transaction_local_function_tracking(dsn, report):
     """Prove transaction-scoped trigger timing visibility on disposable DB.
 
@@ -1099,6 +1275,7 @@ def main():
         test_disposable_truncate_security_gap(dsn, report)
         test_transaction_local_function_tracking(dsn, report)
         test_disposable_latency_and_concurrency(conn, report)
+        test_integrated_atomic_payoff_index(dsn, conn, report)
     out = Path("p0_postgrest_acceptance_results")
     out.mkdir(exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
