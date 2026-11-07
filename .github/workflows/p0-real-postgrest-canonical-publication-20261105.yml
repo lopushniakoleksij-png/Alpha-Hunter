@@ -6,6 +6,7 @@ on:
       - research/p0-production-schema-atomic-review-20261105
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
+      - 'ops/reviews/p0_integrated_atomic_payoff_fixture_20261107.sql'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
       - 'ops/reviews/test_p0_clone_dsn_guard_20261105.py'
       - 'ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py'
@@ -28,8 +29,10 @@ on:
       - research/p0-clone-fixture-identity-guard-20261105-1544
       - research/p0-atomic-final-stage-rollback-20261107
       - research/p0-atomic-partial-stage-cardinality-20261107
+      - research/p0-integrated-atomic-payoff-20261107
     paths:
       - 'ops/reviews/p0_real_postgrest_canonical_publication_20261105.py'
+      - 'ops/reviews/p0_integrated_atomic_payoff_fixture_20261107.sql'
       - 'ops/reviews/p0_verify_isolated_production_catalog_clone_20261105.py'
       - 'ops/reviews/test_p0_clone_dsn_guard_20261105.py'
       - 'ops/reviews/p0_private_clone_actual_trigger_benchmark_20261105.py'
