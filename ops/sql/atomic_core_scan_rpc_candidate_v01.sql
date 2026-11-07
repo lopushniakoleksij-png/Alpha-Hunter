@@ -81,6 +81,37 @@ begin
       raise exception 'duplicate or missing scan symbol/signal identity';
   end if;
 
+  -- A valid core scan cannot omit feature evidence or attach features to
+  -- a different signal. Counts alone would not catch orphan/mismatched IDs.
+  if pg_catalog.jsonb_array_length(p_features) <>
+        pg_catalog.jsonb_array_length(p_signals)
+     or exists (
+       select 1
+       from pg_catalog.jsonb_array_elements(p_signals) s
+       where not exists (
+         select 1 from pg_catalog.jsonb_array_elements(p_features) f
+         where f->>'signal_id' = s->>'signal_id'
+           and f->>'symbol' = s->>'symbol'
+       )
+     )
+     or exists (
+       select 1 from pg_catalog.jsonb_array_elements(p_signals) s
+       where not exists (
+         select 1 from pg_catalog.jsonb_array_elements(p_readiness) r
+         where r->>'symbol' = s->>'symbol'
+       )
+     )
+     or exists (
+       select 1 from pg_catalog.jsonb_array_elements(p_readiness) r
+       where not exists (
+         select 1 from pg_catalog.jsonb_array_elements(p_children) c
+         where c->>'symbol' = r->>'symbol'
+       )
+     )
+  then
+    raise exception 'core scan signal/feature/readiness identity coverage invalid';
+  end if;
+
   -- Serialize retries and overlapping submissions of the SAME scan identity.
   -- Paired with NOT EXISTS, this avoids firing BEFORE INSERT enrichment
   -- triggers for already-committed rows on retries.
