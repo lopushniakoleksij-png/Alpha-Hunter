@@ -20,16 +20,20 @@ create table public.alpha_hunter_readiness_observations_v01 (
 );
 
 insert into public.alpha_hunter_snapshots values
+  ('QA_UNVERSIONED_COMPLETE','2026-11-07T12:03:00Z',1,0,'{"legacy":true}'::jsonb),
   ('QA_COMPLETE','2026-11-07T12:02:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON"}}'::jsonb),
   ('QA_READY_MISSING','2026-11-07T12:01:00Z',1,0,'{"legacy":true}'::jsonb),
   ('QA_PARENT_ONLY','2026-11-07T12:00:00Z',1,0,'{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON"}}'::jsonb);
 insert into public.alpha_hunter_symbol_snapshots values
-  ('QA_COMPLETE','BTCUSDT'),('QA_READY_MISSING','ETHUSDT');
+  ('QA_COMPLETE','BTCUSDT'),('QA_READY_MISSING','ETHUSDT'),
+  ('QA_UNVERSIONED_COMPLETE','SOLUSDT');
 insert into public.alpha_hunter_signals values
   ('QA_COMPLETE','BTCUSDT','QA_SIGNAL_COMPLETE'),
-  ('QA_READY_MISSING','ETHUSDT','QA_SIGNAL_READY_MISSING');
+  ('QA_READY_MISSING','ETHUSDT','QA_SIGNAL_READY_MISSING'),
+  ('QA_UNVERSIONED_COMPLETE','SOLUSDT','QA_SIGNAL_UNVERSIONED_COMPLETE');
 insert into public.alpha_hunter_signal_features values
   ('QA_COMPLETE','BTCUSDT','QA_SIGNAL_COMPLETE'),
-  ('QA_READY_MISSING','ETHUSDT','QA_SIGNAL_READY_MISSING');
+  ('QA_READY_MISSING','ETHUSDT','QA_SIGNAL_READY_MISSING'),
+  ('QA_UNVERSIONED_COMPLETE','SOLUSDT','QA_SIGNAL_UNVERSIONED_COMPLETE');
 insert into public.alpha_hunter_readiness_observations_v01 values
-  ('QA_COMPLETE','BTCUSDT');
+  ('QA_COMPLETE','BTCUSDT'),('QA_UNVERSIONED_COMPLETE','SOLUSDT');
