@@ -8,6 +8,8 @@ on:
       - 'ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
       - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
+      - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
+      - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
       - 'tests/test_atomic_core_scan_rpc_candidate.py'
       - '.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml'
   workflow_dispatch:
@@ -57,3 +59,5 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
       - name: Verify rollback, replay, completeness, and restricted privileges
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
+      - name: Compare payoff percentile query against 495k synthetic outcomes
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
