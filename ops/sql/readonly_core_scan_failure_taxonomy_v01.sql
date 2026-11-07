@@ -6,7 +6,8 @@
 -- 24 recent parents; child lookups are scoped by run_id (verify indexed paths).
 -- This validates only core families, NOT downstream paper-trading evidence.
 with recent as (
-    select run_id, collected_at_utc, symbol_count, error_count
+    select run_id, collected_at_utc, symbol_count, error_count,
+           payload->>'_storage_contract' as parent_storage_contract
     from public.alpha_hunter_snapshots
     order by collected_at_utc desc limit 24
 ),
@@ -59,6 +60,8 @@ classified as (
 )
 select run_id, collected_at_utc, symbol_count, error_count,
        symbol_rows, signal_rows, feature_rows, readiness_rows,
-       orphan_features, orphan_readiness, failure_category
+       orphan_features, orphan_readiness,
+       coalesce(parent_storage_contract,'UNVERSIONED') as parent_storage_contract,
+       failure_category
 from classified
 order by collected_at_utc desc;
