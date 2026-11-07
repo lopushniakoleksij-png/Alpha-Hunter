@@ -40,7 +40,7 @@ Supabase unified log read-only window: 2026-11-07 07:30–10:25 UTC.
 
 ## 3. Read-only deployment/trigger inventory
 - Supabase Alpha Hunter project: PostgreSQL 17, active.
-- **12** application triggers over **8** relevant public tables (per live catalog inspection).
+- The original narrow inventory contains **12 triggers on seven trigger-bearing tables**. A broader eight-table selection found 13 triggers, including the strategy-outcome table. Neither set is a certified transitive trigger graph.
 - No `public.alpha_hunter_commit_core_scan_v01` function found in production catalog.
 - Supabase development branches listed: none.
 - GitHub PR #445 is a draft, unmerged candidate; independent review submissions: none in the inspected PR.
@@ -60,8 +60,25 @@ Supabase unified log read-only window: 2026-11-07 07:30–10:25 UTC.
 
 ## 5. Next required execution (single priority)
 1. Prepare a **private**, read-only `pg_dump` or Supabase CLI schema export in the existing isolated Codespace; never commit secrets, function source, archives, or customer data to this repository. Follow `ops/local/export_private_pg_schema.sh` only after privately verifying connection, TLS, export compatibility and package scope.
-2. Restore into offline PostgreSQL 17; inspect all dependent table/function/trigger/index/RLS/role objects; compare fingerprints using `ops/sql/readonly_core_scan_trigger_inventory_v01.sql`.
+2. Restore into offline PostgreSQL 17; inspect all dependent table/function/trigger/index/RLS/role objects; compare both the narrow fingerprints and the broader superset from `ops/sql/readonly_alpha_hunter_trigger_superset_inventory_v02.sql`.
 3. Populate **synthetic** production-shaped data, reproduce timeout and measure 30/50/61-symbol full-graph writes, including p95/p99, locks, WAL, I/O, rollback and side-effect identity.
 4. Keep PR draft, atomic flag off, main unchanged and live orders disabled. Stop rather than changing production if cloning or signing requirements cannot be met.
 
 **Final decision:** PRODUCTION REPAIR REQUIRED — NO-GO. No independent production certification asserted.
+
+## 6. Stage 2 read-only scope expansion (same audit session)
+
+A fresh catalog-wide enumeration of **public.alpha_hunter_%** trigger-bearing tables found:
+
+- **131 application triggers** across **108 trigger-bearing tables**.
+- **36 distinct trigger functions**.
+- **21 SECURITY DEFINER trigger call sites** (not 21 distinct privileged functions).
+- Reproducible broad-superset digest: `d37f35bca3fab8a999f4bab2303172f2`.
+- Original narrow-scope digest (12 triggers on seven trigger-bearing tables): `de94c7c41a83527353506775039f0ad3`.
+- Production atomic RPC **not installed**; candidate index **not installed** (catalog checks).
+
+The 131 triggers are a **superset**, not a claim that all are exercised by a core scan. Their existence means any exact production-faithful test must identify which transitive side-effect functions and privileged code the core writer actually invokes. **A clone of only the narrow 12 triggers is not sufficient to certify the repair.**
+
+A new **read-only** SQL inventory file is committed at `ops/sql/readonly_alpha_hunter_trigger_superset_inventory_v02.sql`. It records hashes without dumping production function source into this repository. Run it again after any schema drift and compare with the private PostgreSQL 17 clone. Missing cross-schema or dynamic dependencies remain possible.
+
+**Next-stage decision unchanged:** Stage 2 remains BLOCKED until a private, restored and fingerprint-matching clone plus representative workload are verified. No production changes.
