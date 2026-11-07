@@ -56,7 +56,7 @@ select
   (select count(*) from trigs where prosecdef) as definer_trigger_call_sites,
   (select pg_catalog.md5(string_agg(
           relname||':'||attnum::text||':'||attname||':'||data_type||':'||
-          not_null::text||':'||attidentity||':'||attgenerated||':'||default_expr,
+          not_null::text||':'||attidentity::text||':'||attgenerated::text||':'||default_expr,
           E'\n' order by relname,attnum)) from columns_all) as columns_fingerprint,
   (select pg_catalog.md5(string_agg(
           relname||':'||index_name||':'||index_ddl,E'\n' order by relname,index_name))
