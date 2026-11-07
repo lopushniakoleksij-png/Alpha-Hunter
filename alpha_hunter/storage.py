@@ -663,10 +663,14 @@ class SupabaseStorage:
             "p_features": feature_rows,
             "p_readiness": readiness_rows,
         }
+        # The atomic RPC must return an explicit JSON receipt. Standard
+        # table-upsert headers contain return=minimal and suppress the body.
+        rpc_headers = dict(self.headers)
+        rpc_headers["Prefer"] = "return=representation"
         response = self.request_with_retry(
             "post",
             f"{self.settings.url}/rest/v1/rpc/alpha_hunter_commit_core_scan_v01",
-            headers=self.headers,
+            headers=rpc_headers,
             data=json.dumps(payload, separators=(",", ":")),
             timeout=self.settings.timeout_seconds,
         )
