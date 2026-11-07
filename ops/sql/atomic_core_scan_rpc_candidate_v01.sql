@@ -80,9 +80,9 @@ begin
   end if;
 
   insert into public.alpha_hunter_snapshots (
-    run_id, collected_at_utc, version, product_type, symbol_count, payload
+    run_id, collected_at_utc, version, product_type, symbol_count, error_count, payload
   )
-  select r.run_id, r.collected_at_utc, r.version, r.product_type, r.symbol_count, r.payload
+  select r.run_id, r.collected_at_utc, r.version, r.product_type, r.symbol_count, r.error_count, r.payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_snapshots, p_parent) as r
   where true
   on conflict (run_id) do update set
@@ -90,6 +90,7 @@ begin
     version = excluded.version,
     product_type = excluded.product_type,
     symbol_count = excluded.symbol_count,
+    error_count = excluded.error_count,
     payload = excluded.payload;
   get diagnostics v_parent_written = row_count;
   if v_parent_written <> pg_catalog.jsonb_array_length(p_parent) then
@@ -97,15 +98,17 @@ begin
   end if;
 
   insert into public.alpha_hunter_symbol_snapshots (
-    run_id, symbol, collected_at_utc, state, previous_state, direction, reward_risk, last_price, open_interest, funding_rate, data_integrity_score, error, payload
+    run_id, symbol, collected_at_utc, state, previous_state, state_changed, trade_permission, direction, reward_risk, last_price, open_interest, funding_rate, data_integrity_score, error, payload
   )
-  select r.run_id, r.symbol, r.collected_at_utc, r.state, r.previous_state, r.direction, r.reward_risk, r.last_price, r.open_interest, r.funding_rate, r.data_integrity_score, r.error, r.payload
+  select r.run_id, r.symbol, r.collected_at_utc, r.state, r.previous_state, r.state_changed, r.trade_permission, r.direction, r.reward_risk, r.last_price, r.open_interest, r.funding_rate, r.data_integrity_score, r.error, r.payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_symbol_snapshots, p_children) as r
   where true
   on conflict (run_id, symbol) do update set
     collected_at_utc = excluded.collected_at_utc,
     state = excluded.state,
     previous_state = excluded.previous_state,
+    state_changed = excluded.state_changed,
+    trade_permission = excluded.trade_permission,
     direction = excluded.direction,
     reward_risk = excluded.reward_risk,
     last_price = excluded.last_price,
@@ -120,9 +123,9 @@ begin
   end if;
 
   insert into public.alpha_hunter_signals (
-    signal_id, run_id, symbol, detected_at_utc, state, direction, huge_rr_score, confidence_estimate_pct, reward_risk, entry_price, stop_loss, take_profit, reference_price, payload
+    signal_id, run_id, symbol, detected_at_utc, state, direction, trade_permission, huge_rr_score, confidence_estimate_pct, reward_risk, entry_price, stop_loss, take_profit, reference_price, payload
   )
-  select r.signal_id, r.run_id, r.symbol, r.detected_at_utc, r.state, r.direction, r.huge_rr_score, r.confidence_estimate_pct, r.reward_risk, r.entry_price, r.stop_loss, r.take_profit, r.reference_price, r.payload
+  select r.signal_id, r.run_id, r.symbol, r.detected_at_utc, r.state, r.direction, r.trade_permission, r.huge_rr_score, r.confidence_estimate_pct, r.reward_risk, r.entry_price, r.stop_loss, r.take_profit, r.reference_price, r.payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_signals, p_signals) as r
   where true
   on conflict (signal_id) do update set
@@ -131,6 +134,7 @@ begin
     detected_at_utc = excluded.detected_at_utc,
     state = excluded.state,
     direction = excluded.direction,
+    trade_permission = excluded.trade_permission,
     huge_rr_score = excluded.huge_rr_score,
     confidence_estimate_pct = excluded.confidence_estimate_pct,
     reward_risk = excluded.reward_risk,
@@ -145,9 +149,9 @@ begin
   end if;
 
   insert into public.alpha_hunter_signal_features (
-    signal_id, run_id, symbol, captured_at_utc, state, direction, trend_15m, trend_1h, trend_4h, btc_regime, sector, session, weekday, hour_utc, huge_rr_score, confidence_estimate_pct, reward_risk, volume_ratio, volume_expansion, volatility_pct, compression_score, funding_rate, open_interest, open_interest_change_pct, relative_strength_btc, rsi_15m, rsi_1h, rsi_4h, distance_to_support_pct, distance_to_resistance_pct, ema_alignment_15m, ema_alignment_1h, ema_alignment_4h, liquidity_state
+    signal_id, run_id, symbol, captured_at_utc, state, direction, trade_permission, trend_15m, trend_1h, trend_4h, btc_regime, sector, session, weekday, hour_utc, huge_rr_score, confidence_estimate_pct, reward_risk, volume_ratio, volume_expansion, volatility_pct, compression_score, funding_rate, open_interest, open_interest_change_pct, relative_strength_btc, rsi_15m, rsi_1h, rsi_4h, distance_to_support_pct, distance_to_resistance_pct, ema_alignment_15m, ema_alignment_1h, ema_alignment_4h, liquidity_state, features, source_payload
   )
-  select r.signal_id, r.run_id, r.symbol, r.captured_at_utc, r.state, r.direction, r.trend_15m, r.trend_1h, r.trend_4h, r.btc_regime, r.sector, r.session, r.weekday, r.hour_utc, r.huge_rr_score, r.confidence_estimate_pct, r.reward_risk, r.volume_ratio, r.volume_expansion, r.volatility_pct, r.compression_score, r.funding_rate, r.open_interest, r.open_interest_change_pct, r.relative_strength_btc, r.rsi_15m, r.rsi_1h, r.rsi_4h, r.distance_to_support_pct, r.distance_to_resistance_pct, r.ema_alignment_15m, r.ema_alignment_1h, r.ema_alignment_4h, r.liquidity_state
+  select r.signal_id, r.run_id, r.symbol, r.captured_at_utc, r.state, r.direction, r.trade_permission, r.trend_15m, r.trend_1h, r.trend_4h, r.btc_regime, r.sector, r.session, r.weekday, r.hour_utc, r.huge_rr_score, r.confidence_estimate_pct, r.reward_risk, r.volume_ratio, r.volume_expansion, r.volatility_pct, r.compression_score, r.funding_rate, r.open_interest, r.open_interest_change_pct, r.relative_strength_btc, r.rsi_15m, r.rsi_1h, r.rsi_4h, r.distance_to_support_pct, r.distance_to_resistance_pct, r.ema_alignment_15m, r.ema_alignment_1h, r.ema_alignment_4h, r.liquidity_state, r.features, r.source_payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_signal_features, p_features) as r
   where true
   on conflict (signal_id) do update set
@@ -156,6 +160,7 @@ begin
     captured_at_utc = excluded.captured_at_utc,
     state = excluded.state,
     direction = excluded.direction,
+    trade_permission = excluded.trade_permission,
     trend_15m = excluded.trend_15m,
     trend_1h = excluded.trend_1h,
     trend_4h = excluded.trend_4h,
@@ -183,22 +188,26 @@ begin
     ema_alignment_15m = excluded.ema_alignment_15m,
     ema_alignment_1h = excluded.ema_alignment_1h,
     ema_alignment_4h = excluded.ema_alignment_4h,
-    liquidity_state = excluded.liquidity_state;
+    liquidity_state = excluded.liquidity_state,
+    features = excluded.features,
+    source_payload = excluded.source_payload;
   get diagnostics v_features_written = row_count;
   if v_features_written <> pg_catalog.jsonb_array_length(p_features) then
     raise exception 'core scan write count mismatch for alpha_hunter_signal_features';
   end if;
 
   insert into public.alpha_hunter_readiness_observations_v01 (
-    run_id, symbol, observed_at_utc, state, direction, reference_price, entry_price, stop_loss, take_profit, reward_risk, lifecycle_id, t1_id, lifecycle_stage, archetype, capital_risk_status
+    run_id, symbol, observed_at_utc, state, direction, trade_permission, v7_trade_ready, reference_price, entry_price, stop_loss, take_profit, reward_risk, lifecycle_id, t1_id, lifecycle_stage, archetype, capital_risk_status
   )
-  select r.run_id, r.symbol, r.observed_at_utc, r.state, r.direction, r.reference_price, r.entry_price, r.stop_loss, r.take_profit, r.reward_risk, r.lifecycle_id, r.t1_id, r.lifecycle_stage, r.archetype, r.capital_risk_status
+  select r.run_id, r.symbol, r.observed_at_utc, r.state, r.direction, r.trade_permission, r.v7_trade_ready, r.reference_price, r.entry_price, r.stop_loss, r.take_profit, r.reward_risk, r.lifecycle_id, r.t1_id, r.lifecycle_stage, r.archetype, r.capital_risk_status
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_readiness_observations_v01, p_readiness) as r
   where true
   on conflict (run_id, symbol) do update set
     observed_at_utc = excluded.observed_at_utc,
     state = excluded.state,
     direction = excluded.direction,
+    trade_permission = excluded.trade_permission,
+    v7_trade_ready = excluded.v7_trade_ready,
     reference_price = excluded.reference_price,
     entry_price = excluded.entry_price,
     stop_loss = excluded.stop_loss,
