@@ -124,8 +124,8 @@ def test_atomic_sql_candidate_has_non_escalating_permissions_and_required_fields
         "alpha_hunter_readiness_observations_v01",
     ):
         assert "insert into public." + table in sql.lower()
-    for field in ("trade_permission = excluded.trade_permission",
-                  "features = excluded.features",
-                  "source_payload = excluded.source_payload",
-                  "error_count = excluded.error_count"):
+    assert sql.lower().count("on conflict") >= 5
+    assert sql.lower().count("do nothing") >= 5
+    assert sql.lower().count("persisted content mismatch") >= 5
+    for field in ("trade_permission", "features", "source_payload", "error_count"):
         assert field in sql.lower()
