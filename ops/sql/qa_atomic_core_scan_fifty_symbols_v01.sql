@@ -61,6 +61,43 @@ BEGIN
   INTO p_readiness
   FROM generate_series(1,50) AS n;
 
+  -- Fail closed before any write when exactly one required feature is absent.
+  BEGIN
+    PERFORM public.alpha_hunter_commit_core_scan_v01(
+      p_parent,p_children,p_signals,p_features - 0,p_readiness
+    );
+    RAISE EXCEPTION 'QA_EXPECTED_MISSING_FEATURE_FAILURE_ABSENT';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%identity coverage invalid%' THEN RAISE; END IF;
+  END;
+
+  -- Same number of features but one references a different signal ID.
+  BEGIN
+    PERFORM public.alpha_hunter_commit_core_scan_v01(
+      p_parent,p_children,p_signals,
+      jsonb_set(p_features,'{0,signal_id}','"QA_MISSING_SIGNAL"'::jsonb),
+      p_readiness
+    );
+    RAISE EXCEPTION 'QA_EXPECTED_ORPHAN_FEATURE_FAILURE_ABSENT';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%identity coverage invalid%' THEN RAISE; END IF;
+  END;
+
+  -- Readiness cannot refer to a symbol absent from this scan's children.
+  BEGIN
+    PERFORM public.alpha_hunter_commit_core_scan_v01(
+      p_parent,p_children,p_signals,p_features,
+      jsonb_set(p_readiness,'{0,symbol}','"QA_UNKNOWN_SYMBOL"'::jsonb)
+    );
+    RAISE EXCEPTION 'QA_EXPECTED_ORPHAN_READINESS_FAILURE_ABSENT';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM NOT LIKE '%identity coverage invalid%' THEN RAISE; END IF;
+  END;
+  IF (SELECT count(*) FROM public.alpha_hunter_snapshots x WHERE x.run_id=v_run_id) <> 0 THEN
+    RAISE EXCEPTION 'QA_EVIDENCE_VALIDATION_WROTE_BEFORE_REJECTING_PAYLOAD';
+  END IF;
+  RAISE NOTICE 'PASS: incomplete/misidentified features and readiness rejected before persistence';
+
   -- A downstream trigger fails after 50 parent/child/signal writes.
   PERFORM set_config('qa.fail_feature','on',true);
   BEGIN
