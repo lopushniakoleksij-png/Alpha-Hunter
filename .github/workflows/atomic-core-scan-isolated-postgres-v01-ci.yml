@@ -72,9 +72,9 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -d isolated_taxonomy_qa -f ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql
           psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_taxonomy_qa -f ops/sql/readonly_core_scan_failure_taxonomy_v01.sql > /tmp/qa-taxonomy.txt
           test "$(grep -c '^QA_' /tmp/qa-taxonomy.txt)" -eq 3
-          grep -Eq '^QA_COMPLETE,.*,snapshot-parent-v0[.]2,CORE_PASS$' /tmp/qa-taxonomy.txt
-          grep -Eq '^QA_READY_MISSING,.*,UNVERSIONED,READINESS_MISSING$' /tmp/qa-taxonomy.txt
-          grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,PARENT_ONLY$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_COMPLETE,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,CORE_PASS$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_READY_MISSING,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,READINESS_MISSING$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
           echo "PASS: all three zero-error-count failure categories classified correctly"
       - name: Construct synthetic core schema and trigger graph
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
