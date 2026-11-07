@@ -14,7 +14,7 @@ DECLARE
   expected_event_count bigint := 251;
 BEGIN
   p_parent := jsonb_build_array(jsonb_build_object(
-    'run_id', run_id,
+    'run_id', v_run_id,
     'collected_at_utc','2026-11-07T08:00:00Z',
     'version','fifty-symbol-qa',
     'product_type','usdt-futures',
