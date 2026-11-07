@@ -3,7 +3,7 @@
 -- Does not replace full production trigger-graph / qualified review.
 DO $qa_50$
 DECLARE
-  run_id text := 'QA_FIFTY_SYMBOLS_PRIVATE';
+  v_run_id text := 'QA_FIFTY_SYMBOLS_PRIVATE';
   p_parent jsonb;
   p_children jsonb;
   p_signals jsonb;
@@ -24,7 +24,7 @@ BEGIN
   ));
 
   SELECT jsonb_agg(jsonb_build_object(
-    'run_id',run_id,'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
+    'run_id',v_run_id,'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
     'collected_at_utc','2026-11-07T08:00:00Z',
     'trade_permission',false,'state_changed',false,'state','WATCH',
     'payload',jsonb_build_object('source','synthetic','ordinal',n)
@@ -33,7 +33,7 @@ BEGIN
   FROM generate_series(1,50) AS n;
 
   SELECT jsonb_agg(jsonb_build_object(
-    'run_id',run_id,'signal_id',format('QA_SIGNAL_%s',lpad(n::text,3,'0')),
+    'run_id',v_run_id,'signal_id',format('QA_SIGNAL_%s',lpad(n::text,3,'0')),
     'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
     'detected_at_utc','2026-11-07T08:00:00Z',
     'reference_price',100 + n,
@@ -44,7 +44,7 @@ BEGIN
   FROM generate_series(1,50) AS n;
 
   SELECT jsonb_agg(jsonb_build_object(
-    'run_id',run_id,'signal_id',format('QA_SIGNAL_%s',lpad(n::text,3,'0')),
+    'run_id',v_run_id,'signal_id',format('QA_SIGNAL_%s',lpad(n::text,3,'0')),
     'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
     'captured_at_utc','2026-11-07T08:00:00Z',
     'trade_permission',false,'features',jsonb_build_object(),
@@ -54,7 +54,7 @@ BEGIN
   FROM generate_series(1,50) AS n;
 
   SELECT jsonb_agg(jsonb_build_object(
-    'run_id',run_id,'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
+    'run_id',v_run_id,'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
     'observed_at_utc','2026-11-07T08:00:00Z',
     'state','WATCH','trade_permission',false,'v7_trade_ready',false
   ) ORDER BY n)
@@ -73,12 +73,12 @@ BEGIN
   END;
   PERFORM set_config('qa.fail_feature','off',true);
 
-  IF (SELECT count(*) FROM public.alpha_hunter_snapshots x WHERE x.run_id=run_id)<>0
-      OR (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots x WHERE x.run_id=run_id)<>0
-      OR (SELECT count(*) FROM public.alpha_hunter_signals x WHERE x.run_id=run_id)<>0
-      OR (SELECT count(*) FROM public.alpha_hunter_signal_features x WHERE x.run_id=run_id)<>0
-      OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 x WHERE x.run_id=run_id)<>0
-      OR (SELECT count(*) FROM public.qa_atomic_trigger_events x WHERE x.run_id=run_id)<>0 THEN
+  IF (SELECT count(*) FROM public.alpha_hunter_snapshots x WHERE x.run_id=v_run_id)<>0
+      OR (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots x WHERE x.run_id=v_run_id)<>0
+      OR (SELECT count(*) FROM public.alpha_hunter_signals x WHERE x.run_id=v_run_id)<>0
+      OR (SELECT count(*) FROM public.alpha_hunter_signal_features x WHERE x.run_id=v_run_id)<>0
+      OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 x WHERE x.run_id=v_run_id)<>0
+      OR (SELECT count(*) FROM public.qa_atomic_trigger_events x WHERE x.run_id=v_run_id)<>0 THEN
     RAISE EXCEPTION 'QA_50_CHILD_ROLLBACK_INCOMPLETE';
   END IF;
   RAISE NOTICE 'PASS: 50-symbol downstream trigger failure rolled back every core family and side effect';
@@ -94,21 +94,21 @@ BEGIN
      OR receipt->>'readiness_count' <> '50' THEN
     RAISE EXCEPTION 'QA_50_BAD_RECEIPT: %',receipt;
   END IF;
-  IF (SELECT count(*) FROM public.alpha_hunter_snapshots x WHERE x.run_id=run_id)<>1
-     OR (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots x WHERE x.run_id=run_id)<>50
-     OR (SELECT count(*) FROM public.alpha_hunter_signals x WHERE x.run_id=run_id)<>50
-     OR (SELECT count(*) FROM public.alpha_hunter_signal_features x WHERE x.run_id=run_id)<>50
-     OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 x WHERE x.run_id=run_id)<>50
-     OR (SELECT count(*) FROM public.qa_atomic_trigger_events x WHERE x.run_id=run_id)<>expected_event_count THEN
+  IF (SELECT count(*) FROM public.alpha_hunter_snapshots x WHERE x.run_id=v_run_id)<>1
+     OR (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots x WHERE x.run_id=v_run_id)<>50
+     OR (SELECT count(*) FROM public.alpha_hunter_signals x WHERE x.run_id=v_run_id)<>50
+     OR (SELECT count(*) FROM public.alpha_hunter_signal_features x WHERE x.run_id=v_run_id)<>50
+     OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 x WHERE x.run_id=v_run_id)<>50
+     OR (SELECT count(*) FROM public.qa_atomic_trigger_events x WHERE x.run_id=v_run_id)<>expected_event_count THEN
     RAISE EXCEPTION 'QA_50_PERSISTENCE_NOT_COMPLETE';
   END IF;
   RAISE NOTICE 'PASS: 50-symbol scan saved parent, 50 symbols, 50 signals, 50 features and 50 readiness rows';
 
-  SELECT count(*) INTO events_before FROM public.qa_atomic_trigger_events x WHERE x.run_id=run_id;
+  SELECT count(*) INTO events_before FROM public.qa_atomic_trigger_events x WHERE x.run_id=v_run_id;
   receipt := public.alpha_hunter_commit_core_scan_v01(
     p_parent,p_children,p_signals,p_features,p_readiness
   );
-  IF (SELECT count(*) FROM public.qa_atomic_trigger_events x WHERE x.run_id=run_id) <> events_before
+  IF (SELECT count(*) FROM public.qa_atomic_trigger_events x WHERE x.run_id=v_run_id) <> events_before
       OR receipt->>'symbol_count'<>'50' THEN
     RAISE EXCEPTION 'QA_50_DUPLICATE_TRIGGER_EVENTS_ON_RETRY';
   END IF;
