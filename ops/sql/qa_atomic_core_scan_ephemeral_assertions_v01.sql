@@ -1,5 +1,21 @@
 -- Isolated PostgreSQL 17 acceptance fixture. DO NOT RUN IN PRODUCTION.
 -- Uses synthetic data, simulated triggers and zero external services.
+-- Final-stage fault injection: reproduce a readiness insert failing only after
+-- the earlier four core evidence families and their triggers have executed.
+-- This is local synthetic QA only, not a change to the production schema.
+create or replace function public.qa_fail_readiness_when_requested()
+returns trigger language plpgsql as $qa_readiness$
+begin
+  if current_setting('qa.fail_readiness', true) = 'on' then
+    raise exception 'INJECTED_READINESS_TRIGGER_FAILURE';
+  end if;
+  return new;
+end;
+$qa_readiness$;
+create trigger qa_atomic_readiness_failure_before
+before insert on public.alpha_hunter_readiness_observations_v01
+for each row execute function public.qa_fail_readiness_when_requested();
+
 create temporary table qa_scan_payload (
   parent jsonb not null, children jsonb not null, signals jsonb not null,
   features jsonb not null, readiness jsonb not null
@@ -24,6 +40,28 @@ declare
   label text;
 begin
   select * into p from qa_scan_payload limit 1;
+  -- Fail at the LAST core family, after parent, symbols, signals and features.
+  -- The entire transaction, including trigger-generated events, must roll back.
+  perform pg_catalog.set_config('qa.fail_readiness','on',true);
+  begin
+    perform public.alpha_hunter_commit_core_scan_v01(
+      p.parent,p.children,p.signals,p.features,p.readiness
+    );
+    raise exception 'EXPECTED_INJECTED_READINESS_FAILURE_MISSING';
+  exception when others then
+    if sqlerrm not like '%INJECTED_READINESS_TRIGGER_FAILURE%' then raise; end if;
+  end;
+  perform pg_catalog.set_config('qa.fail_readiness','off',true);
+  if (select count(*) from public.alpha_hunter_snapshots)<>0
+     or (select count(*) from public.alpha_hunter_symbol_snapshots)<>0
+     or (select count(*) from public.alpha_hunter_signals)<>0
+     or (select count(*) from public.alpha_hunter_signal_features)<>0
+     or (select count(*) from public.alpha_hunter_readiness_observations_v01)<>0
+     or (select count(*) from public.qa_atomic_trigger_events)<>0 then
+    raise exception 'ROLLBACK_FAILURE: last-stage readiness failure left partial evidence';
+  end if;
+  raise notice 'PASS: final readiness failure rolled back parent, children, and trigger side effects';
+
   -- Fail second child after the parent and first child have inserted.
   perform pg_catalog.set_config('qa.fail_symbol','on',true);
   begin
