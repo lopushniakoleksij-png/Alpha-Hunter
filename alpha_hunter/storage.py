@@ -58,6 +58,7 @@ class SupabaseConfig:
     timeout_seconds: int = 15
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
+    atomic_core_scan_writes: bool = False  # Explicit isolated QA opt-in only.
 
     @classmethod
     def from_environment(cls, config: dict[str, Any]) -> "SupabaseConfig | None":
@@ -83,6 +84,7 @@ class SupabaseConfig:
                 0.0,
                 float(storage.get("retry_backoff_seconds", 1.0)),
             ),
+            atomic_core_scan_writes=storage.get("atomic_core_scan_writes") is True,
         )
 
 
@@ -631,6 +633,64 @@ class SupabaseStorage:
                 f"stage attempts: {summary}"
             )
 
+    def _commit_core_scan_atomic(
+        self,
+        parent: list[dict[str, Any]],
+        children: list[dict[str, Any]],
+        signal_rows: list[dict[str, Any]],
+        feature_rows: list[dict[str, Any]],
+        readiness_rows: list[dict[str, Any]],
+    ) -> None:
+        """Opt-in atomic core-evidence RPC; no fallback to partial REST writes.
+
+        The companion SQL function MUST be independently validated and installed
+        in a private isolated database before this flag can be enabled.
+        This commit never enables the flag for the production scanner.
+        """
+        tables = {
+            "parent_count": len(parent),
+            "symbol_count": len(children),
+            "signal_count": len(signal_rows),
+            "feature_count": len(feature_rows),
+            "readiness_count": len(readiness_rows),
+        }
+        if len(parent) != 1 or not parent[0].get("run_id"):
+            raise SupabaseStorageError("Atomic core scan requires one identified parent")
+        payload = {
+            "p_parent": parent,
+            "p_children": children,
+            "p_signals": signal_rows,
+            "p_features": feature_rows,
+            "p_readiness": readiness_rows,
+        }
+        response = self.request_with_retry(
+            "post",
+            f"{self.settings.url}/rest/v1/rpc/alpha_hunter_commit_core_scan_v01",
+            headers=self.headers,
+            data=json.dumps(payload, separators=(",", ":")),
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201}:
+            raise SupabaseStorageError(
+                "Supabase atomic core scan RPC failed: "
+                f"HTTP {response.status_code}: {response.text[:500]}"
+            )
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise SupabaseStorageError(
+                "Supabase atomic core scan RPC returned invalid JSON"
+            ) from exc
+        if (
+            not isinstance(result, dict)
+            or result.get("committed") is not True
+            or result.get("run_id") != parent[0]["run_id"]
+            or any(result.get(name) != count for name, count in tables.items())
+        ):
+            raise SupabaseStorageError(
+                "Supabase atomic core scan RPC confirmation did not match payload"
+            )
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
@@ -744,19 +804,27 @@ class SupabaseStorage:
             canonical["signal_id"] = signal_id
             canonical_feature_rows.append(canonical)
 
-        self._upsert(self.settings.snapshot_table, parent, "run_id")
-        self._upsert(self.settings.symbol_table, children, "run_id,symbol")
-        self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
-        self._upsert(
-            "alpha_hunter_signal_features",
-            canonical_feature_rows,
-            "signal_id",
-        )
-        self._upsert(
-            self.settings.readiness_table,
-            readiness_rows,
-            "run_id,symbol",
-        )
+        if self.settings.atomic_core_scan_writes:
+            # All five core evidence families are committed in one SQL transaction.
+            # No legacy fallback: a failed RPC must never produce partial writes.
+            self._commit_core_scan_atomic(
+                parent, children, signal_rows, canonical_feature_rows,
+                readiness_rows,
+            )
+        else:
+            self._upsert(self.settings.snapshot_table, parent, "run_id")
+            self._upsert(self.settings.symbol_table, children, "run_id,symbol")
+            self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
+            self._upsert(
+                "alpha_hunter_signal_features",
+                canonical_feature_rows,
+                "signal_id",
+            )
+            self._upsert(
+                self.settings.readiness_table,
+                readiness_rows,
+                "run_id,symbol",
+            )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
         has_paper_authority = any(
             decision.get("paper_authority") is True
