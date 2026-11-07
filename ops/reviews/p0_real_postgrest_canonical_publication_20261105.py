@@ -1148,6 +1148,54 @@ def test_integrated_atomic_payoff_index(dsn, conn, report):
         SELECT count(*) FROM p0_bench.payoff_receipts WHERE run_id=%s
     """,(failing,)).fetchone()[0] == 0
 
+    # Inject SQLSTATE 57014 from the nested payoff trigger on strategy 5,
+    # after four preceding payoff receipts have been inserted in the SAME RPC.
+    # The failed transaction must leave no canonical or nested evidence.
+    nested_run = "bad-payoff-nested-atomic"
+    nested_args = arguments(nested_run)
+    nested_failure = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+        json=nested_args, timeout=15,
+    )
+    assert nested_failure.status_code >= 400, (
+        nested_failure.status_code, nested_failure.text[:320]
+    )
+    assert "57014" in nested_failure.text, nested_failure.text[:500]
+    assert_counts(conn, nested_run, parent=0, child=0, signal=0,
+                  feature=0, readiness=0, obs=0)
+    assert conn.execute("""
+        SELECT count(*) FROM p0_bench.payoff_receipts WHERE run_id=%s
+    """, (nested_run,)).fetchone()[0] == 0
+
+    # Remove ONLY the synthetic switch and retry the identical run identity.
+    # No prior receipts may contaminate this successful replay.
+    conn.execute(
+        "DELETE FROM p0_bench.payoff_failure_switch WHERE run_id=%s",
+        (nested_run,),
+    )
+    retry = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+        json=nested_args, timeout=15,
+    )
+    assert retry.status_code == 200, (retry.status_code, retry.text[:320])
+    assert_counts(conn, nested_run, parent=1, child=61, signal=61,
+                  feature=61, readiness=61, obs=610)
+    assert receipt_check(nested_run) == identity
+    retry_duplicate = requests.post(
+        BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+        json=nested_args, timeout=15,
+    )
+    assert retry_duplicate.status_code >= 400, retry_duplicate.text[:320]
+    assert receipt_check(nested_run) == identity
+    report["nested_payoff_failure_rollback_retry"] = {
+        "injected_sqlstate": "57014",
+        "prior_nested_receipts_in_failed_transaction": 4,
+        "durable_rows_after_failure": 0,
+        "retry_receipts": 610,
+        "duplicate_retry_rejected": True,
+        "production_trigger_graph_verified": False,
+    }
+
     partial_ms,partial_identity,partial_args = publish(
         "integrated-missing-price", missing_price=True
     )
