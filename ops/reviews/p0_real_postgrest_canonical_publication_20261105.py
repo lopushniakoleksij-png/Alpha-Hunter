@@ -698,6 +698,8 @@ def test_atomic_source_dependent_stage_counts(conn, report):
         ("one_missing_price", "parent_symbol_mismatch"),
         ("one_missing_price", "swapped_feature_ids"),
         ("one_missing_price", "nested_trade_permission"),
+        ("one_missing_price", "cross_run_child"),
+        ("one_missing_price", "cross_run_readiness"),
     ]:
         run = f"atomic-invalid-{corruption}"
         args = capture(run, mode)
@@ -720,6 +722,10 @@ def test_atomic_source_dependent_stage_counts(conn, report):
             )
         elif corruption == "nested_trade_permission":
             args["p_children"][0]["payload"]["trade_permission"] = True
+        elif corruption == "cross_run_child":
+            args["p_children"][0]["run_id"] = "other-synthetic-run"
+        elif corruption == "cross_run_readiness":
+            args["p_readiness"][0]["run_id"] = "other-synthetic-run"
         response = requests.post(
             BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
             json=args, timeout=15,
@@ -731,7 +737,8 @@ def test_atomic_source_dependent_stage_counts(conn, report):
     report["atomic_source_dependent_stage_counts"] = {
         "writer_actual_cardinality_passed": passed,
         "empty_signal_feature_lists": True,
-        "seven_corrupted_publications_rejected_without_durable_rows": True,
+        "nine_corrupted_publications_rejected_without_durable_rows": True,
+        "cross_run_child_and_readiness_identity_rejected": True,
         "source_errors_retained_without_scientific_quality_claim": True,
         "production_trigger_equivalence": False,
     }
