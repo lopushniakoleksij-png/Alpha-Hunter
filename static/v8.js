@@ -76,11 +76,26 @@
     if (value !== undefined && value !== null) el.textContent = String(value);
     return el;
   }
-  function statusLabel(raw) { return raw || "UNAVAILABLE"; }
+  function codeLabel(raw) {
+    if (!raw || raw === "—") return "Unavailable";
+    const known = {
+      SHADOW_CANDIDATE: "Shadow candidate",
+      WATCH: "Watch",
+      PAPER_SIGNAL_ONLY: "Paper signal only",
+      PLACE_LIMIT_PAPER: "Limit setup · Paper only",
+      WAIT_FOR_TRIGGER: "Wait for trigger",
+      SHADOW_PLACE_LIMIT: "Shadow limit setup",
+      SHADOW_EXECUTE_NOW: "Shadow ready candidate",
+      BLOCKED: "Blocked",
+    };
+    return known[raw] || String(raw).replace(/_/g, " ").toLowerCase()
+      .replace(/^./, c => c.toUpperCase());
+  }
+  function statusLabel(raw) { return codeLabel(raw); }
   function describeGate(rec) {
     if (rec.status === "WATCH") return "WATCH — strategy setup only, not executable";
     if (rec.status === "SHADOW_CANDIDATE") return "Shadow candidate — final paper gate still applies";
-    return "Final paper gate: " + (rec.gate || "UNKNOWN");
+    return "Final paper gate: " + codeLabel(rec.gate);
   }
   function formatDisplayPrice(raw) {
     if (!raw || raw === "—") return "—";
@@ -92,10 +107,15 @@
       maximumSignificantDigits: 7, useGrouping: n >= 1000,
     }).format(n);
   }
-  function detailField(label, raw, showExact = false) {
+  function detailField(label, raw, showExact = false, code = false) {
     const wrap = make("div", "v8-detail-field");
     const name = make("dt", "", label);
-    const desc = make("dd", "", showExact ? formatDisplayPrice(raw) : (raw || "—"));
+    const desc = make("dd", "", showExact ? formatDisplayPrice(raw)
+      : (code ? codeLabel(raw) : (raw || "—")));
+    if (code && raw) {
+      desc.title = "Original research code: " + raw;
+      desc.setAttribute("data-source-code", String(raw));
+    }
     if (showExact && raw && raw !== "—") {
       const exact = make("span", "v8-exact", "Exact: " + raw);
       desc.appendChild(exact);
@@ -112,11 +132,19 @@
       detailField("Target · hypothetical", rec.target, true),
       detailField("Raw R:R (uncalibrated)", rec.rr),
       detailField("Raw shadow score (not probability)", rec.score),
-      detailField("Final paper gate", rec.gate),
-      detailField("Raw setup intent", rec.intent),
+      detailField("Final paper gate", rec.gate, false, true),
+      detailField("Raw setup intent", rec.intent, false, true),
       detailField("Strategy persistence", rec.persistence + " · " + rec.scans + " scans"),
     );
     box.append(grid);
+    const sourceCodes = make("details", "v8-source-codes");
+    sourceCodes.append(make("summary", "", "Original research codes"));
+    const codes = make("p", "v8-archive-notice",
+      "Status: " + (rec.status || "UNKNOWN") +
+      " · Final paper gate: " + (rec.gate || "UNKNOWN") +
+      " · Raw setup intent: " + (rec.intent || "UNKNOWN"));
+    sourceCodes.append(codes);
+    box.append(sourceCodes);
     const warning = make("p", "v8-detail-warning",
       (rec.blocker || describeGate(rec)) +
       " · This row is research-only; no exchange order authority is granted.");
@@ -202,7 +230,10 @@
     const row = make("div", "v8-card-heading");
     const info = make("div", "");
     info.append(make("div", "v8-card-pair", rec.symbol), make("div", "v8-card-strategy", rec.strategy));
-    row.append(info, make("span", "v8-card-status", statusLabel(rec.status)));
+    const status = make("span", "v8-card-status", statusLabel(rec.status));
+    status.setAttribute("data-source-code", rec.status || "UNKNOWN");
+    status.title = "Original research status: " + (rec.status || "UNKNOWN");
+    row.append(info, status);
     const metrics = make("div", "v8-card-metrics");
     metrics.append(
       make("span", "", rec.side || "NO SIDE"),
