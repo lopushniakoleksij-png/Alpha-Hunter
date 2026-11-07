@@ -1,0 +1,59 @@
+name: Atomic Core Scan Isolated PostgreSQL QA
+
+on:
+  push:
+    branches:
+      - fix/supabase-write-timeout-qa
+    paths:
+      - 'ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
+      - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
+      - 'tests/test_atomic_core_scan_rpc_candidate.py'
+      - '.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-sql-rollback:
+    name: Ephemeral PostgreSQL 17 rollback and idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated_test_password
+          POSTGRES_DB: isolated_atomic_scan_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d isolated_atomic_scan_qa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: isolated_test_password
+      PGDATABASE: isolated_atomic_scan_qa
+    steps:
+      - name: Check out isolated QA branch
+        uses: actions/checkout@v4
+      - name: Guard production branch and verify client
+        run: |
+          test "${GITHUB_REF_NAME}" = "fix/supabase-write-timeout-qa"
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+      - name: Construct synthetic core schema and trigger graph
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
+      - name: Install candidate function in ephemeral test database ONLY
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
+      - name: Verify rollback, replay, completeness, and restricted privileges
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
