@@ -91,6 +91,12 @@ run_private_pg pg_dumpall \
 chmod 600 "$DEST/production_roles_no_passwords.sql"
 
 ( cd "$DEST" && sha256sum production_schema.dump production_roles_no_passwords.sql > sha256-local.txt )
+# Offline archive inspection only; do not print SQL function bodies or object names.
+docker run --rm --network none --user "$(id -u):$(id -g)" \
+  -v "$DEST:/qa:ro" postgres:17 \
+  pg_restore --list /qa/production_schema.dump |
+  awk '/ FUNCTION / {f++} / TRIGGER / {t++} / INDEX / {i++} / ACL / {a++}
+       END {printf "Archive inventory: functions=%d triggers=%d indexes=%d ACL entries=%d\\n", f,t,i,a}'
 printf 'SUCCESS: private schema archive and no-password role file saved.\n'
 printf 'Private folder: %s\n' "$DEST"
 printf 'Archive size: %s bytes\n' "$(wc -c < "$DEST/production_schema.dump")"
