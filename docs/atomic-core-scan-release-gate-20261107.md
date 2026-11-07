@@ -39,6 +39,34 @@ scanner, all live-trading prohibitions and the £0 spending limit.
 - No further expensive live EXPLAIN should be performed without a scoped
   workload plan. No production DDL or scanner changes have occurred.
 
+## Latest verified acceptance evidence (2026-11-07)
+
+- A **read-only five-family acceptance query** now exists at
+  `ops/sql/readonly_core_scan_persistence_gate_v01.sql`. It validates
+  parent-declared symbol counts, all five core evidence families and two
+  identity-lineage checks; it does **not** certify downstream paper lifecycle.
+- Executing this query against production's 12 most recent inspected scans:
+  **5 CORE_PASS / 7 CORE_FAIL**. Most recent checked 09:42 UTC is CORE_PASS
+  (48/48 all five families); 09:35 UTC is CORE_FAIL (26/26 readiness 0/26).
+  Old incomplete scans must remain immutable and visible.
+- A 50-symbol isolated candidate test passed: all 50 rows in each child
+  family, rollback of all five families on injected downstream error,
+  replay with no repeated trigger side effects; malformed feature/readiness
+  identity payloads are rejected before any writes.
+- An additional synthetic `service_role` test passed with RLS enabled,
+  and denies RPC EXECUTE to `anon` and `authenticated`.
+- New isolated 50-query percentile hot-path benchmark (CI run
+  `42362122063`, 495k synthetic outcomes) measured 1003.39 ms total
+  baseline versus 511.39 ms with candidate index; candidate p95 query
+  12.72 ms versus baseline 24.28 ms. Matched result counts identical.
+  **This is not a production latency claim or full trigger benchmark.**
+- CI at commit `7870086b131d56f048ad43ddf2affb84349ee4bf`
+  succeeded: 37 Python tests, synthetic database integrity, RLS
+  role simulation, and repeated 50-query latency test.
+- Independent DBA/security review and faithful full-graph performance
+  reproduction remain unsatisfied; production function and candidate
+  index are still absent. No production write/deploy was performed.
+
 ## Engineering candidate
 
 - `alpha_hunter/storage.py` includes an opt-in RPC client path.
