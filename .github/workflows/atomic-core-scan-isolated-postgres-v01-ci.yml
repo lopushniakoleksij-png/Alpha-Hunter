@@ -65,50 +65,17 @@ jobs:
           . .venv/bin/activate
           python -m pip install -q -r requirements.txt pytest
           python -m pytest -q tests/test_storage.py tests/test_canonical_universe_scan_persistence_v02.py tests/test_scan_partial_persistence_characterization.py tests/test_atomic_core_scan_rpc_candidate.py
-      - name: Classify synthetic parent-only and missing-readiness scans (read-only taxonomy)
+      - name: Verify read-only scan failure taxonomy in isolated PostgreSQL 17
         run: |
           set -euo pipefail
           createdb isolated_taxonomy_qa
           psql -X -v ON_ERROR_STOP=1 -d isolated_taxonomy_qa -f ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql
-          psql -X -v ON_ERROR_STOP=1 -At -F '|' -d isolated_taxonomy_qa -f ops/sql/readonly_core_scan_failure_taxonomy_v01.sql > /tmp/qa-taxonomy.txt
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_taxonomy_qa -f ops/sql/readonly_core_scan_failure_taxonomy_v01.sql > /tmp/qa-taxonomy.txt
           test "$(grep -c '^QA_' /tmp/qa-taxonomy.txt)" -eq 3
-          grep -q '^QA_COMPLETE|.*|CORE_PASS
-      - name: Install candidate function in ephemeral test database ONLY
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
-      - name: Verify rollback, replay, completeness, and restricted privileges
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
-      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
-      - name: Validate service_role RPC invocation under RLS with denied public roles
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
-      - name: Compare payoff percentile query against 495k synthetic outcomes
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
- /tmp/qa-taxonomy.txt
-          grep -q '^QA_READY_MISSING|.*|READINESS_MISSING
-      - name: Install candidate function in ephemeral test database ONLY
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
-      - name: Verify rollback, replay, completeness, and restricted privileges
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
-      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
-      - name: Validate service_role RPC invocation under RLS with denied public roles
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
-      - name: Compare payoff percentile query against 495k synthetic outcomes
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
- /tmp/qa-taxonomy.txt
-          grep -q '^QA_PARENT_ONLY|.*|PARENT_ONLY
-      - name: Install candidate function in ephemeral test database ONLY
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
-      - name: Verify rollback, replay, completeness, and restricted privileges
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
-      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
-      - name: Validate service_role RPC invocation under RLS with denied public roles
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
-      - name: Compare payoff percentile query against 495k synthetic outcomes
-        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
- /tmp/qa-taxonomy.txt
-          echo "PASS: all three zero-error-count scan categories classified correctly"
+          grep -Eq '^QA_COMPLETE,.*,CORE_PASS$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_READY_MISSING,.*,READINESS_MISSING$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_PARENT_ONLY,.*,PARENT_ONLY$' /tmp/qa-taxonomy.txt
+          echo "PASS: all three zero-error-count failure categories classified correctly"
       - name: Construct synthetic core schema and trigger graph
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
       - name: Install candidate function in ephemeral test database ONLY
