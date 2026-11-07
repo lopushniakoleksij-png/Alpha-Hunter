@@ -1,7 +1,7 @@
 -- ALPHA HUNTER: isolated candidate, not deployed and not production-approved.
 -- Prepared 2026-11-07. Intended for a cloned, private PostgreSQL/Supabase database.
 -- Five core evidence tables written inside ONE PostgREST RPC transaction.
--- Immutable conflict handling prevents repeated UPDATE trigger execution on retries.
+-- Advisory per-run lock plus anti-join prevents BEFORE INSERT and UPDATE trigger replay on retries.
 -- Exact typed row validation aborts if a duplicate identity has conflicting evidence.
 -- PostgreSQL rolls back all writes and trigger side-effects if ANY statement raises.
 -- Paper lifecycle and auxiliary writes are NOT part of this RPC and require a separate
@@ -81,12 +81,22 @@ begin
       raise exception 'duplicate or missing scan symbol/signal identity';
   end if;
 
+  -- Serialize retries and overlapping submissions of the SAME scan identity.
+  -- Paired with NOT EXISTS, this avoids firing BEFORE INSERT enrichment
+  -- triggers for already-committed rows on retries.
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(v_run_id, 0)
+  );
+
   insert into public.alpha_hunter_snapshots (
     run_id, collected_at_utc, version, product_type, symbol_count, error_count, payload
   )
   select r.run_id, r.collected_at_utc, r.version, r.product_type, r.symbol_count, r.error_count, r.payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_snapshots, p_parent) as r
-  where true
+  where not exists (
+    select 1 from public.alpha_hunter_snapshots as present
+    where present.run_id=r.run_id
+  )
   on conflict (run_id) do nothing;
   -- Verify the persisted record, including payload, not just its identity.
   -- Retries must not fire UPDATE triggers on a previously committed scan.
@@ -103,7 +113,10 @@ begin
   )
   select r.run_id, r.symbol, r.collected_at_utc, r.state, r.previous_state, r.state_changed, r.trade_permission, r.direction, r.reward_risk, r.last_price, r.open_interest, r.funding_rate, r.data_integrity_score, r.error, r.payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_symbol_snapshots, p_children) as r
-  where true
+  where not exists (
+    select 1 from public.alpha_hunter_symbol_snapshots as present
+    where present.run_id=r.run_id and present.symbol=r.symbol
+  )
   on conflict (run_id, symbol) do nothing;
   -- Verify the persisted record, including payload, not just its identity.
   -- Retries must not fire UPDATE triggers on a previously committed scan.
@@ -120,7 +133,10 @@ begin
   )
   select r.signal_id, r.run_id, r.symbol, r.detected_at_utc, r.state, r.direction, r.trade_permission, r.huge_rr_score, r.confidence_estimate_pct, r.reward_risk, r.entry_price, r.stop_loss, r.take_profit, r.reference_price, r.payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_signals, p_signals) as r
-  where true
+  where not exists (
+    select 1 from public.alpha_hunter_signals as present
+    where present.signal_id=r.signal_id
+  )
   on conflict (signal_id) do nothing;
   -- Verify the persisted record, including payload, not just its identity.
   -- Retries must not fire UPDATE triggers on a previously committed scan.
@@ -137,14 +153,32 @@ begin
   )
   select r.signal_id, r.run_id, r.symbol, r.captured_at_utc, r.state, r.direction, r.trade_permission, r.trend_15m, r.trend_1h, r.trend_4h, r.btc_regime, r.sector, r.session, r.weekday, r.hour_utc, r.huge_rr_score, r.confidence_estimate_pct, r.reward_risk, r.volume_ratio, r.volume_expansion, r.volatility_pct, r.compression_score, r.funding_rate, r.open_interest, r.open_interest_change_pct, r.relative_strength_btc, r.rsi_15m, r.rsi_1h, r.rsi_4h, r.distance_to_support_pct, r.distance_to_resistance_pct, r.ema_alignment_15m, r.ema_alignment_1h, r.ema_alignment_4h, r.liquidity_state, r.features, r.source_payload
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_signal_features, p_features) as r
-  where true
+  where not exists (
+    select 1 from public.alpha_hunter_signal_features as present
+    where present.signal_id=r.signal_id
+  )
   on conflict (signal_id) do nothing;
   -- Verify the persisted record, including payload, not just its identity.
   -- Retries must not fire UPDATE triggers on a previously committed scan.
   select count(*) into v_features_written
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_signal_features, p_features) as r
   join public.alpha_hunter_signal_features as t on t.signal_id = r.signal_id
-  where (pg_catalog.to_jsonb(t) - 'created_at') = (pg_catalog.to_jsonb(r) - 'created_at');
+  -- This table has a production BEFORE INSERT enrichment trigger that can
+  -- populate geometry context keys in source_payload. All other fields must
+  -- remain byte-for-byte semantically identical; only allowlisted enrichment
+  -- keys may change, and all non-enrichment JSON must be preserved.
+  where (pg_catalog.to_jsonb(t) - 'created_at' - 'source_payload') =
+        (pg_catalog.to_jsonb(r) - 'created_at' - 'source_payload')
+    and (
+      t.source_payload - 'timeframes' - '_geometry_context_version' - '_geometry_context_source'
+    ) = (
+      r.source_payload - 'timeframes' - '_geometry_context_version' - '_geometry_context_source'
+    )
+    and (
+      coalesce(pg_catalog.jsonb_typeof(r.source_payload->'timeframes'), '') <> 'object'
+      or r.source_payload->'timeframes' = '{}'::jsonb
+      or t.source_payload->'timeframes' = r.source_payload->'timeframes'
+    );
   if v_features_written <> pg_catalog.jsonb_array_length(p_features) then
     raise exception 'core scan persisted content mismatch for alpha_hunter_signal_features';
   end if;
@@ -154,7 +188,10 @@ begin
   )
   select r.run_id, r.symbol, r.observed_at_utc, r.state, r.direction, r.trade_permission, r.v7_trade_ready, r.reference_price, r.entry_price, r.stop_loss, r.take_profit, r.reward_risk, r.lifecycle_id, r.t1_id, r.lifecycle_stage, r.archetype, r.capital_risk_status
   from pg_catalog.jsonb_populate_recordset(null::public.alpha_hunter_readiness_observations_v01, p_readiness) as r
-  where true
+  where not exists (
+    select 1 from public.alpha_hunter_readiness_observations_v01 as present
+    where present.run_id=r.run_id and present.symbol=r.symbol
+  )
   on conflict (run_id, symbol) do nothing;
   -- Verify the persisted record, including payload, not just its identity.
   -- Retries must not fire UPDATE triggers on a previously committed scan.
