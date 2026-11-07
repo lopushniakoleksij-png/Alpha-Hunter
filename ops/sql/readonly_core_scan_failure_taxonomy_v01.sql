@@ -3,11 +3,15 @@
 -- trigger execution, historical repair, row mutation or trading action.
 -- PARENT_ONLY and READINESS_MISSING are distinct incomplete-write signatures.
 -- Scan error_count counts upstream symbol errors, NOT database write failures.
+-- A source claim from JSON is NOT authentication; independently compare
+-- authenticated API logs and approved runtime deployment identity.
 -- 24 recent parents; child lookups are scoped by run_id (verify indexed paths).
 -- This validates only core families, NOT downstream paper-trading evidence.
 with recent as (
     select run_id, collected_at_utc, symbol_count, error_count,
-           payload->>'_storage_contract' as parent_storage_contract
+           payload->>'_storage_contract' as parent_storage_contract,
+           nullif(payload->'validation_identity'->>'run_source','') as declared_run_source,
+           nullif(payload->'validation_identity'->>'runtime_role','') as declared_runtime_role
     from public.alpha_hunter_snapshots
     order by collected_at_utc desc limit 24
 ),
@@ -62,6 +66,13 @@ select run_id, collected_at_utc, symbol_count, error_count,
        symbol_rows, signal_rows, feature_rows, readiness_rows,
        orphan_features, orphan_readiness,
        coalesce(parent_storage_contract,'UNVERSIONED') as parent_storage_contract,
+       coalesce(declared_run_source,'UNATTRIBUTED') as declared_run_source,
+       case when parent_storage_contract = 'snapshot-parent-v0.2'
+                  and declared_run_source is not null
+                  and declared_runtime_role is not null
+            then 'SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED'
+            else 'MISSING_SOURCE_CLAIM'
+       end as source_provenance_status,
        failure_category
 from classified
 order by collected_at_utc desc;
