@@ -19,6 +19,26 @@ scanner, all live-trading prohibitions and the £0 spending limit.
   eight relevant tables. The isolated test fixture implements a *synthetic
   subset*, not the actual full database functions or side-effect graph.
 
+## New direct production baseline (read-only, 2026-11-07)
+
+- `EXPLAIN (ANALYZE, BUFFERS)` on the 24-hour S3/LONG payoff-percentile
+  SELECT (cutoff 2026-11-07 09:00 UTC) took **8018.312 ms** on the
+  unmodified production database. This is one observed execution, not p95.
+- The plan used `idx_ah_strategy_outcome_24h_time_episode_v02`,
+  returned **160 rows** after filtering out **123,706 rows**, and
+  reported 17,288 shared block reads. The full nested trigger can evaluate
+  this query multiple times per scan, contributing to statement timeouts.
+- The candidate partial index has NOT been installed or benchmarked on live
+  data. Its 495k-row synthetic test is only directional evidence.
+- PostgREST write receipts were corrected in
+  `alpha_hunter/storage.py`: the atomic RPC now explicitly uses
+  `Prefer: return=representation` instead of inherited `return=minimal`.
+  The added regression test ensures a valid count receipt is mandatory.
+- Isolated CI run 42360532943: 37 Python tests passed, PostgreSQL synthetic
+  rollback/replay checks passed, percentile comparison passed.
+- No further expensive live EXPLAIN should be performed without a scoped
+  workload plan. No production DDL or scanner changes have occurred.
+
 ## Engineering candidate
 
 - `alpha_hunter/storage.py` includes an opt-in RPC client path.
