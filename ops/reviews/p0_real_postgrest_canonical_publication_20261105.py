@@ -280,6 +280,32 @@ def create_schema(dsn):
         conn.execute("""CREATE TRIGGER p0_feature_fail BEFORE INSERT OR UPDATE
         ON public.alpha_hunter_signal_features FOR EACH ROW
         EXECUTE FUNCTION public.p0_test_feature_trigger()""")
+        # Final-stage fault injections: one failing SIGNAL/READINESS row
+        # must roll back every earlier stage and all nested observation writes.
+        conn.execute("""CREATE FUNCTION public.p0_test_signal_trigger() RETURNS trigger
+        LANGUAGE plpgsql AS $p0_signal$
+        BEGIN
+          IF NEW.run_id = 'bad-signal-atomic' THEN
+            RAISE EXCEPTION 'synthetic signal-stage cancellation'
+              USING ERRCODE='57014';
+          END IF;
+          RETURN NEW;
+        END $p0_signal$""")
+        conn.execute("""CREATE TRIGGER p0_signal_fail BEFORE INSERT
+        ON public.alpha_hunter_signals FOR EACH ROW
+        EXECUTE FUNCTION public.p0_test_signal_trigger()""")
+        conn.execute("""CREATE FUNCTION public.p0_test_readiness_trigger() RETURNS trigger
+        LANGUAGE plpgsql AS $p0_readiness$
+        BEGIN
+          IF NEW.run_id = 'bad-readiness-atomic' THEN
+            RAISE EXCEPTION 'synthetic final readiness-stage cancellation'
+              USING ERRCODE='57014';
+          END IF;
+          RETURN NEW;
+        END $p0_readiness$""")
+        conn.execute("""CREATE TRIGGER p0_readiness_fail BEFORE INSERT
+        ON public.alpha_hunter_readiness_observations_v01 FOR EACH ROW
+        EXECUTE FUNCTION public.p0_test_readiness_trigger()""")
         for table in TABLES:
             conn.execute(sql.SQL("ALTER TABLE public.{} ENABLE ROW LEVEL SECURITY"
                      ).format(sql.Identifier(table)))
@@ -506,6 +532,30 @@ def test_atomic_five_stage_rpc(conn, report):
         ("success-atomic",),
     ).fetchone()[0]
     assert payload.get("_canonical_publication_state") == "VERIFIED"
+    # Read back the exact synthetic identities across all four child
+    # stages, not only their matching counts; duplicate/wrong-join evidence
+    # must never be classified as a complete scan.
+    joined = conn.execute("""
+        SELECT c.symbol,s.signal_id,f.signal_id,r.symbol
+        FROM public.alpha_hunter_symbol_snapshots c
+        LEFT JOIN public.alpha_hunter_signals s
+          ON s.run_id=c.run_id AND s.symbol=c.symbol
+        LEFT JOIN public.alpha_hunter_signal_features f
+          ON f.run_id=c.run_id AND f.symbol=c.symbol
+        LEFT JOIN public.alpha_hunter_readiness_observations_v01 r
+          ON r.run_id=c.run_id AND r.symbol=c.symbol
+        WHERE c.run_id=%s ORDER BY c.symbol
+    """, ("success-atomic",)).fetchall()
+    expected_symbols = {f"TEST{i:03d}USDT" for i in range(61)}
+    assert len(joined) == 61
+    assert {row[0] for row in joined} == expected_symbols
+    for symbol, signal_id, feature_id, readiness_symbol in joined:
+        expected_id = hashlib.sha256(
+            f"success-atomic|{symbol}".encode("utf-8")
+        ).hexdigest()[:32]
+        assert signal_id == expected_id, (symbol, "signal identity")
+        assert feature_id == expected_id, (symbol, "feature identity")
+        assert readiness_symbol == symbol, (symbol, "readiness identity")
     for table in TABLES:
         not_null = conn.execute(
             sql.SQL("SELECT count(*) FROM public.{} WHERE run_id=%s "
@@ -534,6 +584,15 @@ def test_atomic_five_stage_rpc(conn, report):
     assert_counts(conn, "bad-feature-atomic", parent=0, child=0,
                   signal=0, feature=0, readiness=0, obs=0)
 
+    # These failures occur after parent+children (and for readiness, also
+    # signals+features) already executed inside the single RPC transaction.
+    for stage in ("signal", "readiness"):
+        run = f"bad-{stage}-atomic"
+        failed = atomic(run, 17)
+        assert failed.status_code >= 400, (stage, failed.text)
+        assert_counts(conn, run, parent=0, child=0,
+                      signal=0, feature=0, readiness=0, obs=0)
+
     wrong_count = atomic("bad-count-atomic", 61, shorten_features=True)
     assert wrong_count.status_code >= 400, wrong_count.text
     assert_counts(conn, "bad-count-atomic", parent=0, child=0,
@@ -549,12 +608,15 @@ def test_atomic_five_stage_rpc(conn, report):
         "duplicate_replay_rejected": True,
         "child_trigger_error_full_rollback": True,
         "feature_trigger_error_full_rollback": True,
+        "signal_trigger_error_full_rollback": True,
+        "readiness_last_stage_error_full_rollback": True,
         "feature_count_mismatch_full_rollback": True,
         "forged_permission_rejected": True,
         "real_production_deploy_ready": False,
         "production_schema_defaults_verified": False,
         "isolated_production_equivalent_not_null_defaults_verified": True,
         "isolated_parent_payload_trigger_fired_once": True,
+        "exact_same_run_identity_join_verified": True,
     }
 
 
