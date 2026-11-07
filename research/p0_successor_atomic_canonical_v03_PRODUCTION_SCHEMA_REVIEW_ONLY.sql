@@ -119,104 +119,7 @@ BEGIN
       INTO v_children,v_expected_readiness,v_expected_signals,v_source_errors
       FROM jsonb_array_elements(p_children) AS e(j);
 
-    IF (p_parent->>'error_count') !~ '^[0-9]{1,4}
-    IF exists (SELECT 1 FROM public.alpha_hunter_snapshots WHERE run_id=v_run)
-    THEN
-        RAISE EXCEPTION 'ambiguous existing canonical run requires independent readback';
-    END IF;
-
-    -- Production defaulted NOT NULL fields, verified read-only on 2026-11-05:
-    -- parent: error_count/created_at; symbols: state_changed,
-    -- trade_permission/created_at; signals: trade_permission/created_at;
-    -- features: trade_permission/features/source_payload/created_at;
-    -- readiness: trade_permission/v7_trade_ready/created_at.
-    -- Defaults are only added for ABSENT keys. Explicit JSON nulls still
-    -- fail NOT NULL constraints, and all unknown/unlisted fields are preserved.
-    -- Inserting the VERIFIED marker in the SAME atomic parent INSERT avoids
-    -- a second UPDATE OF payload and its extra production trigger firing.
-    v_parent := jsonb_build_object('error_count', 0, 'created_at', now()) || p_parent;
-    v_parent := jsonb_set(
-      v_parent, '{payload}',
-      jsonb_set(v_parent->'payload', '{_canonical_publication_state}', '"VERIFIED"'::jsonb, true),
-      false
-    );
-
-    SELECT jsonb_agg(
-      jsonb_build_object('state_changed', false,
-                         'trade_permission', false, 'created_at', now()) || e.value
-      ORDER BY e.ordinality)
-      INTO v_children_normalized
-    FROM jsonb_array_elements(p_children) WITH ORDINALITY AS e(value, ordinality);
-
-    SELECT jsonb_agg(
-      jsonb_build_object('trade_permission', false, 'created_at', now()) || e.value
-      ORDER BY e.ordinality)
-      INTO v_signals_normalized
-    FROM jsonb_array_elements(p_signals) WITH ORDINALITY AS e(value, ordinality);
-    v_signals_normalized := COALESCE(v_signals_normalized, '[]'::jsonb);
-
-    SELECT jsonb_agg(
-      jsonb_build_object('trade_permission', false, 'created_at', now(),
-                         'features', '{}'::jsonb, 'source_payload', '{}'::jsonb)
-         || e.value ORDER BY e.ordinality)
-      INTO v_features_normalized
-    FROM jsonb_array_elements(p_features) WITH ORDINALITY AS e(value, ordinality);
-    v_features_normalized := COALESCE(v_features_normalized, '[]'::jsonb);
-
-    SELECT jsonb_agg(
-      jsonb_build_object('trade_permission', false,
-                         'v7_trade_ready', false, 'created_at', now()) || e.value
-      ORDER BY e.ordinality)
-      INTO v_readiness_normalized
-    FROM jsonb_array_elements(p_readiness) WITH ORDINALITY AS e(value, ordinality);
-    v_readiness_normalized := COALESCE(v_readiness_normalized, '[]'::jsonb);
-
-    -- All five statements share one PostgREST function-call transaction.
-    -- A trigger failure rolls the whole publication back.
-    INSERT INTO public.alpha_hunter_snapshots
-      SELECT (x).* FROM jsonb_populate_recordset(
-        NULL::public.alpha_hunter_snapshots, jsonb_build_array(v_parent)) AS x;
-    INSERT INTO public.alpha_hunter_symbol_snapshots
-      SELECT (x).* FROM jsonb_populate_recordset(
-        NULL::public.alpha_hunter_symbol_snapshots, v_children_normalized) AS x;
-    INSERT INTO public.alpha_hunter_signals
-      SELECT (x).* FROM jsonb_populate_recordset(
-        NULL::public.alpha_hunter_signals, v_signals_normalized) AS x;
-    INSERT INTO public.alpha_hunter_signal_features
-      SELECT (x).* FROM jsonb_populate_recordset(
-        NULL::public.alpha_hunter_signal_features, v_features_normalized) AS x;
-    INSERT INTO public.alpha_hunter_readiness_observations_v01
-      SELECT (x).* FROM jsonb_populate_recordset(
-        NULL::public.alpha_hunter_readiness_observations_v01, v_readiness_normalized) AS x;
-
-    SELECT count(*) INTO v_count FROM public.alpha_hunter_symbol_snapshots
-      WHERE run_id=v_run;
-    IF v_count <> v_expected
-      OR (SELECT count(*) FROM public.alpha_hunter_signals WHERE run_id=v_run)
-            <> cardinality(v_expected_signals)
-      OR (SELECT count(*) FROM public.alpha_hunter_signal_features WHERE run_id=v_run)
-            <> cardinality(v_expected_signals)
-      OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 WHERE run_id=v_run)
-            <> cardinality(v_expected_readiness)
-    THEN
-        RAISE EXCEPTION 'canonical atomic post-insert count verification failed';
-    END IF;
-    RETURN jsonb_build_object('status','VERIFIED','run_id',v_run,
-                              'child_count',v_count,
-                              'feature_count',cardinality(v_expected_signals),
-                              'readiness_count',cardinality(v_expected_readiness),
-                              'source_error_count',v_source_errors,
-                              'source_quality',CASE WHEN v_source_errors=0
-                               THEN 'NO_RECORDED_SOURCE_ERRORS'
-                               ELSE 'SOURCE_ERRORS_RECORDED' END);
-END;
-$$;
-REVOKE ALL ON FUNCTION public.ah_p0_research_atomic_canonical_v03(
-    jsonb,jsonb,jsonb,jsonb,jsonb) FROM PUBLIC;
--- Do NOT grant any production role or install in Supabase.
--- The disposable test harness may grant EXECUTE only to ah_p0_local_writer.
--- Live trigger side effects (including paper-order creation) remain unapproved.
- THEN
+    IF (p_parent->>'error_count') !~ '^[0-9]{1,4}$' THEN
         RAISE EXCEPTION 'parent missing or invalid source error_count';
     END IF;
     IF (p_parent->>'error_count')::int <> v_source_errors
@@ -314,6 +217,7 @@ REVOKE ALL ON FUNCTION public.ah_p0_research_atomic_canonical_v03(
       ORDER BY e.ordinality)
       INTO v_signals_normalized
     FROM jsonb_array_elements(p_signals) WITH ORDINALITY AS e(value, ordinality);
+    v_signals_normalized := COALESCE(v_signals_normalized, '[]'::jsonb);
 
     SELECT jsonb_agg(
       jsonb_build_object('trade_permission', false, 'created_at', now(),
@@ -321,6 +225,7 @@ REVOKE ALL ON FUNCTION public.ah_p0_research_atomic_canonical_v03(
          || e.value ORDER BY e.ordinality)
       INTO v_features_normalized
     FROM jsonb_array_elements(p_features) WITH ORDINALITY AS e(value, ordinality);
+    v_features_normalized := COALESCE(v_features_normalized, '[]'::jsonb);
 
     SELECT jsonb_agg(
       jsonb_build_object('trade_permission', false,
@@ -328,6 +233,7 @@ REVOKE ALL ON FUNCTION public.ah_p0_research_atomic_canonical_v03(
       ORDER BY e.ordinality)
       INTO v_readiness_normalized
     FROM jsonb_array_elements(p_readiness) WITH ORDINALITY AS e(value, ordinality);
+    v_readiness_normalized := COALESCE(v_readiness_normalized, '[]'::jsonb);
 
     -- All five statements share one PostgREST function-call transaction.
     -- A trigger failure rolls the whole publication back.
@@ -350,14 +256,23 @@ REVOKE ALL ON FUNCTION public.ah_p0_research_atomic_canonical_v03(
     SELECT count(*) INTO v_count FROM public.alpha_hunter_symbol_snapshots
       WHERE run_id=v_run;
     IF v_count <> v_expected
-      OR (SELECT count(*) FROM public.alpha_hunter_signals WHERE run_id=v_run) <> v_expected
-      OR (SELECT count(*) FROM public.alpha_hunter_signal_features WHERE run_id=v_run) <> v_expected
-      OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 WHERE run_id=v_run) <> v_expected
+      OR (SELECT count(*) FROM public.alpha_hunter_signals WHERE run_id=v_run)
+            <> cardinality(v_expected_signals)
+      OR (SELECT count(*) FROM public.alpha_hunter_signal_features WHERE run_id=v_run)
+            <> cardinality(v_expected_signals)
+      OR (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 WHERE run_id=v_run)
+            <> cardinality(v_expected_readiness)
     THEN
         RAISE EXCEPTION 'canonical atomic post-insert count verification failed';
     END IF;
     RETURN jsonb_build_object('status','VERIFIED','run_id',v_run,
-                              'child_count',v_count,'feature_count',v_expected);
+                              'child_count',v_count,
+                              'feature_count',cardinality(v_expected_signals),
+                              'readiness_count',cardinality(v_expected_readiness),
+                              'source_error_count',v_source_errors,
+                              'source_quality',CASE WHEN v_source_errors=0
+                               THEN 'NO_RECORDED_SOURCE_ERRORS'
+                               ELSE 'SOURCE_ERRORS_RECORDED' END);
 END;
 $$;
 REVOKE ALL ON FUNCTION public.ah_p0_research_atomic_canonical_v03(
