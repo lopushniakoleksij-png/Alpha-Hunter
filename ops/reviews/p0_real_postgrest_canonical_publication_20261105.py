@@ -621,6 +621,122 @@ def test_atomic_five_stage_rpc(conn, report):
 
 
 
+def test_atomic_source_dependent_stage_counts(conn, report):
+    """Actual writer output through local PostgREST, including empty stages.
+
+    Atomic VERIFIED means *persistence complete*, not proof of usable market
+    data or scientific eligibility; errors and missing prices remain visible.
+    """
+    def capture(run_id, mode):
+        value = snapshot(run_id, 17)
+        if mode == "one_missing_price":
+            value["symbols"][-1]["last_price"] = None
+        elif mode == "all_missing_price":
+            for item in value["symbols"]:
+                item["last_price"] = None
+        elif mode == "one_error":
+            value["symbols"][-1]["error"] = "synthetic_feed_failure"
+            value["symbols"][-1]["last_price"] = None
+        writer_capture = CaptureSchema()
+        writer_capture.save_snapshot(value)
+        rows = writer_capture.captured
+        args = {
+            "p_parent": rows["alpha_hunter_snapshots"][0],
+            "p_children": rows["alpha_hunter_symbol_snapshots"],
+            "p_signals": rows.get("alpha_hunter_signals", []),
+            "p_features": rows.get("alpha_hunter_signal_features", []),
+            "p_readiness": rows.get("alpha_hunter_readiness_observations_v01", []),
+        }
+        return args
+
+    cases = {
+        "one_missing_price": (17, 16, 17, 0),
+        "all_missing_price": (17, 0, 17, 0),
+        "one_error": (17, 16, 16, 1),
+    }
+    passed = {}
+    for mode, (children, signals, readiness, errors) in cases.items():
+        run = f"atomic-{mode}"
+        args = capture(run, mode)
+        assert len(args["p_children"]) == children
+        assert len(args["p_signals"]) == signals
+        assert len(args["p_features"]) == signals
+        assert len(args["p_readiness"]) == readiness
+        response = requests.post(
+            BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+            json=args, timeout=15,
+        )
+        assert response.status_code == 200, (mode, response.status_code, response.text[:400])
+        result = response.json()
+        assert result["status"] == "VERIFIED"
+        assert result["child_count"] == children
+        assert result["feature_count"] == signals
+        assert result["readiness_count"] == readiness
+        assert result["source_error_count"] == errors
+        assert result["source_quality"] == (
+            "SOURCE_ERRORS_RECORDED" if errors else "NO_RECORDED_SOURCE_ERRORS"
+        )
+        counts_at_commit = assert_counts(
+            conn, run, parent=1, child=children, signal=signals,
+            feature=signals, readiness=readiness, obs=children * 10,
+        )
+        parent = conn.execute(
+            "SELECT error_count,payload FROM public.alpha_hunter_snapshots WHERE run_id=%s",
+            (run,),
+        ).fetchone()
+        assert parent[0] == errors
+        assert parent[1]["_canonical_publication_state"] == "VERIFIED"
+        passed[mode] = counts_at_commit
+
+    # Deliberately malformed groups remain all-or-none; no parent or nested
+    # strategy-observation evidence should survive any bad publication.
+    for mode, corruption in [
+        ("one_missing_price", "missing_readiness"),
+        ("one_missing_price", "missing_signal"),
+        ("all_missing_price", "unexpected_signal"),
+        ("one_error", "wrong_error_count"),
+        ("one_missing_price", "parent_symbol_mismatch"),
+        ("one_missing_price", "swapped_feature_ids"),
+        ("one_missing_price", "nested_trade_permission"),
+    ]:
+        run = f"atomic-invalid-{corruption}"
+        args = capture(run, mode)
+        if corruption == "missing_readiness":
+            args["p_readiness"].pop()
+        elif corruption == "missing_signal":
+            args["p_signals"].pop()
+        elif corruption == "unexpected_signal":
+            args["p_signals"].append({
+                "run_id": run, "symbol": "TEST000USDT",
+                "signal_id": "forged", "trade_permission": False,
+            })
+        elif corruption == "wrong_error_count":
+            args["p_parent"]["error_count"] = 0
+        elif corruption == "parent_symbol_mismatch":
+            args["p_parent"]["payload"]["symbols"][-1]["symbol"] = "WRONGUSDT"
+        elif corruption == "swapped_feature_ids":
+            args["p_features"][0]["signal_id"], args["p_features"][1]["signal_id"] = (
+                args["p_features"][1]["signal_id"], args["p_features"][0]["signal_id"]
+            )
+        elif corruption == "nested_trade_permission":
+            args["p_children"][0]["payload"]["trade_permission"] = True
+        response = requests.post(
+            BASE + "/rpc/ah_p0_research_atomic_canonical_v03",
+            json=args, timeout=15,
+        )
+        assert response.status_code >= 400, (corruption, response.status_code, response.text)
+        assert_counts(conn, run, parent=0, child=0, signal=0, feature=0,
+                      readiness=0, obs=0)
+
+    report["atomic_source_dependent_stage_counts"] = {
+        "writer_actual_cardinality_passed": passed,
+        "empty_signal_feature_lists": True,
+        "seven_corrupted_publications_rejected_without_durable_rows": True,
+        "source_errors_retained_without_scientific_quality_claim": True,
+        "production_trigger_equivalence": False,
+    }
+
+
 def _disposable_jwt(role: str) -> str:
     """HS256 only, using a public fixture secret; NEVER a real Supabase token."""
     if role not in ("anon", "authenticated", "service_role"):
@@ -977,6 +1093,7 @@ def main():
         test_child_trigger_cancel_fails_closed(conn, report)
         test_feature_failure_reveals_non_atomic_publication(conn, report)
         test_atomic_five_stage_rpc(conn, report)
+        test_atomic_source_dependent_stage_counts(conn, report)
         test_atomic_rpc_lost_ack_readback(conn, report)
         test_real_http_role_matrix(conn, report)
         test_disposable_truncate_security_gap(dsn, report)
