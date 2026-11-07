@@ -121,9 +121,10 @@ returns trigger language plpgsql as $qa$
 begin
   insert into public.qa_atomic_trigger_events(source_table,run_id)
   values (tg_table_name,new.run_id);
-  if tg_table_name='alpha_hunter_symbol_snapshots' and
-    current_setting('qa.fail_symbol',true)='on' and new.symbol='ETHUSDT' then
-    raise exception 'INJECTED_SYMBOL_TRIGGER_TIMEOUT';
+  if tg_table_name='alpha_hunter_symbol_snapshots' then
+    if current_setting('qa.fail_symbol',true)='on' and new.symbol='ETHUSDT' then
+      raise exception 'INJECTED_SYMBOL_TRIGGER_TIMEOUT';
+    end if;
   end if;
   if tg_table_name='alpha_hunter_signal_features' and
     current_setting('qa.fail_feature',true)='on' then
