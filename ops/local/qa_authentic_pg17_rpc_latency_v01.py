@@ -85,7 +85,7 @@ def psql(sql: str) -> str:
     return result.stdout.strip()
 
 
-def ensure_offline_clone() -> None:
+def ensure_offline_clone() -> str:
     if os.getenv("CODESPACES") != "true" or os.getenv("GITHUB_ACTIONS") == "true":
         raise QABlocked("Existing Codespace only; never run in GitHub Actions")
     branch = subprocess.run(["git", "branch", "--show-current"],
@@ -108,15 +108,42 @@ def ensure_offline_clone() -> None:
     custody = psql(custody_sql).splitlines()
     if "private|110|65|110|8fae5afad12f3040d30d0416cbfd9be1" not in custody:
         raise QABlocked("Private function custody fingerprint differs from inspected production")
-    trigger_count = psql("""
-        SELECT count(*) FROM pg_trigger t
-        JOIN pg_class c ON c.oid=t.tgrelid
-        JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname='public' AND c.relname LIKE 'alpha_hunter_%'
-          AND NOT t.tgisinternal AND t.tgenabled <> 'D';
-    """)
-    if trigger_count != "131":
-        raise QABlocked("Public Alpha Hunter trigger count differs from inspected production")
+    # A trigger count alone is not enough: verify every direct trigger's
+    # definition and body digest, all 128 public application tables/columns,
+    # all baseline indexes, and table grants/RLS. The only permitted
+    # difference is the named candidate index, excluded from baseline hash.
+    structural_sql = Path(
+        "ops/sql/readonly_stage2_candidate_aware_fingerprint_v01.sql"
+    ).read_text(encoding="utf-8")
+    verify_structural_fingerprint(psql(structural_sql))
+    index_mode = private_candidate_index_mode(psql("""
+        SELECT CASE
+          WHEN count(*) = 0 THEN 'baseline'
+          WHEN count(*) = 1
+           AND bool_and(
+             n.nspname = 'public' AND tbl.relname =
+               'alpha_hunter_strategy_forward_outcomes_v01'
+             AND coalesce(i.indisvalid, false)
+             AND coalesce(i.indisready, false)
+             AND coalesce(i.indislive, false)
+             AND position('(strategy_id, direction, evaluated_at_utc)'
+                  in coalesce(pg_get_indexdef(ic.oid), '')) > 0
+             AND position('INCLUDE (max_adverse_excursion_pct, max_favorable_excursion_pct)'
+                  in coalesce(pg_get_indexdef(ic.oid), '')) > 0
+             AND position('horizon_hours = 24' in coalesce(pg_get_indexdef(ic.oid), '')) > 0
+             AND position('entry_trigger_status' in coalesce(pg_get_indexdef(ic.oid), '')) > 0
+             AND position('path_measurement_quality' in coalesce(pg_get_indexdef(ic.oid), '')) > 0
+             AND position('ordering_ambiguous = false'
+                  in coalesce(pg_get_indexdef(ic.oid), '')) > 0
+           ) THEN 'candidate'
+          ELSE 'invalid'
+        END
+        FROM pg_class ic
+        JOIN pg_namespace n ON n.oid=ic.relnamespace
+        LEFT JOIN pg_index i ON i.indexrelid=ic.oid
+        LEFT JOIN pg_class tbl ON tbl.oid=i.indrelid
+        WHERE ic.relname='idx_ah_payoff_geometry_percentiles_candidate_v01';
+    """))
     checked = psql("""
         SELECT (SELECT count(*) FROM pg_proc p JOIN pg_namespace n
                 ON n.oid=p.pronamespace
@@ -129,6 +156,41 @@ def ensure_offline_clone() -> None:
     parts = checked.split("|")
     if len(parts) != 2 or parts[0] != "1" or int(parts[1]) < 500000:
         raise QABlocked("Candidate RPC or >=500k isolated historical outcome rows missing")
+    return index_mode
+
+
+STRUCTURAL_BASELINE = (
+    "128", "128", "3012", "360", "0", "131", "108", "36", "21",
+    "c802a3e3d96d620a20adc8c3af350472",
+    "5a7e8cbe8b8450677f6be84a77caaa6e",
+    "5c5b202307ef6bb57b4a9b08082c2a1e",
+    "c9785c793fa51a732c2edc96ba22c7eb",
+)
+REQUIRED_EXTENSIONS = frozenset({
+    "http|1.6|extensions",
+    "pg_cron|1.6.4|pg_catalog",
+    "pg_net|0.20.4|extensions",
+    "pg_stat_statements|1.11|extensions",
+    "pgcrypto|1.3|extensions",
+    "plpgsql|1.0|pg_catalog",
+    "supabase_vault|0.3.1|vault",
+    "uuid-ossp|1.1|extensions",
+})
+
+
+def verify_structural_fingerprint(output: str) -> None:
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    if not lines or tuple(lines[0].split("|")) != STRUCTURAL_BASELINE:
+        raise QABlocked("Private QA structural, trigger or baseline-index fingerprint mismatch")
+    if not REQUIRED_EXTENSIONS.issubset(set(lines[1:])):
+        raise QABlocked("Private QA extension version/schema mismatch")
+
+
+def private_candidate_index_mode(output: str) -> str:
+    state = output.strip()
+    if state not in {"baseline", "candidate"}:
+        raise QABlocked("Candidate index not verified; no trustworthy index comparison")
+    return state
 
 
 def scan_evidence_query(run_id: str) -> str:
@@ -243,7 +305,7 @@ def benchmark_one(fixture: dict) -> dict:
 
 def main() -> int:
     try:
-        ensure_offline_clone()
+        index_mode = ensure_offline_clone()
         base = Path.home() / ".alpha-hunter-private-dbqa"
         input_dir = base / "bench-fixtures"
         if base.is_symlink() or not base.is_dir() or (base.stat().st_mode & 0o777) != 0o700:
@@ -257,6 +319,7 @@ def main() -> int:
             cases[size] = validate_fixture(json.loads(path.read_text(encoding="utf-8")), size)
         print("OFFLINE_QA_ONLY: authentic schema and workload authenticity still require independent review")
         print("PRODUCTION_CONNECTION=NONE; REAL_ORDERS=DISABLED; TRANSACTIONS=ROLLBACK")
+        print("PRIVATE_QA_INDEX_MODE=" + index_mode)
         for size in SIZES:
             result = benchmark_one(cases[size])
             print("RPC_SQL_EXECUTION_MS symbols=" + str(size) + " " +
