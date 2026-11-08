@@ -100,3 +100,20 @@ At 2026-11-08 **10:16:52 UTC**, another older-format parent contained 29 symbols
 A full authentic isolated PG17 clone with transitive private function bodies, exact roles/extensions and realistic ~504k-row volume, p50/p95/p99 under 30/50/61 and concurrency, WAL/lock tracing and actual paper downstream side-effect parity has **NOT** been accomplished. Supabase branch list was empty; no paid clone created. Require independent DBA and separate security/custody/ops review, controlled owner-authorised canary and post-release proof before deployment.
 
 **PRODUCTION NO-GO; £0. No main merge, scanner/service change, production SQL mutation, orders or authorization changes performed.**
+
+
+## 2026-11-08 22:23 UTC — legacy full-parent code-era fingerprint
+
+**Read-only production observation, latest 48h cohort (172 parents):**
+- 19/19 unattributed parents: no `payload._storage_contract`, no `payload.validation_identity`, first full symbol record includes `intelligence`, and **all 19** have zero readiness rows. Last legacy collected at **2026-11-08 17:26:56 UTC**. The source had not recurred in the latest six-hour query, which does not prove permanent cessation.
+- 153 modern compact-parent records: explicit `snapshot-parent-v0.2` and declared source/runtime roles; their first symbol projection excludes `intelligence`. These were 144 claimed RENDER_CRON and 9 claimed GITHUB_REALTIME_HOURLY. Of the 153, 28 had zero readiness rows over the 48-hour window. Counts alone do not certify all evidence, and JSON claims are NOT authenticated source custody.
+- Fresh six-hour subset at ~22:23 UTC: **18/18** Render records and **1/1** GitHub record matched all four core child family counts; **zero** Render stale parent-only in that sample. This is a bounded observation, not a production repair or guaranteed continuing reliability.
+
+**Historical code-era comparison (GitHub):**
+- `alpha_hunter/storage.py` at **2026-09-26 14:11 UTC** commit `a1172f62f0d3...` persisted `"payload": snapshot` — full nested symbol intelligence — and did NOT write the readiness table.
+- The **2026-09-26 15:06 UTC** storage-amplification change at `bef613876980...` introduced `compact_parent_snapshot(snapshot)`, the `_storage_contract` marker, and readiness persistence.
+- Live unattributed records match the **pre-compact, pre-readiness storage code shape**. This narrows the **software revision class**, NOT the origin device, process, network owner or responsible party. A different copied writer could emit the same shape.
+
+**New monitored signature query:** `ops/sql/readonly_legacy_full_parent_signature_v01.sql`. It returns only safe aggregate counts/time bounds by signature and was executed read-only against production. Independent isolated PostgreSQL fixture: `ops/sql/qa_legacy_full_parent_signature_fixture_v01.sql`, wired into the existing atomic PG17 workflow. No production SQL mutations, source bodies, IP addresses, tokens or private payload values were exported.
+
+**Next source-custody step (not completed):** with authorized access, inventory still-running checkouts, cron jobs, Codespaces, desktops and external schedulers using a storage implementation predating the 26 September compact-parent change or an equivalent copied writer. Correlate the protected service-role request metadata with deployment/job identifiers without publishing network identities, and isolate the obsolete publisher **without stopping the protected current scanner**. Require an independently authenticated writer identity, not `validation_identity` JSON alone. Protect incomplete historical records from mutation. **PRODUCTION NO-GO**.
