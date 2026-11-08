@@ -21,6 +21,8 @@ on:
       - 'ops/sql/qa_atomic_core_scan_service_role_v01.sql'
       - 'ops/sql/readonly_core_scan_failure_taxonomy_v01.sql'
       - 'ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql'
+      - 'ops/sql/readonly_legacy_full_parent_signature_v01.sql'
+      - 'ops/sql/qa_legacy_full_parent_signature_fixture_v01.sql'
       - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
       - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
       - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
@@ -95,6 +97,17 @@ jobs:
           grep -Eq '^QA_MISSING_RUNTIME,.*,snapshot-parent-v0[.]2,RENDER_CRON,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED$' /tmp/qa-taxonomy.txt
           grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
           echo "PASS: modern source claim plus complete counts required; legacy and incomplete custody fail closed"
+      - name: Verify old full-parent writer signature separately from compact source claims
+        run: |
+          set -euo pipefail
+          createdb isolated_legacy_signature_qa
+          psql -X -v ON_ERROR_STOP=1 -d isolated_legacy_signature_qa -f ops/sql/qa_legacy_full_parent_signature_fixture_v01.sql
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_legacy_signature_qa -f ops/sql/readonly_legacy_full_parent_signature_v01.sql > /tmp/qa-legacy-signatures.txt
+          grep -Eq '^LEGACY_FULL_PARENT_UNATTRIBUTED,1,1,0,' /tmp/qa-legacy-signatures.txt
+          grep -Eq '^MODERN_COMPACT_CLAIM_NOT_AUTHENTICATED,1,0,1,' /tmp/qa-legacy-signatures.txt
+          grep -Eq '^OTHER_SOURCE_OR_FORMAT_UNVERIFIED,1,1,0,' /tmp/qa-legacy-signatures.txt
+          test "$(grep -c '^.*_.*,' /tmp/qa-legacy-signatures.txt)" -eq 3
+          echo "PASS: historical full-payload writer fingerprints as legacy; source claims remain unauthenticated"
       - name: Construct synthetic core schema and trigger graph
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
       - name: Install candidate function in ephemeral test database ONLY
