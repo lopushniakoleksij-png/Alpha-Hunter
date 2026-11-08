@@ -14,11 +14,13 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 ## Current action counts
 
-**PASS 13 · ACTIVE 20 · BLOCKED 26 · NOT STARTED 5 · TOTAL 64.** Counts reflect evidence and known dependencies, not a percentage of production readiness.
+**PASS 15 · ACTIVE 19 · BLOCKED 26 · NOT STARTED 4 · TOTAL 64.** Counts reflect evidence and known dependencies, not a percentage of production readiness.
 
 ## Verified recent execution
 
-- **2026-11-08 E3 (ACTIVE, CI pending):** Added ephemeral-only lost-ack simulation using separate PostgreSQL client sessions, a discarded successful first RPC receipt, exact 61-child and 306 synthetic-trigger-effect assertions, and an idempotent retry. Exact branch head `cabba405b71f98fb1a97934e2fe0de8f56e7ac2e`; no passing CI claimed yet. This is not a real network partition or authentic private trigger graph. Next: inspect exact-head Actions run and full logs; fix failures before marking scoped PASS.
+- **2026-11-08 E6 (PASS, isolated scope):** [GitHub Actions PostgreSQL 17 run #42483028557](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42483028557) **SUCCESS**, exact tested commit `0586de9adf2e3301bab88d54196ff5e771dc15f7`. Two simultaneous PostgreSQL clients submitted an identical 61-symbol RPC and waited on a real advisory lock; both returned matching receipts with exactly 306 simulated trigger effects. A separately raced conflicting parent waited on the lock then received the required content mismatch, without overwriting committed evidence. Confirmed job logs; synthetic triggers are not production private triggers.
+
+- **2026-11-08 E3 (PASS, isolated scope):** [Workflow #42481912510](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42481912510) completed SUCCESS on commit `cabba405b71f98fb1a97934e2fe0de8f56e7ac2e`: a real first PostgreSQL RPC committed while the test client discarded its response; independent second DB session replayed the same 61-symbol identity without further synthetic trigger effects. This simulates a lost ACK, **not** a real socket partition.
 
 
 - **2026-11-08:** PostgreSQL 17 GitHub Actions [run #42480712005](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42480712005) **SUCCESS**, tested exact commit `1c9c0e7bd6e955ae2a2f9357255a3edc2c89b4fb`. A real PostgreSQL statement timeout (200ms) interrupted a nested 61-symbol synthetic trigger after an intentional 600ms delay. All five core table families and synthetic trigger side effects rolled back; retry committed once, duplicate replay zero new effects. This is a genuine PostgreSQL timeout, **not** a production-equivalent 12s latency benchmark.
@@ -86,10 +88,10 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 |---|---|---|---|
 | E1 | Reproduce PostgreSQL timeout cancellation | **PASS** | Real PostgreSQL statement_timeout in ephemeral PG17, run 42480712005 |
 | E2 | Reproduce HTTP and network failures | **ACTIVE** | Mock HTTP errors covered, live transport loss not reproduced |
-| E3 | Inject response-lost acknowledgement | **ACTIVE** | Separate-session simulated committed-but-lost-receipt test committed at `cabba405b71f98fb1a97934e2fe0de8f56e7ac2e`; exact-head CI pending. Real transport loss not yet tested. |
+| E3 | Inject response-lost acknowledgement | **PASS** | Isolated PostgreSQL 17 lost-ACK simulation via separate sessions; run #42481912510 PASS. No real network fault injected. |
 | E4 | Test exact repeated submission | **PASS** | Isolated 61-symbol idempotent replay with no new effects |
 | E5 | Reject conflicting duplicate evidence | **PASS** | Existing synthetic content mismatch negative tests |
-| E6 | Test simultaneous writer requests | **NOT STARTED** | Controlled isolated concurrency only |
+| E6 | Test simultaneous writer requests | **PASS** | Two overlapping 61-symbol RPC clients (identical and conflicting), verified actual advisory-lock wait, exact side effects and no overwrite; run #42483028557 PASS. Synthetic trigger graph only. |
 | E7 | Verify complete downstream side effects | **BLOCKED** | Authentic trigger clone not yet available |
 | E8 | Verify fail-closed monitoring/reconciliation | **ACTIVE** | Read-only Integrity Watch running; full contract acceptance pending |
 
@@ -134,6 +136,6 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 ## Next authorized engineering action
 
-**B2 → B3 (secure authentic private schema access)** is the critical dependency. With current permissions, pursue a safe authorized read-only export into the existing *private* PostgreSQL 17 environment; if impossible, make progress on **E3 lost-ACK** and **E6 concurrent writer** isolated tests on draft PR #445. Test real DB transaction semantics without implying private schema equivalence. Re-verify all GitHub CI at the exact changed code commit, then update this ledger and [roadmap #387](https://github.com/lopushniakoleksij-png/Alpha-Hunter/issues/387).
+**B2 → B3 (secure authentic private schema access)** remains the critical dependency. E3 lost-ACK and E6 concurrency have now passed in isolated PostgreSQL. Next independent safe work: extend Python HTTP-loss retry contract tests and inspect source-custody enforcement, then secure the private trigger clone without exposing functions/credentials. Do not imply production-equivalent acceptance. Re-verify all GitHub CI at the exact changed code commit, then update this ledger and [roadmap #387](https://github.com/lopushniakoleksij-png/Alpha-Hunter/issues/387).
 
 **No production SQL/migration, no merge, no deployment, no scanner changes, no real orders, no spending and no self-issued independent approvals.**
