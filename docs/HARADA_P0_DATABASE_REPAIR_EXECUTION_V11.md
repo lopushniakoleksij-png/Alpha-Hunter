@@ -14,9 +14,12 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 ## Current action counts
 
-**PASS 13 · ACTIVE 19 · BLOCKED 26 · NOT STARTED 6 · TOTAL 64.** Counts reflect evidence and known dependencies, not a percentage of production readiness.
+**PASS 13 · ACTIVE 20 · BLOCKED 26 · NOT STARTED 5 · TOTAL 64.** Counts reflect evidence and known dependencies, not a percentage of production readiness.
 
 ## Verified recent execution
+
+- **2026-11-08 E3 (ACTIVE, CI pending):** Added ephemeral-only lost-ack simulation using separate PostgreSQL client sessions, a discarded successful first RPC receipt, exact 61-child and 306 synthetic-trigger-effect assertions, and an idempotent retry. Exact branch head `cabba405b71f98fb1a97934e2fe0de8f56e7ac2e`; no passing CI claimed yet. This is not a real network partition or authentic private trigger graph. Next: inspect exact-head Actions run and full logs; fix failures before marking scoped PASS.
+
 
 - **2026-11-08:** PostgreSQL 17 GitHub Actions [run #42480712005](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42480712005) **SUCCESS**, tested exact commit `1c9c0e7bd6e955ae2a2f9357255a3edc2c89b4fb`. A real PostgreSQL statement timeout (200ms) interrupted a nested 61-symbol synthetic trigger after an intentional 600ms delay. All five core table families and synthetic trigger side effects rolled back; retry committed once, duplicate replay zero new effects. This is a genuine PostgreSQL timeout, **not** a production-equivalent 12s latency benchmark.
 - **2026-11-08:** Supabase read-only showed Render parent-only failures at 11:03 (43/0), 11:22 (45/0), 11:42 (43/0), 12:04 (46/0), and complete 12:22 scan (48/48). No production repair was performed.
@@ -83,7 +86,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 |---|---|---|---|
 | E1 | Reproduce PostgreSQL timeout cancellation | **PASS** | Real PostgreSQL statement_timeout in ephemeral PG17, run 42480712005 |
 | E2 | Reproduce HTTP and network failures | **ACTIVE** | Mock HTTP errors covered, live transport loss not reproduced |
-| E3 | Inject response-lost acknowledgement | **NOT STARTED** | Test must distinguish committed+lost receipt from rollback |
+| E3 | Inject response-lost acknowledgement | **ACTIVE** | Separate-session simulated committed-but-lost-receipt test committed at `cabba405b71f98fb1a97934e2fe0de8f56e7ac2e`; exact-head CI pending. Real transport loss not yet tested. |
 | E4 | Test exact repeated submission | **PASS** | Isolated 61-symbol idempotent replay with no new effects |
 | E5 | Reject conflicting duplicate evidence | **PASS** | Existing synthetic content mismatch negative tests |
 | E6 | Test simultaneous writer requests | **NOT STARTED** | Controlled isolated concurrency only |
