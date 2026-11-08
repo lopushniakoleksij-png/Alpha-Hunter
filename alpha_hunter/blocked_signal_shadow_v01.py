@@ -43,7 +43,14 @@ def evaluate_blocked_shadow(
     if interval_minutes <= 0 or 60 * horizon_hours % interval_minutes:
         return result
     try:
-        if signal.get("final_gate_outcome") != "BLOCKED" or not signal.get("block_reasons"):
+        if signal.get("final_gate_outcome") != "BLOCKED":
+            return result
+        reasons = signal.get("block_reasons")
+        # A scalar, blank, or duplicated reason is not a canonical reason set.
+        if (not isinstance(reasons, list) or not reasons
+                or any(not isinstance(reason, str) or not reason.strip()
+                       or reason != reason.strip() for reason in reasons)
+                or len(reasons) != len(set(reasons))):
             return result
         direction = signal["direction"]
         if direction not in ("LONG", "SHORT"):
