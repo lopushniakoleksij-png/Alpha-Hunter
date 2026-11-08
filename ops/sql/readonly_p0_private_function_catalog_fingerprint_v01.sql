@@ -50,7 +50,7 @@ WITH private_triggers AS (
 SELECT count(*) AS private_schema_application_triggers,
        count(DISTINCT relname) AS private_trigger_tables,
        md5(string_agg(
-           relname||'/'||tgname||'/'||tgenabled||'/'||
+           relname||'/'||tgname||'/'||tgenabled::text||'/'||
            function_schema||'.'||function_name||':'||
            trigger_def_digest||':'||function_body_digest,
            E'\n' ORDER BY relname,tgname)) AS private_trigger_fingerprint
