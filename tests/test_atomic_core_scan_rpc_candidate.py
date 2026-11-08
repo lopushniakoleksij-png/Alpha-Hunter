@@ -116,6 +116,31 @@ def test_rpc_incomplete_receipt_is_rejected():
     assert len(session.calls) == 1
 
 
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("parent_count", True),       # Python True == 1; not a database row count.
+        ("symbol_count", 1.0),        # Floats can compare equal to integers.
+        ("readiness_count", True),
+        ("feature_count", False),     # Python False == 0.
+        ("signal_count", "1"),       # Numeric strings must also be rejected.
+        ("symbol_count", None),
+    ],
+)
+def test_atomic_rpc_rejects_non_integer_receipt_counts_without_fallback(field, value):
+    def corrupt_receipt(receipt):
+        receipt[field] = value
+
+    session = RPCSession(mutate=corrupt_receipt)
+    with pytest.raises(SupabaseStorageError, match="confirmation did not match"):
+        SupabaseStorage(config(), session=session).save_snapshot(sample_snapshot())
+
+    # A malformed acknowledgement cannot trigger independent legacy writes.
+    assert len(session.calls) == 1
+    assert session.calls[0][0].endswith("/rpc/alpha_hunter_commit_core_scan_v01")
+
+
 def test_atomic_sql_candidate_has_non_escalating_permissions_and_required_fields():
     sql = (
         Path(__file__).resolve().parents[1]
