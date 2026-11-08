@@ -18,6 +18,8 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 ## Verified recent execution
 
+- **2026-11-08 E2 (ACTIVE, contract tests PASS):** [PostgreSQL 17 + Python workflow #42483250686](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42483250686) **SUCCESS** at exact tested SHA `3741f9082385b6064edd6dbd0ac448de5a7cb16c`. **41 Python tests passed**, including four new transport-contract checks: simulated lost ConnectionError and Timeout after emulated committed RPC, exact unchanged retry payload/run_id, and fail-closed exhausted retries without sequential REST fallback. Server-side actual PostgreSQL E3/E6/57014 CI reran successfully. Mock transport tests do not prove a real network partition. Production read-only at 13:06 UTC showed historical 11:03, 11:22, 11:42, 12:04 stale parent-only failures; 12:42 complete (48/48); fresh 13:04 parent 49/0 was **UNDER 3-minute grace and PUBLISHING/UNVERIFIED**, not yet a confirmed stale failure. No production repair deployed.
+
 - **2026-11-08 E6 (PASS, isolated scope):** [GitHub Actions PostgreSQL 17 run #42483028557](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42483028557) **SUCCESS**, exact tested commit `0586de9adf2e3301bab88d54196ff5e771dc15f7`. Two simultaneous PostgreSQL clients submitted an identical 61-symbol RPC and waited on a real advisory lock; both returned matching receipts with exactly 306 simulated trigger effects. A separately raced conflicting parent waited on the lock then received the required content mismatch, without overwriting committed evidence. Confirmed job logs; synthetic triggers are not production private triggers.
 
 - **2026-11-08 E3 (PASS, isolated scope):** [Workflow #42481912510](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42481912510) completed SUCCESS on commit `cabba405b71f98fb1a97934e2fe0de8f56e7ac2e`: a real first PostgreSQL RPC committed while the test client discarded its response; independent second DB session replayed the same 61-symbol identity without further synthetic trigger effects. This simulates a lost ACK, **not** a real socket partition.
@@ -87,7 +89,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 | ID | Required action | Status | Current evidence / dependency |
 |---|---|---|---|
 | E1 | Reproduce PostgreSQL timeout cancellation | **PASS** | Real PostgreSQL statement_timeout in ephemeral PG17, run 42480712005 |
-| E2 | Reproduce HTTP and network failures | **ACTIVE** | Mock HTTP errors covered, live transport loss not reproduced |
+| E2 | Reproduce HTTP and network failures | **ACTIVE** | Four new Python mock tests cover connection loss and timeout retry and exhaustion; 41 Python tests PASS in run #42483250686. Real HTTP/network partition not injected. |
 | E3 | Inject response-lost acknowledgement | **PASS** | Isolated PostgreSQL 17 lost-ACK simulation via separate sessions; run #42481912510 PASS. No real network fault injected. |
 | E4 | Test exact repeated submission | **PASS** | Isolated 61-symbol idempotent replay with no new effects |
 | E5 | Reject conflicting duplicate evidence | **PASS** | Existing synthetic content mismatch negative tests |
