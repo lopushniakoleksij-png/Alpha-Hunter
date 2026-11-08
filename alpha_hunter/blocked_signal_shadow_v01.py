@@ -40,7 +40,9 @@ def evaluate_blocked_shadow(
               "fill_verified": False, "net_return": None}
     if not isinstance(horizon_hours, int) or isinstance(horizon_hours, bool) or horizon_hours <= 0:
         return result
-    if interval_minutes <= 0 or 60 * horizon_hours % interval_minutes:
+    # Reject malformed interval metadata before arithmetic (bool is an int in Python).
+    if (not isinstance(interval_minutes, int) or isinstance(interval_minutes, bool)
+            or interval_minutes != 60):
         return result
     try:
         if signal.get("final_gate_outcome") != "BLOCKED":
