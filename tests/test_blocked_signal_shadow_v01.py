@@ -87,3 +87,19 @@ def test_later_chronology_conflict_cannot_be_hidden_by_early_stop():
 
 def test_complete_window_still_classifies_early_target():
     assert classify(candles((99, 101), (101, 111), (100, 102))) == "TARGET_FIRST"
+
+
+def test_off_tick_candle_prices_fail_closed_even_after_early_target():
+    rows = candles((99, 101), (101, 111), (100, 102))
+    rows[2]["high"] = "102.1"  # later bad evidence must invalidate earlier target
+    assert classify(rows) == "INSUFFICIENT_DATA"
+    rows = candles((99, 101))
+    rows[0]["low"] = "99.1"
+    assert classify(rows) == "INSUFFICIENT_DATA"
+
+
+def test_short_off_tick_stop_candle_fails_closed():
+    short = {**BASE, "direction": "SHORT", "stop": "105", "target": "90"}
+    rows = candles((99, 101), (99, 106))
+    rows[1]["high"] = "106.1"
+    assert classify(rows, short) == "INSUFFICIENT_DATA"
