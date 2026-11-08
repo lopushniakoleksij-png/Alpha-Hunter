@@ -25,6 +25,7 @@ on:
       - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
       - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
       - 'tests/test_atomic_core_scan_rpc_candidate.py'
+      - 'tests/test_atomic_core_scan_transport_retry_v01.py'
       - 'ops/sql/readonly_core_scan_trigger_inventory_v01.sql'
       - 'docs/atomic-core-scan-release-gate-20261107.md'
       - '.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml'
@@ -74,7 +75,7 @@ jobs:
           python3 -m venv .venv
           . .venv/bin/activate
           python -m pip install -q -r requirements.txt pytest
-          python -m pytest -q tests/test_storage.py tests/test_canonical_universe_scan_persistence_v02.py tests/test_scan_partial_persistence_characterization.py tests/test_atomic_core_scan_rpc_candidate.py
+          python -m pytest -q tests/test_storage.py tests/test_canonical_universe_scan_persistence_v02.py tests/test_scan_partial_persistence_characterization.py tests/test_atomic_core_scan_rpc_candidate.py tests/test_atomic_core_scan_transport_retry_v01.py
       - name: Verify read-only scan failure taxonomy in isolated PostgreSQL 17
         run: |
           set -euo pipefail
