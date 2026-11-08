@@ -102,7 +102,7 @@ def test_offline_rpc_measurement_requires_exact_counts_and_all_nested_branches()
         "calibrated_orders", "queue"
     )}}
     def output(payload):
-        return json.dumps([{"Execution Time": 345.67}]) + "\\n" + json.dumps(payload)
+        return json.dumps([{"Execution Time": 345.67}]) + "\n" + json.dumps(payload)
 
     assert qa.parse_measured_trial(output(result), f) == pytest.approx(345.67)
 
