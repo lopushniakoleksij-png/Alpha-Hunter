@@ -24,6 +24,9 @@ on:
       - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
       - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
       - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
+      - 'ops/sql/qa_atomic_fullpath_505k_benchmark_setup_v01.sql'
+      - 'ops/sql/qa_atomic_fullpath_505k_benchmark_verify_v01.sql'
+      - 'ops/local/qa_atomic_fullpath_505k_benchmark_v01.py'
       - 'tests/test_atomic_core_scan_rpc_candidate.py'
       - 'tests/test_atomic_core_scan_transport_retry_v01.py'
       - 'ops/sql/readonly_core_scan_trigger_inventory_v01.sql'
@@ -108,3 +111,5 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
       - name: Compare payoff percentile query against 495k synthetic outcomes
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
+      - name: Harada C6-C7 benchmark combined atomic RPC with synthetic 505569-outcome nested graph
+        run: python3 ops/local/qa_atomic_fullpath_505k_benchmark_v01.py
