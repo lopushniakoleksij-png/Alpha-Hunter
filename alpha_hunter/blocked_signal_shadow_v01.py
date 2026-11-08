@@ -51,7 +51,10 @@ def evaluate_blocked_shadow(
         # A scalar, blank, or duplicated reason is not a canonical reason set.
         if (not isinstance(reasons, list) or not reasons
                 or any(not isinstance(reason, str) or not reason.strip()
-                       or reason != reason.strip() for reason in reasons)
+                       or reason != reason.strip() or not reason.isascii()
+                       or not reason.replace("_", "").isalnum()
+                       or not reason[0].isalpha() or reason != reason.upper()
+                       for reason in reasons)
                 or len(reasons) != len(set(reasons))):
             return result
         direction = signal["direction"]
