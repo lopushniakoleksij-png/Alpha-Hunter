@@ -183,6 +183,30 @@ def parse_measured_trial(output: str, fixture: dict) -> float:
     return elapsed_ms
 
 
+AUDIT_FAMILIES = (
+    "parents", "symbols", "signals", "features", "readiness",
+    "observations", "quotes", "freezes", "payoff",
+    "calibrated_orders", "queue",
+)
+
+
+def require_clean_qa_run(run_id: str) -> None:
+    """Reject existing evidence: otherwise a fast idempotent replay looks real.
+
+    Check before each transaction and after ROLLBACK, including nested tables.
+    The network-isolated QA container must not be used by another writer.
+    """
+    try:
+        rows = json.loads(psql(scan_evidence_query(run_id)))
+    except (ValueError, TypeError) as exc:
+        raise QABlocked("Offline QA run cleanliness result malformed") from exc
+    if (not isinstance(rows, dict)
+            or set(rows) != set(AUDIT_FAMILIES)
+            or any(type(rows[name]) is not int or rows[name] != 0
+                   for name in AUDIT_FAMILIES)):
+        raise QABlocked("Offline QA run contains preexisting or unrolled-back evidence")
+
+
 def percentile(values: list[float], probability: float) -> float:
     ordered = sorted(values)
     index = (len(ordered) - 1) * probability
@@ -199,8 +223,13 @@ def benchmark_one(fixture: dict) -> dict:
            + " ROLLBACK;")
     times = []
     for trial in range(WARMUPS + REPEATS):
+        # A stale QA run makes INSERT ... WHERE NOT EXISTS skip authentic
+        # triggers, producing misleadingly fast measurements.
+        require_clean_qa_run(fixture["p_parent"][0]["run_id"])
         output = psql(sql)
         elapsed_ms = parse_measured_trial(output, fixture)
+        # Demonstrate the trial's ROLLBACK really left no core or nested rows.
+        require_clean_qa_run(fixture["p_parent"][0]["run_id"])
         if trial >= WARMUPS:
             times.append(elapsed_ms)
     return {
