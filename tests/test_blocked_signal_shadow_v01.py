@@ -103,3 +103,16 @@ def test_short_off_tick_stop_candle_fails_closed():
     rows = candles((99, 101), (99, 106))
     rows[1]["high"] = "106.1"
     assert classify(rows, short) == "INSUFFICIENT_DATA"
+
+
+def test_noncanonical_block_reason_shapes_fail_closed():
+    rows = candles((99, 101), (101, 111))
+    for reasons in ("EXECUTION_RR_OUTLIER", True, [None], [42],
+                    [""], [" "], [" EXECUTION_RR_OUTLIER"],
+                    ["EXECUTION_RR_OUTLIER", "EXECUTION_RR_OUTLIER"]):
+        assert classify(rows, {**BASE, "block_reasons": reasons}) == "INSUFFICIENT_DATA"
+
+
+def test_multiple_distinct_canonical_reasons_preserve_classification():
+    signal = {**BASE, "block_reasons": ["EXECUTION_RR_OUTLIER", "SPREAD_GATE"]}
+    assert classify(candles((99, 101), (101, 111)), signal) == "TARGET_FIRST"
