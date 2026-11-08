@@ -131,6 +131,58 @@ def ensure_offline_clone() -> None:
         raise QABlocked("Candidate RPC or >=500k isolated historical outcome rows missing")
 
 
+def scan_evidence_query(run_id: str) -> str:
+    # run_id was regex-validated by validate_fixture; never interpolate raw SQL.
+    if not re.fullmatch(r"QA_ISOLATED_[A-Za-z0-9_-]{8,64}", run_id):
+        raise QABlocked("Non-synthetic run identifier rejected in audit")
+    return f"""
+        SELECT json_build_object(
+          'parents', (SELECT count(*) FROM public.alpha_hunter_snapshots WHERE run_id='{run_id}'),
+          'symbols', (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots WHERE run_id='{run_id}'),
+          'signals', (SELECT count(*) FROM public.alpha_hunter_signals WHERE run_id='{run_id}'),
+          'features', (SELECT count(*) FROM public.alpha_hunter_signal_features WHERE run_id='{run_id}'),
+          'readiness', (SELECT count(*) FROM public.alpha_hunter_readiness_observations_v01 WHERE run_id='{run_id}'),
+          'observations', (SELECT count(*) FROM public.alpha_hunter_strategy_observations_v01 WHERE run_id='{run_id}'),
+          'quotes', (SELECT count(*) FROM public.alpha_hunter_shadow_decision_quotes_v01 WHERE run_id='{run_id}'),
+          'freezes', (SELECT count(*) FROM public.alpha_hunter_execution_decision_freezes_v01 WHERE decision_run_id='{run_id}'),
+          'payoff', (SELECT count(*) FROM private.alpha_hunter_payoff_geometry_health_observations_v01 WHERE run_id='{run_id}'),
+          'calibrated_orders', (SELECT count(*) FROM private.alpha_hunter_calibrated_paper_orders_v01 WHERE run_id='{run_id}'),
+          'queue', (SELECT count(*) FROM private.alpha_hunter_strategy_24h_outcome_queue_v01 q
+                    WHERE EXISTS (
+                      SELECT 1 FROM public.alpha_hunter_strategy_episodes_v01 e
+                      JOIN public.alpha_hunter_strategy_observations_v01 o
+                        ON o.observation_id=e.first_observation_id
+                      WHERE q.episode_id=e.episode_id AND o.run_id='{run_id}'
+                    ))
+        );
+    """
+
+
+def parse_measured_trial(output: str, fixture: dict) -> float:
+    try:
+        plan, offset = json.JSONDecoder().raw_decode(output)
+        coverage = json.loads(output[offset:].strip())
+        elapsed_ms = float(plan[0]["Execution Time"])
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise QABlocked("Offline EXPLAIN/coverage result malformed") from exc
+    if not isinstance(coverage, dict) or elapsed_ms < 0:
+        raise QABlocked("Offline execution metrics or coverage malformed")
+    expected = {
+        "parents": len(fixture["p_parent"]),
+        "symbols": len(fixture["p_children"]),
+        "signals": len(fixture["p_signals"]),
+        "features": len(fixture["p_features"]),
+        "readiness": len(fixture["p_readiness"]),
+    }
+    for family, count in expected.items():
+        if type(coverage.get(family)) is not int or coverage[family] != count:
+            raise QABlocked("Offline atomic transaction evidence count mismatch: " + family)
+    for branch in ("observations", "quotes", "freezes", "payoff", "calibrated_orders", "queue"):
+        if type(coverage.get(branch)) is not int or coverage[branch] < 1:
+            raise QABlocked("Representative fixture failed to exercise nested branch: " + branch)
+    return elapsed_ms
+
+
 def percentile(values: list[float], probability: float) -> float:
     ordered = sorted(values)
     index = (len(ordered) - 1) * probability
@@ -142,17 +194,13 @@ def benchmark_one(fixture: dict) -> dict:
     sql = ("BEGIN; SET LOCAL ROLE service_role; "
            "SET LOCAL statement_timeout = '12000ms'; "
            "SET LOCAL lock_timeout = '8000ms'; "
-           + statement_for_fixture(fixture) + " ROLLBACK;")
+           + statement_for_fixture(fixture)
+           + scan_evidence_query(fixture["p_parent"][0]["run_id"])
+           + " ROLLBACK;")
     times = []
     for trial in range(WARMUPS + REPEATS):
         output = psql(sql)
-        try:
-            plan = json.loads(output)
-            elapsed_ms = float(plan[0]["Execution Time"])
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
-            raise QABlocked("Offline EXPLAIN output missing execution time") from exc
-        if elapsed_ms < 0:
-            raise QABlocked("Invalid offline EXPLAIN latency")
+        elapsed_ms = parse_measured_trial(output, fixture)
         if trial >= WARMUPS:
             times.append(elapsed_ms)
     return {
