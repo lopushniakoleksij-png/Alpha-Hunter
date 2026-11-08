@@ -7,6 +7,9 @@
 -- authenticated API logs and approved runtime deployment identity.
 -- 24 recent parents; child lookups are scoped by run_id (verify indexed paths).
 -- This validates only core families, NOT downstream paper-trading evidence.
+-- Even exact core row counts must NEVER be promoted to CORE_PASS when
+-- the modern source/storage contract is missing. A payload source claim is
+-- still NOT independent source authentication.
 with recent as (
     select run_id, collected_at_utc, symbol_count, error_count,
            payload->>'_storage_contract' as parent_storage_contract,
@@ -47,7 +50,13 @@ classified as (
               and feature_rows = symbol_count
               and readiness_rows = symbol_count
               and orphan_features = 0 and orphan_readiness = 0
-              then 'CORE_PASS'
+              then case
+                when parent_storage_contract = 'snapshot-parent-v0.2'
+                  and declared_run_source is not null
+                  and declared_runtime_role is not null
+                  then 'CORE_PASS'
+                else 'CORE_COUNTS_MATCH_SOURCE_UNVERIFIED'
+              end
             when symbol_count > 0
               and symbol_rows = 0 and signal_rows = 0
               and feature_rows = 0 and readiness_rows = 0
