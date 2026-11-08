@@ -42,6 +42,14 @@ CREATE TABLE public.qa_fullpath_strategy_observations (
  run_id text NOT NULL,symbol text NOT NULL,
  PRIMARY KEY(run_id,symbol)
 );
+CREATE TABLE public.qa_fullpath_strategy_episodes (
+ run_id text NOT NULL,symbol text NOT NULL,
+ PRIMARY KEY(run_id,symbol)
+);
+CREATE TABLE public.qa_fullpath_strategy_24h_outcome_queue (
+ run_id text NOT NULL,symbol text NOT NULL,
+ PRIMARY KEY(run_id,symbol)
+);
 CREATE TABLE public.qa_fullpath_shadow_quotes (
  run_id text NOT NULL,symbol text NOT NULL,
  PRIMARY KEY(run_id,symbol)
@@ -83,6 +91,7 @@ CREATE FUNCTION public.qa_fullpath_symbol_to_strategy()
 RETURNS trigger LANGUAGE plpgsql AS $f$
 BEGIN
  IF NEW.run_id LIKE 'QA_FULLPATH_%' THEN
+   INSERT INTO public.qa_fullpath_strategy_episodes VALUES(NEW.run_id,NEW.symbol);
    INSERT INTO public.qa_fullpath_strategy_observations VALUES(NEW.run_id,NEW.symbol);
  END IF;
  RETURN NEW;
@@ -90,6 +99,16 @@ END $f$;
 CREATE TRIGGER qa_fullpath_symbol_capture AFTER INSERT
 ON public.alpha_hunter_symbol_snapshots FOR EACH ROW
 EXECUTE FUNCTION public.qa_fullpath_symbol_to_strategy();
+
+CREATE FUNCTION public.qa_fullpath_episode_to_queue()
+RETURNS trigger LANGUAGE plpgsql AS $f$
+BEGIN
+ INSERT INTO public.qa_fullpath_strategy_24h_outcome_queue VALUES(NEW.run_id,NEW.symbol);
+ RETURN NEW;
+END $f$;
+CREATE TRIGGER qa_fullpath_24h_enqueue AFTER INSERT
+ON public.qa_fullpath_strategy_episodes FOR EACH ROW
+EXECUTE FUNCTION public.qa_fullpath_episode_to_queue();
 
 CREATE FUNCTION public.qa_fullpath_strategy_to_quote()
 RETURNS trigger LANGUAGE plpgsql AS $f$
@@ -237,6 +256,8 @@ BEGIN
     OR (receipt->>'signal_count')::int<>p_size
     OR (receipt->>'feature_count')::int<>p_size
     OR (receipt->>'readiness_count')::int<>p_size
+    OR (SELECT count(*) FROM public.qa_fullpath_strategy_episodes WHERE run_id=rid)<>p_size
+    OR (SELECT count(*) FROM public.qa_fullpath_strategy_24h_outcome_queue WHERE run_id=rid)<>p_size
     OR (SELECT count(*) FROM public.qa_fullpath_strategy_observations WHERE run_id=rid)<>p_size
     OR (SELECT count(*) FROM public.qa_fullpath_shadow_quotes WHERE run_id=rid)<>p_size
     OR (SELECT count(*) FROM public.qa_fullpath_execution_freezes WHERE run_id=rid)<>p_size
