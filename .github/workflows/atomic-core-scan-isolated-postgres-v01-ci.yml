@@ -12,6 +12,9 @@ on:
       - 'ops/sql/qa_atomic_core_scan_real_timeout_setup_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_real_timeout_verify_v01.sql'
       - 'ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh'
+      - 'ops/local/qa_atomic_core_scan_lost_ack_v01.sh'
+      - 'ops/sql/qa_atomic_core_scan_lost_ack_setup_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_lost_ack_verify_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_service_role_v01.sql'
       - 'ops/sql/readonly_core_scan_failure_taxonomy_v01.sql'
       - 'ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql'
@@ -93,6 +96,8 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql
       - name: Verify real PostgreSQL statement_timeout rollback and idempotent retry
         run: bash ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh
+      - name: E3 simulate committed response lost then idempotent retry in separate sessions
+        run: bash ops/local/qa_atomic_core_scan_lost_ack_v01.sh
       - name: Validate service_role RPC invocation under RLS with denied public roles
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
       - name: Compare payoff percentile query against 495k synthetic outcomes
