@@ -77,7 +77,7 @@ def evaluate_blocked_shadow(
             if _time(candle["known_at"]) < closed:
                 return result
             low, high = _number(candle["low"]), _number(candle["high"])
-            if low > high:
+            if low > high or low % tick != 0 or high % tick != 0:
                 return result
             validated.append((low, high))
         filled = False
