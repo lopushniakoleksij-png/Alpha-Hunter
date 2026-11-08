@@ -26,7 +26,7 @@ SELECT schema_name,
   count(*) FILTER (WHERE runtime_settings <> '') AS customized_runtime_settings,
   md5(string_agg(
        function_name||'('||arguments||')|'||owner_name||'|'||
-       prokind||'|'||prosecdef||'|'||provolatile||'|'||
+       prokind::text||'|'||prosecdef::text||'|'||provolatile::text||'|'||
        runtime_settings||'|'||acl_state||'|'||body_digest,
        E'\n' ORDER BY function_name,arguments)) AS full_function_custody_fingerprint
 FROM selected_functions
