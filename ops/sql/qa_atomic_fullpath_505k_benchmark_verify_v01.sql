@@ -40,7 +40,15 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'QA_FULLPATH_INDEX_CHANGED_SCIENTIFIC_PERCENTILES_SIZE_%',s;
   END IF;
-  IF (SELECT count(*) FROM public.qa_fullpath_payoff_geometry
+  IF (SELECT count(*) FROM public.qa_fullpath_strategy_episodes
+       WHERE run_id=format('QA_FULLPATH_BASELINE_%s_1',s))<>s
+     OR (SELECT count(*) FROM public.qa_fullpath_strategy_24h_outcome_queue
+       WHERE run_id=format('QA_FULLPATH_BASELINE_%s_1',s))<>s
+     OR (SELECT count(*) FROM public.qa_fullpath_strategy_episodes
+       WHERE run_id=format('QA_FULLPATH_CANDIDATE_%s_1',s))<>s
+     OR (SELECT count(*) FROM public.qa_fullpath_strategy_24h_outcome_queue
+       WHERE run_id=format('QA_FULLPATH_CANDIDATE_%s_1',s))<>s
+     OR (SELECT count(*) FROM public.qa_fullpath_payoff_geometry
        WHERE run_id=format('QA_FULLPATH_BASELINE_%s_1',s))<>s
      OR (SELECT count(*) FROM public.qa_fullpath_payoff_geometry
        WHERE run_id=format('QA_FULLPATH_CANDIDATE_%s_1',s))<>s
@@ -52,7 +60,7 @@ BEGIN
  IF n2<>6 THEN RAISE EXCEPTION 'QA_FULLPATH_CONCURRENT_SAMPLE_MISSING_%',n2; END IF;
 
  RAISE NOTICE 'PASS: 505569 synthetic outcomes, all baseline/candidate 20-run 30/50/61 RPC cohorts, six concurrent 61s';
- RAISE NOTICE 'PASS: synthetic historical percentiles unchanged by index, all five nested chain families persisted exactly';
+ RAISE NOTICE 'PASS: synthetic historical percentiles unchanged by index, all seven synthetic nested chain side-effect families persisted exactly';
 END $qa$;
 
 -- Purely descriptive synthetic latency distribution, not production SLA.
