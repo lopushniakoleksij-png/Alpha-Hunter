@@ -66,3 +66,37 @@ Live catalog/statistical evidence (read-only): `idx_ah_strategy_outcome_24h_time
 Verified isolated CI evidence from workflow run `42362122063` / ephemeral PostgreSQL 17: synthetic **495k** outcome rows, 50 baseline and 50 candidate percentile queries, matched selected rows (24,574). Baseline aggregate **1,003.39 ms**, candidate-index aggregate **511.39 ms** (synthetic only). This test DOES NOT execute the real production nested trigger graph, real Supabase gateway, simultaneous writers or actual cloud storage workload. It supports a hypothesis, **not production approval**.
 
 **New practical acceptance:** during private full-trigger clone benchmark, measure S3/LONG and at least two non-S3 strategy/direction combinations, with real nested trigger timing, p95/p99, lock/IO/WAL, retry/failure injection, correct source-aware cardinalities and downstream freeze/payoff/paper-side-effect consistency. Only release a solution addressing all observed slow groups, not an S3-specific shortcut. Preserve immutable incomplete history, reject unknown writer format, no real orders. **Production NO-GO.**
+
+## 2026-11-08 Workstream A/B/C execution — directly observed failure context and new QA acceptance
+
+### Workstream A — direct PostgreSQL error context (HIGH confidence, not inferred)
+Supabase structured `postgres_logs` were queried READ-ONLY using only `parsed.context` classifications (no privileged function body, request credentials or private payload exported). Observation window **2026-11-08 08:00–10:39 UTC**:
+- **25** PostgreSQL `canceling statement due to statement timeout` events total, across four top-level query IDs.
+- **21** contained `private.alpha_hunter_capture_payoff_geometry_health_v01` in the live PL/pgSQL call stack.
+- **20** explicitly showed the nested `percentile_cont` historical-outcomes query as the interrupted statement.
+- **1** separately showed the `alpha_hunter_execution_cost_floor_status_v01` lookup within the same payoff-health function when the statement timeout fired.
+- **3** had no parsed context; **1** other timeout did not contain that payoff function.
+- Examples **10:22:42, 10:22:59, 10:23:15 UTC** during three failed `alpha_hunter_symbol_snapshots` requests for parent scan at 10:22:28. Two show interrupted percentile evaluation and one interrupted cost-floor lookup.
+- This is **direct evidence of where execution was at cancellation**, not a claim that those individual nested queries independently took 12 seconds; the enclosing database statement's time budget is cumulative.
+- Production roles confirmed by read-only `pg_roles`: `service_role statement_timeout=12s`; `authenticator statement_timeout=8s, lock_timeout=8s`. PostgREST executes on authenticated connection; effective role/session settings must be independently reproduced in the clone.
+
+**Database failure still active:** 09:42 UTC Render parent declared 44 symbols but had 0 children; 10:05 declared 40 but 0 children; 10:22 declared 46 but 0 children, all more than 3min old when checked. Each had 0 signals/features/readiness even though parent.error_count=0. The exact historic run IDs and counts were collected read-only. Never rewrite or relabel them.
+
+**Release candidate not installed:** Direct database catalogs confirmed **0** production `alpha_hunter_commit_core_scan_v01` functions and **0** `idx_ah_payoff_geometry_percentiles_candidate_v01` indexes.
+
+### Workstream B — new isolated PostgreSQL 17 tests (PASS)
+New `ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql` and existing workflow wiring in `.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml`.
+Exact Git SHA **`8e706f37c5d29435cb77595eed0a4cdabc7b2f3a`**:
+- GitHub Actions [isolated PostgreSQL17 workflow #42472030046](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42472030046) **SUCCESS**. Logs explicitly verified.
+- 61 synthetic symbols with synthetic AFTER INSERT error `SQLSTATE 57014`: all five core tables and all simulated trigger events rolled back to zero. After removing only the ephemeral fault trigger, identical retry persisted exactly 1 parent, 61 symbols, 61 signals, 61 features, 61 readiness, 306 simulated trigger receipts. Subsequent replay produced zero new trigger events.
+- 30 symbols with one source-error record and a separate missing-price record: exactly 1 parent, 30 symbol rows, **28** signals/features, **29** readiness rows and **144** synthetic trigger receipts, with idempotent replay. This directly validates source-aware cardinalities in these QA fixtures.
+- Preexisting 50-symbol rollback and service-role tests also passed. Full production test suite and R8 reconciliation workflow runs for the same commit reported SUCCESS, but these runs did not certify private production effects.
+- The error code was deliberately **injected**; this is NOT a measured 12-second wall-clock timeout, authentic payoff trigger, live PostgREST gateway or concurrency benchmark.
+
+### Workstream C — source-custody recurrence independently observed
+At 2026-11-08 **10:16:52 UTC**, another older-format parent contained 29 symbols/signals/features, 0 readiness, no modern identity. Supabase edge request metadata shows `python-requests/2.32.5`, provider network `Community Fibre Limited`, database JWT role `service_role`; a nearby Render parent uses `python-requests/2.34.2` from the Render network. Host/operator identity not established; no IP address or secrets extracted.
+
+### Remaining gates
+A full authentic isolated PG17 clone with transitive private function bodies, exact roles/extensions and realistic ~504k-row volume, p50/p95/p99 under 30/50/61 and concurrency, WAL/lock tracing and actual paper downstream side-effect parity has **NOT** been accomplished. Supabase branch list was empty; no paid clone created. Require independent DBA and separate security/custody/ops review, controlled owner-authorised canary and post-release proof before deployment.
+
+**PRODUCTION NO-GO; £0. No main merge, scanner/service change, production SQL mutation, orders or authorization changes performed.**
