@@ -18,6 +18,8 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 ## Verified recent execution
 
+- **2026-11-08 A2/B7/C2/C6/C7 (new evidence; authentic clone still BLOCKED):** [PostgreSQL17 CI #42485377827](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42485377827) **SUCCESS**, exact measured code SHA `0d671b63915f9e5252472c5d5a2f84a9c7e8802c`. Added 505,569-row outcome-scale *synthetic* full-atomic-RPC workload with 7 nested sink tables (including episode/24h queue, payoff and calibrated-order branches). 20 independent runs each at 30/50/61 symbols, current-style versus candidate index, plus six concurrent candidate 61-symbol runs. Combined synthetic p95 **baseline 619/1003/1244 ms vs candidate 202/303/365 ms**, respectively; 61-symbol concurrent candidate p95 **582 ms** (n=6). Synthetic percentile parity and core/downstream mock cardinalities PASS. **Do not represent these as actual private production trigger measurements or certified production p99.** [Detailed evidence](P0_TRIGGER_GRAPH_LATENCY_EVIDENCE_20261108.md). Live production at 13:35 UTC still had stale Render 49/0 parents from 13:04 and 13:22. Atomic RPC and proposed index still absent in production. Secure private schema export/restoration not performed; prepared zero-write Codespace preflight cannot be run here without Codespace access.
+
 - **2026-11-08 E2 (ACTIVE, contract tests PASS):** [PostgreSQL 17 + Python workflow #42483250686](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42483250686) **SUCCESS** at exact tested SHA `3741f9082385b6064edd6dbd0ac448de5a7cb16c`. **41 Python tests passed**, including four new transport-contract checks: simulated lost ConnectionError and Timeout after emulated committed RPC, exact unchanged retry payload/run_id, and fail-closed exhausted retries without sequential REST fallback. Server-side actual PostgreSQL E3/E6/57014 CI reran successfully. Mock transport tests do not prove a real network partition. Production read-only at 13:06 UTC showed historical 11:03, 11:22, 11:42, 12:04 stale parent-only failures; 12:42 complete (48/48); fresh 13:04 parent 49/0 was **UNDER 3-minute grace and PUBLISHING/UNVERIFIED**, not yet a confirmed stale failure. No production repair deployed.
 
 - **2026-11-08 E6 (PASS, isolated scope):** [GitHub Actions PostgreSQL 17 run #42483028557](https://github.com/lopushniakoleksij-png/Alpha-Hunter/actions/runs/42483028557) **SUCCESS**, exact tested commit `0586de9adf2e3301bab88d54196ff5e771dc15f7`. Two simultaneous PostgreSQL clients submitted an identical 61-symbol RPC and waited on a real advisory lock; both returned matching receipts with exactly 306 simulated trigger effects. A separately raced conflicting parent waited on the lock then received the required content mismatch, without overwriting committed evidence. Confirmed job logs; synthetic triggers are not production private triggers.
@@ -37,7 +39,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 | ID | Required action | Status | Current evidence / dependency |
 |---|---|---|---|
 | A1 | Reconfirm production timeout evidence | **PASS** | 08 Nov structured PostgreSQL logs: 25 57014; 21 payoff path |
-| A2 | Inventory full transitive trigger graph | **ACTIVE** | Production path identified; full transitive private graph not cloned |
+| A2 | Inventory full transitive trigger graph | **ACTIVE** | Live metadata-only graph confirmed strategy-episode/24h-queue, shadow/freeze, payoff and calibrated-order branches; private bodies, dynamic dependencies and clone parity unresolved. |
 | A3 | Confirm schema/function/index/grant fingerprints | **PASS** | Four structural digests matched 07 Nov baseline (08 Nov check) |
 | A4 | Reproduce historical percentile workloads | **ACTIVE** | 495k-row isolated synthetic percentile query benchmark; authentic workload outstanding |
 | A5 | Isolate and time nested operations | **BLOCKED** | Requires secure authentic private trigger graph |
@@ -49,13 +51,13 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 | ID | Required action | Status | Current evidence / dependency |
 |---|---|---|---|
-| B1 | Inspect existing private PG17 environment | **ACTIVE** | GitHub CI ephemeral PG17 verified; private Codespace environment not accessed |
+| B1 | Inspect existing private PG17 environment | **ACTIVE** | Ephemeral CI PG17 validated; safe Codespace readiness script created but cannot run against inaccessible private Codespace terminal. |
 | B2 | Confirm authorized private schema export route | **BLOCKED** | No authenticated private DB export connection available |
 | B3 | Obtain private SQL safely | **BLOCKED** | Do not reveal private function bodies or credentials |
 | B4 | Restore actual nested private trigger definitions | **BLOCKED** | No secure schema archive |
 | B5 | Reproduce roles, grants, RLS and extensions | **BLOCKED** | Public synthetic role test passes; full Supabase equivalence unproven |
 | B6 | Compare production and clone structural fingerprints | **BLOCKED** | Production baseline available; no authentic clone |
-| B7 | Create representative synthetic data distributions | **ACTIVE** | 495k synthetic outcome rows exist; distribution parity unproven |
+| B7 | Create representative synthetic data distributions | **ACTIVE** | New 505,569-row synthetic outcome-scale and seven-sink trigger analogue benchmark PASS; production data shape/distribution/conditional side effects remain unverified. |
 | B8 | Certify clone equivalence | **BLOCKED** | Transitive triggers, extensions, owner roles, runtime GUCs missing |
 
 ### Pillar C — Performance optimization
@@ -63,12 +65,12 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 | ID | Required action | Status | Current evidence / dependency |
 |---|---|---|---|
 | C1 | Benchmark existing query indexes | **ACTIVE** | Isolated percentile-only baseline, not full transaction |
-| C2 | Benchmark proposed targeted payoff index | **ACTIVE** | Isolated percentile-only comparison; index not on production |
+| C2 | Benchmark proposed targeted payoff index | **ACTIVE** | Combined atomic RPC + synthetic 505,569 outcome/7-sink trigger benchmark: candidate 61-symbol p95 365 ms vs baseline 1,244 ms; authentic private benchmark outstanding. |
 | C3 | Compare S3 and non-S3 workloads | **ACTIVE** | Read-only production correlations, isolated authentic comparison outstanding |
 | C4 | Validate exact percentile results | **ACTIVE** | Synthetic comparison only; scientific parity pending |
 | C5 | Compare alternate query plans | **ACTIVE** | Read-only production EXPLAIN and QA candidate plans |
-| C6 | Benchmark concurrent/heavy workloads | **BLOCKED** | Production-equivalent private database required |
-| C7 | Record full-transaction p50/p95/p99 | **BLOCKED** | Authentic triggers + realistic concurrency required |
+| C6 | Benchmark concurrent/heavy workloads | **BLOCKED** | Six concurrent 61-symbol synthetic chain calls PASS, but authentic transitive private triggers/concurrency not benchmarked. |
+| C7 | Record full-transaction p50/p95/p99 | **BLOCKED** | Isolated 20-run 30/50/61 full synthetic atomic RPC p50/p95/p99 measured in run #42485377827; production-equivalent measurement still blocked. |
 | C8 | Select and accept lowest-risk optimization | **BLOCKED** | No authentic full-request benchmark yet |
 
 ### Pillar D — Atomic persistence
