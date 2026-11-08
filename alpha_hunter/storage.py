@@ -689,7 +689,10 @@ class SupabaseStorage:
             not isinstance(result, dict)
             or result.get("committed") is not True
             or result.get("run_id") != parent[0]["run_id"]
-            or any(result.get(name) != count for name, count in tables.items())
+            or any(
+                type(result.get(name)) is not int or result[name] != count
+                for name, count in tables.items()
+            )
         ):
             raise SupabaseStorageError(
                 "Supabase atomic core scan RPC confirmation did not match payload"
