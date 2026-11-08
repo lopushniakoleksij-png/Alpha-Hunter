@@ -1,0 +1,41 @@
+# Alpha Hunter — P0 Canonical Persistence Root-Cause Evidence
+Date: 2026-11-08 UTC. Status: **production repair NOT released; incident open**.
+Scope: direct READ-ONLY production PostgreSQL/PostgREST and public repository source inspection. This document deliberately excludes credentials, raw private payloads, proprietary function bodies and personal account data. **No production writes, triggers, grants, scanners, workflows, deployment or trading permissions changed.**
+
+## Established failure chain (HIGH confidence)
+1. Render scanner source custody is `validation_identity.run_source=RENDER_CRON` / `runtime_role=RENDER_CRON` / Git SHA `33e8820bc8e4e2958e2fc20c7fb80899c4e2e65e` on affected runs.
+2. In that exact deployed source, `alpha_hunter/storage.py::save_snapshot` persists the parent first, then separate REST requests for symbols, signals, features and readiness. `_upsert` uses `Prefer: resolution=merge-duplicates,return=minimal`. These are **independent transactions**, NOT a scan-wide atomic transaction. Code defaults: HTTP timeout 15s, `max_retries=2` (up to 3 attempts), backoff 1s then 2s.
+3. Live PostgREST shows `POST /alpha_hunter_symbol_snapshots?on_conflict=run_id,symbol` HTTP **500** plus SQLSTATE **57014**, `canceling statement due to statement timeout`, at **08:42:52, 08:43:07 and 08:43:24 UTC**. Render scan parent at **08:42:37 UTC** (`dadaee94814266b3eb1895b2528205fa`) declared **50** symbols. After retries, **0** symbol/signal/feature/readiness children persisted, while parent remained committed. All three errors and persisted row counts confirm the failure mechanism.
+4. Effective database `service_role` PostgreSQL `statement_timeout=12s` (the SQL editor's `2min` timeout is NOT the REST role timeout). Historical `pg_stat_statements` for the symbol INSERT/UPSERT shape: **2,952 successful tracked executions**, mean **4.82s**, standard deviation **3.38s**, maximum **11.88s**. These are cumulative successful statistics, **not p95/p99** and do not include rejected 12s statements as completed calls.
+5. The same problem can **recover within retries**: Render scan at **09:05:33** declared 46, first had no children, received 57014 at 09:05:48 and 09:06:05, then persisted 46/46 symbol/signal/feature/readiness at **09:06:07**. **09:22:32** had 57014 at 09:22:47 and 09:23:02 but committed 47/47 child rows at **09:23:06**. A parent-only row during retry must be labeled PUBLISHING/UNVERIFIED, and after a bounded grace still missing rows must be escalated; never be declared successful on parent alone.
+6. This failure is not merely front-end V8: user-facing withholding is a correct fail-closed representation of incomplete database evidence.
+
+## Nested trigger/workload source of slowness (structurally PROVEN; per-event tail NOT measured)
+- Enabled production trigger chain observed via `pg_trigger` and function definitions:
+  `alpha_hunter_symbol_snapshots` INSERT/UPDATE OF payload -> `private.alpha_hunter_capture_strategy_observations_v01` -> `alpha_hunter_strategy_observations_v01` INSERT -> `private.alpha_hunter_capture_shadow_decision_quote_v01` -> `alpha_hunter_shadow_decision_quotes_v01` INSERT -> `private.alpha_hunter_auto_freeze_execution_decision_v02` -> `alpha_hunter_execution_decision_freezes_v01` INSERT -> `private.alpha_hunter_capture_payoff_geometry_health_v01`.
+- The last function (source-definition MD5 `cea4e21b84587377fd665e21d2763d6c`) executes **four `percentile_cont` aggregates** on `public.alpha_hunter_strategy_forward_outcomes_v01`, filtering strategy, direction, evaluated-at cutoff, trigger status, outcome quality and ambiguity.
+- Approximate outcome table rows at audit time: **503,724** (`pg_stat_user_tables` estimate). Read-only `EXPLAIN` for real observed S3/LONG predicates at 09:06 chose `idx_ah_strategy_outcome_24h_time_episode_v02` with the selectivity predicates applied as a post-filter, rather than a targeted covering/partial index. This is a credible contributor to long/inconsistent symbol writes; EXPLAIN WITHOUT ANALYZE is not runtime proof.
+- All four trigger functions above are `SECURITY DEFINER`. Presence of a possible chain **does not prove every branch executed for each failed scan**. Per-trigger execution time cannot be independently apportioned from top-level `pg_stat_statements` (`track_functions=none`). No live heavy EXPLAIN ANALYZE was run.
+- Retry risk: legacy `ON CONFLICT DO UPDATE SET payload=EXCLUDED.payload` can retrigger the symbol table's UPDATE OF payload trigger if an earlier request committed but its acknowledgement was lost. No claim of observed duplicate side effects; test full downstream idempotence and ACK-loss scenarios in the isolated real-trigger clone.
+
+## Separate source-custody incident (CONFIRMED data-shape; origin UNKNOWN)
+- Among latest **85** parent records inspected on 8 Nov: 70 `RENDER_CRON` compact parents, five `GITHUB_REALTIME_HOURLY` compact parents, **ten `UNKNOWN` older-format parent records**.
+- All ten UNKNOWN parents (10:37–23:20 UTC on 7 Nov) lack both `payload.validation_identity` and `payload._storage_contract`. Each had 25–28 symbol rows, matching signals/features, **zero readiness**, and **zero strategy observations**. They cannot count as full current canonical evidence.
+- The source may be an untracked legacy publisher or a pipeline using an obsolete storage contract. Attribution to Render/GitHub, an automation or an operator is **NOT proven** and must not be guessed. Capture original job/workflow identity, deployment SHA, host and request correlation without exposing secrets.
+- Separately, in a sample of 75 most recent parents, **6 of 63 `RENDER_CRON`** parents were stale parent-only; **4 of 4 `GITHUB_REALTIME_HOURLY`** parents had matching four child families. These are sample counts, not scientific failure rates or comprehensive lifecycle certification.
+
+## Actual cause / decision
+**Proven data-integrity cause:** independent stage commits + timed-out symbol UPSERT + exhausted bounded retries leave an orphaned parent. 
+**Likely expensive operation:** deep synchronous trigger-dependent historical payoff percentile lookup with poor index selectivity, subject to 12s role limit. Exact trigger timing, lock/IO shares and per-event causality are **not yet proven**.
+**Additional issue:** stale/unknown source contract produces legacy-style scans without readiness and source custody.
+
+## Required next gates (all fail-closed, £0 and no real trading)
+1. Preserve baseline and run IDs; never delete/relabel old incomplete parent rows or present them as verified signals.
+2. Reproduce actual public/private transitive production trigger graph in an authorised private PG17 clone with matching object/role/index/function fingerprints and realistic ~504k outcome data. No credentials/private SQL in public GitHub.
+3. Benchmark real nested triggers, lock/WAL/IO, p50/p95/p99 under 30/50/61-symbol loads and concurrent publishers; compare the existing broad outcome index with the proposed narrow partial index from draft #445; verify identical percentile values.
+4. Test candidate five-stage atomic RPC and the paper-lifecycle/downstream evidence separately under 57014, partial stage failures, lost acknowledgements, retries, duplicate run, cross-run identity, forged role, and source-contract drift. All fail atomically or provide bounded, idempotent verified repair; prevent fallback to legacy writes.
+5. Enumerate and attribute the older-format producer. Require a signed/source-custody identity and current storage contract for acceptance; do not silently promote UNKNOWN sources.
+6. Independent DBA and separate security, custody, paper-risk and operations approval bound to exact SHA; explicit owner authorisation before any production change. Then a controlled rollback-ready canary, **10 consecutive new verified scans** and **24h clean scan-write observation**. No timeouts or missing children; no real-order authority.
+7. Existing hourly source-aware Integrity Watch remains read-only and can report new or materially changed failures; a watch is **detection**, not repair.
+
+Research branch: `fix/supabase-write-timeout-qa` / draft PR #445. **PRODUCTION NO-GO.**
