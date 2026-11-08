@@ -39,3 +39,8 @@ Scope: direct READ-ONLY production PostgreSQL/PostgREST and public repository so
 7. Existing hourly source-aware Integrity Watch remains read-only and can report new or materially changed failures; a watch is **detection**, not repair.
 
 Research branch: `fix/supabase-write-timeout-qa` / draft PR #445. **PRODUCTION NO-GO.**
+
+## Follow-up: unattributed legacy writer network fingerprint (read-only API metadata)
+Supabase `edge_logs` from **2026-11-07 09:30 through 2026-11-08 09:30 UTC** confirm **11** HTTP 201 parent UPSERT calls using `python-requests/2.32.5` from **one distinct network-origin IP**, by `uniqExact` only (the IP address was **not** extracted or disclosed). These calls used the `service_role` database access role. First observed **2026-11-07 09:35:28 UTC**, last **23:20:09 UTC**. The provider network differs from canonical Render; a separate parent request ~2 minutes later used `python-requests/2.34.2` from Render.
+
+This **narrows network origin** but does **not** identify a machine, owner, physical location or malicious actor; NAT, shared access, proxies or a legitimate former development process are possible. Investigate authorised local/operator integrations and scheduled processes, reconcile where the privileged key is stored, and plan any necessary credential rotation with an approved safe handover **without interrupting the protected scanner**. Do not disclose request IPs, API keys, JWTs, private payloads or credential contents in the public issue/PR. The old-format process is a **separate integrity and source-custody gate**, not proof it caused the 08:42 Render statement timeouts.
