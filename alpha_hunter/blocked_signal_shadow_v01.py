@@ -61,6 +61,11 @@ def evaluate_blocked_shadow(
         if direction not in ("LONG", "SHORT"):
             return result
         decision = _time(signal["decision_at"])
+        signal_at = _time(signal["signal_at"])
+        market_at = _time(signal["market_at"])
+        # A decision cannot precede the signal or its underlying market evidence.
+        if signal_at > decision or market_at > signal_at:
+            return result
         entry, stop, target, tick = (_number(signal[k]) for k in
                                       ("entry", "stop", "target", "tick_size"))
         if any(price % tick != 0 for price in (entry, stop, target)):
