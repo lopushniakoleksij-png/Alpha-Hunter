@@ -131,3 +131,17 @@ def test_invalid_interval_metadata_fails_closed_without_exception():
 def test_valid_hourly_interval_retains_conservative_target_label():
     assert evaluate_blocked_shadow(BASE, candles((99, 101), (101, 111)),
                                    horizon_hours=2, interval_minutes=60)["classification"] == "TARGET_FIRST"
+
+
+def test_malformed_canonical_reason_identifiers_fail_closed():
+    rows = candles((99, 101), (101, 111))
+    for reason in ("execution_rr_outlier", "Execution_Rr_Outlier",
+                   "EXECUTION RR OUTLIER", "EXECUTION-RR-OUTLIER",
+                   "ÉXECUTION_RR_OUTLIER", "1INVALID", "_INVALID",
+                   "EXECUTION.RR.OUTLIER"):
+        assert classify(rows, {**BASE, "block_reasons": [reason]}) == "INSUFFICIENT_DATA"
+
+
+def test_valid_canonical_reason_identifier_keeps_shadow_outcome():
+    signal = {**BASE, "block_reasons": ["EXECUTION_RR_OUTLIER", "SPREAD_GATE_2"]}
+    assert classify(candles((99, 101), (101, 111)), signal) == "TARGET_FIRST"
