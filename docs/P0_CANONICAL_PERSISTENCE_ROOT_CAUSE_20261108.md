@@ -44,3 +44,25 @@ Research branch: `fix/supabase-write-timeout-qa` / draft PR #445. **PRODUCTION N
 Supabase `edge_logs` from **2026-11-07 09:30 through 2026-11-08 09:30 UTC** confirm **11** HTTP 201 parent UPSERT calls using `python-requests/2.32.5` from **one distinct network-origin IP**, by `uniqExact` only (the IP address was **not** extracted or disclosed). These calls used the `service_role` database access role. First observed **2026-11-07 09:35:28 UTC**, last **23:20:09 UTC**. The provider network differs from canonical Render; a separate parent request ~2 minutes later used `python-requests/2.34.2` from Render.
 
 This **narrows network origin** but does **not** identify a machine, owner, physical location or malicious actor; NAT, shared access, proxies or a legitimate former development process are possible. Investigate authorised local/operator integrations and scheduled processes, reconcile where the privileged key is stored, and plan any necessary credential rotation with an approved safe handover **without interrupting the protected scanner**. Do not disclose request IPs, API keys, JWTs, private payloads or credential contents in the public issue/PR. The old-format process is a **separate integrity and source-custody gate**, not proof it caused the 08:42 Render statement timeouts.
+
+## 2026-11-08 follow-up: reproducible 24-hour trigger-delay correlation (read-only)
+
+Repeatable query added and executed in production without DML:
+`ops/sql/readonly_payoff_trigger_latency_correlation_v01.sql` (draft PR #445 only).
+
+In the latest 24-hour bounded `RENDER_CRON` cohort at the time of this check, **72** parent scans were examined. **8** were parent-only with no symbol children. Among the 64 complete-symbol scans, grouped by *durably retained* execution-freeze evidence:
+
+| Category | Scans | Child delay mean | Completed child delay >15s |
+|---|---:|---:|---:|
+| No retained freeze | 27 | 2.23 s | 0 |
+| Other strategy freeze(s) | 34 | 8.98 s | 13 |
+| S3/LONG freeze | 3 | 33.17 s | 3 |
+| Parent-only incomplete | 8 | no completed child | n/a |
+
+Important: elapsed child publication delay spans request retries, network, and ALL synchronous triggers; not direct trigger duration. Aborted transactions leave no retained freezes, so the incomplete group **cannot** be classified as having no trigger activity. The sharp association strengthens the nested-workload hypothesis but is NOT a controlled intervention or per-trigger timing proof. Also: a slow scan is not always S3; on 2026-11-08 03:42 UTC there were S2/LONG, S6/LONG, S8/SHORT freezes with 16.82s latency; 02:04 UTC had S2/SHORT, S6/LONG with 35.20s latency.
+
+Live catalog/statistical evidence (read-only): `idx_ah_strategy_outcome_24h_time_episode_v02` had cumulative **2,417 scans and 147,597,727 tuples read** (~61k/scan). This aggregate includes **all callers** since counters were reset, not solely payoff percentile calls. A non-executing planner `EXPLAIN` on observed predicates gave **S3/LONG total cost ~17,368** with a broad 24h index scan + post-filter on strategy/direction, compared with **S6/LONG ~2,780** using the strategy index. Costs are planner units, **not milliseconds**.
+
+Verified isolated CI evidence from workflow run `42362122063` / ephemeral PostgreSQL 17: synthetic **495k** outcome rows, 50 baseline and 50 candidate percentile queries, matched selected rows (24,574). Baseline aggregate **1,003.39 ms**, candidate-index aggregate **511.39 ms** (synthetic only). This test DOES NOT execute the real production nested trigger graph, real Supabase gateway, simultaneous writers or actual cloud storage workload. It supports a hypothesis, **not production approval**.
+
+**New practical acceptance:** during private full-trigger clone benchmark, measure S3/LONG and at least two non-S3 strategy/direction combinations, with real nested trigger timing, p95/p99, lock/IO/WAL, retry/failure injection, correct source-aware cardinalities and downstream freeze/payoff/paper-side-effect consistency. Only release a solution addressing all observed slow groups, not an S3-specific shortcut. Preserve immutable incomplete history, reject unknown writer format, no real orders. **Production NO-GO.**
