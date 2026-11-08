@@ -7,6 +7,14 @@
 set -Eeuo pipefail
 set +x
 umask 077
+# Explicitly confine private credential-handling export to its existing Codespace.
+# Never request credentials on GitHub Actions, another workstation, or main.
+if [[ "$(printenv CODESPACES || true)" != "true" ]] ||
+   [[ "$(printenv GITHUB_ACTIONS || true)" == "true" ]] ||
+   [[ "$(git branch --show-current 2>/dev/null || true)" != "fix/supabase-write-timeout-qa" ]]; then
+  echo "REFUSED: private export requires the existing authorised Codespace on isolated draft branch."
+  exit 2
+fi
 
 PROJECT_REF="yjgtjzymfurqzqqxcrnp"
 BASE="$HOME/.alpha-hunter-private-dbqa"
