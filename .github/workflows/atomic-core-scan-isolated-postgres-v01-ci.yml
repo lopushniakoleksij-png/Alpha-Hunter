@@ -8,6 +8,7 @@ on:
       - 'ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_service_role_v01.sql'
       - 'ops/sql/readonly_core_scan_failure_taxonomy_v01.sql'
       - 'ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql'
@@ -85,6 +86,8 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
       - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
+      - name: Verify 61-symbol 57014 atomic rollback and 30-symbol source-aware replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql
       - name: Validate service_role RPC invocation under RLS with denied public roles
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
       - name: Compare payoff percentile query against 495k synthetic outcomes
