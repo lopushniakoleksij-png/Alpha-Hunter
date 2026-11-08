@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Alpha Hunter P0 — 1. Check private QA readiness (read-only)",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "ops/local/check_private_pg17_clone_readiness_v01.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Alpha Hunter P0 — 2. Inspect existing private archive (offline)",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "ops/local/inspect_private_pg_archive_topology_v01.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Alpha Hunter P0 — 3. Verify restored private PG17 clone (read-only)",
+      "type": "process",
+      "command": "bash",
+      "args": [
+        "ops/local/verify_restored_private_pg17_fingerprints_v01.sh"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
