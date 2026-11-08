@@ -195,3 +195,52 @@ def test_benchmark_wont_call_rpc_when_preexisting_run_found(monkeypatch):
         qa.benchmark_one(f)
     assert len(calls) == 1
     assert "EXPLAIN" not in calls[0]
+
+
+def test_private_clone_requires_exact_trigger_and_schema_fingerprints():
+    valid = "|".join(qa.STRUCTURAL_BASELINE) + "\n" + "\n".join(sorted(qa.REQUIRED_EXTENSIONS))
+    qa.verify_structural_fingerprint(valid)
+
+    # A different trigger body could preserve the same number of triggers.
+    wrong_trigger = list(qa.STRUCTURAL_BASELINE)
+    wrong_trigger[11] = "00000000000000000000000000000000"
+    with pytest.raises(qa.QABlocked, match="structural, trigger"):
+        qa.verify_structural_fingerprint(
+            "|".join(wrong_trigger) + "\n" + "\n".join(sorted(qa.REQUIRED_EXTENSIONS))
+        )
+    # A different index or RLS policy must block as well.
+    for pos in (3, 10, 12):
+        wrong = list(qa.STRUCTURAL_BASELINE)
+        wrong[pos] = "WRONG"
+        with pytest.raises(qa.QABlocked):
+            qa.verify_structural_fingerprint(
+                "|".join(wrong) + "\n" + "\n".join(sorted(qa.REQUIRED_EXTENSIONS))
+            )
+
+
+def test_missing_required_supabase_extension_is_blocking():
+    ext = sorted(qa.REQUIRED_EXTENSIONS)
+    valid_counts = "|".join(qa.STRUCTURAL_BASELINE)
+    with pytest.raises(qa.QABlocked, match="extension"):
+        qa.verify_structural_fingerprint(valid_counts + "\n" + "\n".join(ext[:-1]))
+
+
+@pytest.mark.parametrize("state", ["", "invalid", "unknown", "candidate,baseline"])
+def test_unverified_candidate_index_state_fails_closed(state):
+    with pytest.raises(qa.QABlocked, match="Candidate index not verified"):
+        qa.private_candidate_index_mode(state)
+
+
+@pytest.mark.parametrize("state", ["candidate", "baseline"])
+def test_only_verified_candidate_or_baseline_index_is_accepted(state):
+    assert qa.private_candidate_index_mode(state + "\n") == state
+
+
+def test_candidate_aware_fingerprint_only_excludes_one_named_index():
+    baseline_sql = (ROOT / "ops/sql/readonly_stage2_structural_fingerprint_v01.sql").read_text()
+    candidate_sql = (ROOT / "ops/sql/readonly_stage2_candidate_aware_fingerprint_v01.sql").read_text()
+    name = "idx_ah_payoff_geometry_percentiles_candidate_v01"
+    assert name not in baseline_sql
+    assert candidate_sql.count("where ic.relname <> '" + name + "'") == 1
+    assert "triggers_functions_fingerprint" in candidate_sql
+    assert "table_grants_rls_fingerprint" in candidate_sql
