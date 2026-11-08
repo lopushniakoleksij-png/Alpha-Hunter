@@ -27,6 +27,9 @@ on:
       - 'ops/sql/qa_atomic_fullpath_505k_benchmark_setup_v01.sql'
       - 'ops/sql/qa_atomic_fullpath_505k_benchmark_verify_v01.sql'
       - 'ops/local/qa_atomic_fullpath_505k_benchmark_v01.py'
+      - 'ops/sql/qa_atomic_fullpath_2x2_sequential_v01.sql'
+      - 'ops/sql/qa_atomic_fullpath_2x2_verify_v01.sql'
+      - 'ops/local/qa_atomic_fullpath_2x2_matrix_v01.py'
       - 'tests/test_atomic_core_scan_rpc_candidate.py'
       - 'tests/test_atomic_core_scan_transport_retry_v01.py'
       - 'ops/sql/readonly_core_scan_trigger_inventory_v01.sql'
@@ -113,3 +116,5 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
       - name: Harada C6-C7 benchmark combined atomic RPC with synthetic 505569-outcome nested graph
         run: python3 ops/local/qa_atomic_fullpath_505k_benchmark_v01.py
+      - name: Harada D 2x2 sequential vs atomic and current vs proposed indexing QA
+        run: python3 ops/local/qa_atomic_fullpath_2x2_matrix_v01.py
