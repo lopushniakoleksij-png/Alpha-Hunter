@@ -91,7 +91,8 @@ jobs:
           test "$(grep -c '^QA_' /tmp/qa-taxonomy.txt)" -eq 5
           grep -Eq '^QA_COMPLETE,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,CORE_PASS$' /tmp/qa-taxonomy.txt
           grep -Eq '^QA_READY_MISSING,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,READINESS_MISSING$' /tmp/qa-taxonomy.txt
-          grep -Eq '^QA_UNVERSIONED_COMPLETE,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED
+          grep -Eq '^QA_UNVERSIONED_COMPLETE,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_MISSING_RUNTIME,.*,snapshot-parent-v0[.]2,RENDER_CRON,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED$' /tmp/qa-taxonomy.txt
           grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
           echo "PASS: modern source claim plus complete counts required; legacy and incomplete custody fail closed"
       - name: Construct synthetic core schema and trigger graph
