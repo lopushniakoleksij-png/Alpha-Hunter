@@ -101,6 +101,22 @@ def ensure_offline_clone() -> None:
     identity = psql("SELECT current_database() || '|' || current_user || '|' || current_setting('server_version_num');")
     if not re.fullmatch(r"alpha_hunter_private_qa\\|postgres\\|17[0-9]{4}", identity):
         raise QABlocked("Offline database name, role or PG17 server identity mismatched")
+    # Immutable 8 November live baseline: real private function bodies, owner, ACL
+    # and runtime settings must match before latency is measured.
+    # This SQL returns only hashes/counts; never print raw private definitions.
+    custody_sql = Path("ops/sql/readonly_p0_private_function_catalog_fingerprint_v01.sql").read_text(encoding="utf-8")
+    custody = psql(custody_sql).splitlines()
+    if "private|110|65|110|8fae5afad12f3040d30d0416cbfd9be1" not in custody:
+        raise QABlocked("Private function custody fingerprint differs from inspected production")
+    trigger_count = psql("""
+        SELECT count(*) FROM pg_trigger t
+        JOIN pg_class c ON c.oid=t.tgrelid
+        JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='public' AND c.relname LIKE 'alpha_hunter_%'
+          AND NOT t.tgisinternal AND t.tgenabled <> 'D';
+    """)
+    if trigger_count != "131":
+        raise QABlocked("Public Alpha Hunter trigger count differs from inspected production")
     checked = psql("""
         SELECT (SELECT count(*) FROM pg_proc p JOIN pg_namespace n
                 ON n.oid=p.pronamespace
