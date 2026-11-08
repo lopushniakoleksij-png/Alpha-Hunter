@@ -4,6 +4,7 @@ These tests never touch a Codespace, a database, or real credentials.
 They prove fail-closed fixture, SQL-quoting, and execution prerequisites only.
 """
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -80,3 +81,38 @@ def test_github_actions_never_runs_private_benchmark(monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     with pytest.raises(qa.QABlocked, match="never run in GitHub Actions"):
         qa.ensure_offline_clone()
+
+
+def test_audit_sql_uses_only_synthetic_run_id():
+    run = fixture()["p_parent"][0]["run_id"]
+    audit = qa.scan_evidence_query(run)
+    assert "alpha_hunter_payoff_geometry_health_observations_v01" in audit
+    assert "alpha_hunter_calibrated_paper_orders_v01" in audit
+    assert "alpha_hunter_strategy_24h_outcome_queue_v01" in audit
+    with pytest.raises(qa.QABlocked, match="Non-synthetic run identifier"):
+        qa.scan_evidence_query("production_123")
+
+
+def test_offline_rpc_measurement_requires_exact_counts_and_all_nested_branches():
+    f = qa.validate_fixture(fixture(), 30)
+    result = {**{
+        "parents": 1, "symbols": 30, "signals": 0, "features": 0, "readiness": 30
+    }, **{name: 1 for name in (
+        "observations", "quotes", "freezes", "payoff",
+        "calibrated_orders", "queue"
+    )}}
+    def output(payload):
+        return json.dumps([{"Execution Time": 345.67}]) + "\\n" + json.dumps(payload)
+
+    assert qa.parse_measured_trial(output(result), f) == pytest.approx(345.67)
+
+    for name, value in (
+        ("symbols", 29),
+        ("payoff", 0),
+        ("queue", 0),
+        ("calibrated_orders", 0),
+        ("parents", True),
+    ):
+        bad = dict(result, **{name: value})
+        with pytest.raises(qa.QABlocked):
+            qa.parse_measured_trial(output(bad), f)
