@@ -4,7 +4,8 @@ from alpha_hunter.blocked_signal_shadow_v01 import evaluate_blocked_shadow
 
 T = datetime(2026, 11, 7, 10, 15, tzinfo=timezone.utc)
 BASE = dict(final_gate_outcome="BLOCKED", block_reasons=["EXECUTION_RR_OUTLIER"],
-            direction="LONG", decision_at=T, entry="100", stop="95",
+            direction="LONG", decision_at=T, signal_at=T - timedelta(minutes=1),
+            market_at=T - timedelta(minutes=2), entry="100", stop="95",
             target="110", tick_size="0.5")
 
 
@@ -145,3 +146,22 @@ def test_malformed_canonical_reason_identifiers_fail_closed():
 def test_valid_canonical_reason_identifier_keeps_shadow_outcome():
     signal = {**BASE, "block_reasons": ["EXECUTION_RR_OUTLIER", "SPREAD_GATE_2"]}
     assert classify(candles((99, 101), (101, 111)), signal) == "TARGET_FIRST"
+
+
+def test_signal_and_market_chronology_fail_closed():
+    rows = candles((99, 101), (101, 111))
+    for signal in (
+        {**BASE, "signal_at": T + timedelta(seconds=1)},
+        {**BASE, "market_at": T},
+        {**BASE, "signal_at": T - timedelta(minutes=3)},
+        {**BASE, "signal_at": None},
+        {k: v for k, v in BASE.items() if k != "market_at"},
+    ):
+        result = evaluate_blocked_shadow(signal, rows, horizon_hours=2)
+        assert result["classification"] == "INSUFFICIENT_DATA"
+        assert result["fill_verified"] is False
+        assert result["net_return"] is None
+
+
+def test_valid_signal_market_chronology_preserves_gross_label():
+    assert classify(candles((99, 101), (101, 111))) == "TARGET_FIRST"
