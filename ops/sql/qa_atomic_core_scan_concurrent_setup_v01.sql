@@ -9,7 +9,7 @@ END $qa$;
 
 INSERT INTO public.qa_atomic_scale_fixtures_v01
   (case_name,parent_rows,children_rows,signals_rows,features_rows,readiness_rows)
-SELECT case_name,
+SELECT v.case_name,
   replace(parent_rows::text,'QA_61_TIMEOUT',run_id)::jsonb,
   replace(children_rows::text,'QA_61_TIMEOUT',run_id)::jsonb,
   replace(replace(signals_rows::text,'QA_61_TIMEOUT',run_id),
