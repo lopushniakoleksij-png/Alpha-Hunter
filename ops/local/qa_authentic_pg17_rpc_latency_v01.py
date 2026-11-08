@@ -99,7 +99,7 @@ def ensure_offline_clone() -> None:
     if status.returncode or status.stdout.strip() != "true|none":
         raise QABlocked("Network-isolated, already-running private PG17 clone not available")
     identity = psql("SELECT current_database() || '|' || current_user || '|' || current_setting('server_version_num');")
-    if not re.fullmatch(r"alpha_hunter_private_qa\\|postgres\\|17[0-9]{4}", identity):
+    if not re.fullmatch(r"alpha_hunter_private_qa\|postgres\|17[0-9]{4}", identity):
         raise QABlocked("Offline database name, role or PG17 server identity mismatched")
     # Immutable 8 November live baseline: real private function bodies, owner, ACL
     # and runtime settings must match before latency is measured.
