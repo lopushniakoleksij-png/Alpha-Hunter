@@ -210,14 +210,14 @@ BEGIN
      'payload',jsonb_build_object('qa','fullpath','ordinal',n)) ORDER BY n)
  INTO p_child FROM generate_series(1,p_size) n;
  SELECT jsonb_agg(jsonb_build_object(
-     'run_id',rid,'signal_id',format('QAFULL_%s_%s_%s',upper(p_phase),p_trial,n),
+     'run_id',rid,'signal_id',format('QAFULL_%s_%s_%s_%s',upper(p_phase),p_size,p_trial,n),
      'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
      'detected_at_utc','2026-11-08T12:00:00Z',
      'reference_price',100+n,'trade_permission',false,
      'payload',jsonb_build_object('qa','fullpath')) ORDER BY n)
  INTO p_signal FROM generate_series(1,p_size) n;
  SELECT jsonb_agg(jsonb_build_object(
-     'run_id',rid,'signal_id',format('QAFULL_%s_%s_%s',upper(p_phase),p_trial,n),
+     'run_id',rid,'signal_id',format('QAFULL_%s_%s_%s_%s',upper(p_phase),p_size,p_trial,n),
      'symbol',format('S%sUSDT',lpad(n::text,3,'0')),
      'captured_at_utc','2026-11-08T12:00:00Z',
      'trade_permission',false,'features','{}'::jsonb,
