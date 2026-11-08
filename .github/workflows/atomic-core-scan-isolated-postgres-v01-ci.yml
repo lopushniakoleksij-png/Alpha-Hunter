@@ -88,10 +88,65 @@ jobs:
           createdb isolated_taxonomy_qa
           psql -X -v ON_ERROR_STOP=1 -d isolated_taxonomy_qa -f ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql
           psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_taxonomy_qa -f ops/sql/readonly_core_scan_failure_taxonomy_v01.sql > /tmp/qa-taxonomy.txt
-          test "$(grep -c '^QA_' /tmp/qa-taxonomy.txt)" -eq 4
+          test "$(grep -c '^QA_' /tmp/qa-taxonomy.txt)" -eq 5
           grep -Eq '^QA_COMPLETE,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,CORE_PASS$' /tmp/qa-taxonomy.txt
           grep -Eq '^QA_READY_MISSING,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,READINESS_MISSING$' /tmp/qa-taxonomy.txt
-          grep -Eq '^QA_UNVERSIONED_COMPLETE,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,CORE_PASS$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_UNVERSIONED_COMPLETE,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED
+          grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
+          echo "PASS: modern source claim plus complete counts required; legacy and incomplete custody fail closed"
+      - name: Construct synthetic core schema and trigger graph
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
+      - name: Install candidate function in ephemeral test database ONLY
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
+      - name: Verify rollback, replay, completeness, and restricted privileges
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
+      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
+      - name: Verify 61-symbol 57014 atomic rollback and 30-symbol source-aware replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql
+      - name: Verify real PostgreSQL statement_timeout rollback and idempotent retry
+        run: bash ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh
+      - name: E3 simulate committed response lost then idempotent retry in separate sessions
+        run: bash ops/local/qa_atomic_core_scan_lost_ack_v01.sh
+      - name: E6 verify overlapping identical/conflicting atomic RPCs across independent PostgreSQL sessions
+        run: python3 ops/local/qa_atomic_core_scan_concurrent_v01.py
+      - name: Validate service_role RPC invocation under RLS with denied public roles
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
+      - name: Compare payoff percentile query against 495k synthetic outcomes
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
+      - name: Harada C6-C7 benchmark combined atomic RPC with synthetic 505569-outcome nested graph
+        run: python3 ops/local/qa_atomic_fullpath_505k_benchmark_v01.py
+      - name: Harada D 2x2 sequential vs atomic and current vs proposed indexing QA
+        run: python3 ops/local/qa_atomic_fullpath_2x2_matrix_v01.py
+ /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_MISSING_RUNTIME,.*,snapshot-parent-v0[.]2,RENDER_CRON,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED
+          grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
+          echo "PASS: all three zero-error-count failure categories classified correctly"
+      - name: Construct synthetic core schema and trigger graph
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
+      - name: Install candidate function in ephemeral test database ONLY
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
+      - name: Verify rollback, replay, completeness, and restricted privileges
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
+      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
+      - name: Verify 61-symbol 57014 atomic rollback and 30-symbol source-aware replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql
+      - name: Verify real PostgreSQL statement_timeout rollback and idempotent retry
+        run: bash ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh
+      - name: E3 simulate committed response lost then idempotent retry in separate sessions
+        run: bash ops/local/qa_atomic_core_scan_lost_ack_v01.sh
+      - name: E6 verify overlapping identical/conflicting atomic RPCs across independent PostgreSQL sessions
+        run: python3 ops/local/qa_atomic_core_scan_concurrent_v01.py
+      - name: Validate service_role RPC invocation under RLS with denied public roles
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
+      - name: Compare payoff percentile query against 495k synthetic outcomes
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
+      - name: Harada C6-C7 benchmark combined atomic RPC with synthetic 505569-outcome nested graph
+        run: python3 ops/local/qa_atomic_fullpath_505k_benchmark_v01.py
+      - name: Harada D 2x2 sequential vs atomic and current vs proposed indexing QA
+        run: python3 ops/local/qa_atomic_fullpath_2x2_matrix_v01.py
+ /tmp/qa-taxonomy.txt
           grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
           echo "PASS: all three zero-error-count failure categories classified correctly"
       - name: Construct synthetic core schema and trigger graph
