@@ -49,7 +49,8 @@ if [[ ! -d "$base" || -L "$base" ]]; then
 fi
 fprint="$(mktemp "$base/.clone-fingerprint.XXXXXXXX")"
 funcs="$(mktemp "$base/.clone-critical-functions.XXXXXXXX")"
-trap 'rm -f "$fprint" "$funcs"' EXIT
+catalog="$(mktemp "$base/.clone-private-functions.XXXXXXXX")"
+trap 'rm -f "$fprint" "$funcs" "$catalog"' EXIT
 
 qa_psql < ops/sql/readonly_stage2_structural_fingerprint_v01.sql > "$fprint"
 if [[ ! -s "$fprint" ]]; then
@@ -124,12 +125,29 @@ supabase_vault|0.3.1|vault
 uuid-ossp|1.1|extensions
 EXTENSIONS
 
+# Full source-free custody census: all 110 private functions plus 10
+# public alpha_hunter_% functions, not just the six critical hot-path routines.
+# Hash includes bodies, owner, arg signatures, ACL and proconfig.
+qa_psql < ops/sql/readonly_p0_private_function_catalog_fingerprint_v01.sql > "$catalog"
+if ! grep -Fxq 'private|110|65|110|8fae5afad12f3040d30d0416cbfd9be1' "$catalog"; then
+  echo "FAIL: full private function custody count/digest does not match 8 Nov production."
+  failed=1
+fi
+if ! grep -Fxq 'public|10|5|10|a75b1d2ed683766dbd5ffa3830f7f087' "$catalog"; then
+  echo "FAIL: public Alpha Hunter function custody count/digest does not match production."
+  failed=1
+fi
+if ! grep -Fxq '0|0|' "$catalog"; then
+  echo "FAIL: unexpected private-schema row-trigger count; production was zero."
+  failed=1
+fi
+
 if (( failed != 0 )); then
   echo "FAIL: clone does NOT match current verified structural baseline."
   echo "No migrations, production writes or benchmarks attempted."
   exit 3
 fi
 
-echo "PASS: private QA clone structural metadata, 6 critical functions and 8 extension identities match inspected baseline."
+echo "PASS: private QA clone structural metadata, 120 function custody digests, critical hot-path functions and 8 extension identities match inspected baseline."
 echo "NOT CERTIFIED: dynamic SQL dependencies, role ownership, runtime GUCs, trigger side effects, scientific results and performance."
 echo "NEXT_GATE: inspect private dependency graph + run actual 30/50/61 atomic RPC benchmarks using synthetic data."
