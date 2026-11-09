@@ -44,6 +44,9 @@ SELECT collected_at_utc, run_id, run_source, runtime_role, writer_commit,
     WHEN symbol_rows=symbol_count AND symbol_rows>0
       AND readiness_rows=0 AND symbol_count>error_count
       THEN 'READINESS_MISSING_ESCALATE'
+    WHEN symbol_rows=symbol_count AND readiness_rows>0
+      AND readiness_rows<symbol_rows AND error_count=0
+      THEN 'READINESS_PARTIAL_ESCALATE'
     WHEN symbol_rows=signal_rows AND symbol_rows=feature_rows
       AND symbol_rows=readiness_rows AND error_count=0
       THEN 'FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION'
