@@ -107,3 +107,50 @@ def test_exhausted_ambiguous_ack_retries_fail_closed_without_legacy_upsert(excep
     # A transport error is AMBIGUOUS: caller cannot assume rollback or commit.
     # No independent REST family fallback must run.
     assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.calls)
+
+
+class TransientHttpFailureSession:
+    """Simulate an ambiguous gateway response; no actual network is contacted."""
+
+    def __init__(self, *, status_code, fail_all=False):
+        self.status_code = status_code
+        self.fail_all = fail_all
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        request = json.loads(kwargs["data"])
+        self.calls.append((url, request))
+        if self.fail_all or len(self.calls) == 1:
+            response = QAResponse({"error": "synthetic gateway failure"})
+            response.status_code = self.status_code
+            response.text = "synthetic gateway failure"
+            return response
+        return QAResponse({
+            "committed": True,
+            "run_id": request["p_parent"][0]["run_id"],
+            "parent_count": len(request["p_parent"]),
+            "symbol_count": len(request["p_children"]),
+            "signal_count": len(request["p_signals"]),
+            "feature_count": len(request["p_features"]),
+            "readiness_count": len(request["p_readiness"]),
+        })
+
+
+@pytest.mark.parametrize("status_code", [408, 429, 500, 502, 503, 504])
+def test_atomic_rpc_retryable_http_status_preserves_exact_identity(status_code):
+    session = TransientHttpFailureSession(status_code=status_code)
+    run_id = SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
+    assert len(session.calls) == 2
+    assert session.calls[0] == session.calls[1]
+    assert session.calls[0][1]["p_parent"][0]["run_id"] == run_id
+    assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.calls)
+
+
+@pytest.mark.parametrize("status_code", [408, 429, 500, 502, 503, 504])
+def test_atomic_rpc_exhausted_retryable_http_status_fails_closed(status_code):
+    session = TransientHttpFailureSession(status_code=status_code, fail_all=True)
+    with pytest.raises(SupabaseStorageError, match=f"HTTP {status_code}"):
+        SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
+    assert len(session.calls) == 2
+    assert session.calls[0] == session.calls[1]
+    assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.calls)
