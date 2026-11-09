@@ -257,3 +257,47 @@ def test_atomic_rpc_real_loopback_socket_drop_replays_identical_body(monkeypatch
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("disconnects", [1, 2])
+def test_atomic_rpc_real_loopback_socket_disconnect_exhaustion_fails_closed(disconnects):
+    """E2: real loopback socket failures must never trigger legacy writes.
+
+    This is transport-only QA; no real PostgreSQL commit is asserted.
+    """
+    from dataclasses import replace
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Thread
+
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            assert self.path == "/rest/v1/rpc/alpha_hunter_commit_core_scan_v01"
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            received.append((self.path, body))
+            # Close before sending a status line: the client cannot know if a
+            # transaction committed, and must not switch to independent writes.
+            self.close_connection = True
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = replace(
+            atomic_config(),
+            url=f"http://127.0.0.1:{server.server_port}",
+            max_retries=disconnects - 1,
+        )
+        with pytest.raises(SupabaseStorageError, match=f"after {disconnects} attempts"):
+            SupabaseStorage(config, session=requests.Session()).save_snapshot(sample_snapshot())
+        assert len(received) == disconnects
+        assert all(item == received[0] for item in received)
+        assert all(path.endswith("/rpc/alpha_hunter_commit_core_scan_v01") for path, _ in received)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
