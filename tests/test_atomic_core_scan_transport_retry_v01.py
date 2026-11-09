@@ -247,8 +247,8 @@ def test_atomic_rpc_real_loopback_socket_drop_replays_identical_body(monkeypatch
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        config = atomic_config()
-        config.url = f"http://127.0.0.1:{server.server_port}"
+        from dataclasses import replace
+        config = replace(atomic_config(), url=f"http://127.0.0.1:{server.server_port}")
         run_id = SupabaseStorage(config, session=requests.Session()).save_snapshot(sample_snapshot())
         assert len(received) == 2
         assert received[0] == received[1]
