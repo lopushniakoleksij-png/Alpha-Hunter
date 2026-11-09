@@ -14,7 +14,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 ## Current action counts
 
-**PASS 15 · ACTIVE 20 · BLOCKED 26 · NOT STARTED 3 · TOTAL 64.** Counts reflect evidence and known dependencies, not a percentage of production readiness.
+**PASS 15 · ACTIVE 21 · BLOCKED 26 · NOT STARTED 2 · TOTAL 64.** Counts reflect evidence and known dependencies, not a percentage of production readiness.
 
 ## Verified recent execution
 
@@ -110,7 +110,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 | F1 | Inventory known canonical producers | **ACTIVE** | Render/GitHub/UNKNOWN found; exhaustive inventory pending |
 | F2 | Fingerprint source-specific revisions | **ACTIVE** | Distinct Python clients, payload identity, origin metadata |
 | F3 | Inspect read-only request metadata | **PASS** | 08 Nov 10:16 legacy source metadata confirmed |
-| F4 | Trace approved source workflows | **NOT STARTED** | Do not infer host from network ISP |
+| F4 | Trace approved source workflows | **ACTIVE** | Read-only inspection confirms approved GitHub hourly workflow pins `main`, declares `GITHUB_REALTIME_HOURLY`, retains read-only repository permission, paper-only guards and explicit scan-failure propagation. Isolated static regression `tests/test_p0_approved_source_workflow_contract_v01.py` added at `2d5500f4f81b06e1c07aeab95ee0f5f6eb680b77`, CI wiring at `1bb95f4c9cf5bb8d81d62a7c44134e66bbd92f30`; CI result PENDING. This does not identify external legacy publisher or authenticate any source claim. |
 | F5 | Identify older-format writer host | **BLOCKED** | Host unknown; privileged telemetry lacks host identity |
 | F6 | Review privileged credential custody | **BLOCKED** | Secure authorized custodian validation required |
 | F7 | Test authenticated source-contract enforcement | **ACTIVE** | Isolated forged modern source claim regression added at `bc6fac570de78a62f88a7fa4402d1c6be80b98db`; requires `SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED` despite matching five-family counts. Earlier forged-source CI verified at `f6b05f9717a2f069e3f7ef1ea2aae7bd10d7fd67` (PostgreSQL contract run #42563938326). Added distinct partial-readiness fail-closed regression (2 declared symbols, 1 readiness) at `2a3e7bb4ecb0bcd336da0b1190e9c6b39d60a5e8`; new CI and complete logs PENDING verification. No authenticated identity or enforcement achieved. |
