@@ -95,7 +95,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 | ID | Required action | Status | Current evidence / dependency |
 |---|---|---|---|
 | E1 | Reproduce PostgreSQL timeout cancellation | **PASS** | Real PostgreSQL statement_timeout in ephemeral PG17, run 42480712005 |
-| E2 | Reproduce HTTP and network failures | **ACTIVE** | Four new Python mock tests cover connection loss and timeout retry and exhaustion; 41 Python tests PASS in run #42483250686. Real HTTP/network partition not injected. |
+| E2 | Reproduce HTTP and network failures | **ACTIVE** | Four new Python mock tests cover connection loss and timeout retry and exhaustion; 41 Python tests PASS in run #42483250686. Real HTTP/network partition not injected. Added 12 mock HTTP 408/429/500/502/503/504 retry/terminal-failure cases in `tests/test_atomic_core_scan_transport_retry_v01.py` at `01b56b7b69b97cdd253a474e6767e05c8f6db1c9`; GitHub Actions CI/log verification PENDING, so E2 remains ACTIVE. |
 | E3 | Inject response-lost acknowledgement | **PASS** | Isolated PostgreSQL 17 lost-ACK simulation via separate sessions; run #42481912510 PASS. No real network fault injected. |
 | E4 | Test exact repeated submission | **PASS** | Isolated 61-symbol idempotent replay with no new effects |
 | E5 | Reject conflicting duplicate evidence | **PASS** | Existing synthetic content mismatch negative tests |
