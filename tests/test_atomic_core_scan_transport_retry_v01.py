@@ -154,3 +154,50 @@ def test_atomic_rpc_exhausted_retryable_http_status_fails_closed(status_code):
     assert len(session.calls) == 2
     assert session.calls[0] == session.calls[1]
     assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.calls)
+
+
+class InvalidReceiptSession:
+    """HTTP success is not proof of an atomic commit without an exact receipt."""
+
+    def __init__(self, mutation):
+        self.mutation = mutation
+        self.calls = []
+
+    def post(self, url, **kwargs):
+        request = json.loads(kwargs["data"])
+        self.calls.append((url, request))
+        receipt = {
+            "committed": True,
+            "run_id": request["p_parent"][0]["run_id"],
+            "parent_count": len(request["p_parent"]),
+            "symbol_count": len(request["p_children"]),
+            "signal_count": len(request["p_signals"]),
+            "feature_count": len(request["p_features"]),
+            "readiness_count": len(request["p_readiness"]),
+        }
+        if self.mutation == "wrong_run":
+            receipt["run_id"] = "OTHER_RUN"
+        elif self.mutation == "boolean_count":
+            receipt["symbol_count"] = True  # bool is a subclass of int
+        elif self.mutation == "missing_readiness":
+            del receipt["readiness_count"]
+        elif self.mutation == "extra_symbol":
+            receipt["symbol_count"] += 1
+        elif self.mutation == "not_committed":
+            receipt["committed"] = False
+        elif self.mutation == "list_receipt":
+            receipt = [receipt]
+        return QAResponse(receipt)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["wrong_run", "boolean_count", "missing_readiness",
+     "extra_symbol", "not_committed", "list_receipt"],
+)
+def test_atomic_rpc_success_http_requires_exact_receipt_and_never_falls_back(mutation):
+    session = InvalidReceiptSession(mutation)
+    with pytest.raises(SupabaseStorageError, match="confirmation did not match payload"):
+        SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
+    assert len(session.calls) == 1
+    assert session.calls[0][0].endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
