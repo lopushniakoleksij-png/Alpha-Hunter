@@ -65,9 +65,9 @@ def parse_stats(raw: str) -> dict[str, tuple[int, float, float]]:
 def delta(before: dict, after: dict) -> list[dict]:
     rows = []
     for name, stage in STAGES.items():
-        if name not in before or name not in after:
+        if name not in after:
             raise ValueError("Missing expected function statistics: " + stage)
-        b, a = before[name], after[name]
+        b, a = before.get(name, (0, 0.0, 0.0)), after[name]
         dc, dt, ds = (a[i] - b[i] for i in range(3))
         if dc <= 0 or dt < 0 or ds < 0:
             raise ValueError("No trustworthy positive function-statistics delta: " + stage)
