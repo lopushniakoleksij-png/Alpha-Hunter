@@ -123,6 +123,21 @@ jobs:
           grep -Eq 'QA_WATCH_SOURCE_MISSING,.*,SOURCE_CONTRACT_OR_RUNTIME_MISSING,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_PARENT_PUBLISHING,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY_PUBLISHING' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_PARENT_STALE,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY_STALE_ESCALATE' /tmp/qa-source-watch.txt
+          # F7: a forged modern-looking JSON identity must never be treated as authenticated custody.
+          psql -X -v ON_ERROR_STOP=1 -d isolated_source_watch_qa <<'SQL'
+          INSERT INTO public.alpha_hunter_snapshots
+            (run_id,collected_at_utc,created_at,symbol_count,error_count,payload)
+          VALUES ('QA_WATCH_SPOOFED_SOURCE',now(),now(),1,0,
+            '{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON","git_commit":"forged"}}'::jsonb);
+          INSERT INTO public.alpha_hunter_symbol_snapshots VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT');
+          INSERT INTO public.alpha_hunter_signals VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT','QA_SIG_SPOOFED');
+          INSERT INTO public.alpha_hunter_signal_features VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT','QA_SIG_SPOOFED');
+          INSERT INTO public.alpha_hunter_readiness_observations_v01 VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT');
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_source_watch_qa -f ops/sql/readonly_core_scan_source_custody_watch_20261108.sql > /tmp/qa-spoofed-source.txt
+          grep -Eq 'QA_WATCH_SPOOFED_SOURCE,RENDER_CRON,RENDER_CRON,forged,1,0,1,1,1,1,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-spoofed-source.txt
+          ! grep -E 'QA_WATCH_SPOOFED_SOURCE,.*(AUTHENTICATED|CORE_PASS)' /tmp/qa-spoofed-source.txt | grep -v 'NOT_AUTHENTICATED'
+          echo 'PASS: spoofed complete modern publisher claims remain explicitly unauthenticated'
           echo 'PASS: custody, readiness, publishing grace and stale parent states are separate'
       - name: Construct synthetic core schema and trigger graph
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
