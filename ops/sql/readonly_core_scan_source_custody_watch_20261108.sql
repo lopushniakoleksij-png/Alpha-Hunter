@@ -4,10 +4,14 @@
 -- STALE is an alert condition, not a claim that later recovery is impossible.
 -- Child evidence cardinality can vary when source data has errors/missing prices;
 -- row counts alone do not certify science or downstream paper lifecycle evidence.
+-- Source claims in parent JSON are NOT authenticated; credential and network
+-- custody must be corroborated separately. Two independent status columns
+-- prevent a legacy publisher from appearing healthy when row counts match.
 WITH recent AS (
   SELECT run_id, collected_at_utc, created_at, symbol_count, error_count,
-         coalesce(payload->'validation_identity'->>'run_source','UNKNOWN') AS run_source,
-         coalesce(payload->'validation_identity'->>'runtime_role','UNKNOWN') AS runtime_role,
+         coalesce(nullif(payload->>'_storage_contract',''),'UNVERSIONED') AS storage_contract,
+         coalesce(nullif(payload->'validation_identity'->>'run_source',''),'UNKNOWN') AS run_source,
+         coalesce(nullif(payload->'validation_identity'->>'runtime_role',''),'UNKNOWN') AS runtime_role,
          left(coalesce(payload->'validation_identity'->>'git_commit','UNKNOWN'),12) AS writer_commit
   FROM public.alpha_hunter_snapshots
   ORDER BY collected_at_utc DESC
@@ -22,6 +26,11 @@ WITH recent AS (
 )
 SELECT collected_at_utc, run_id, run_source, runtime_role, writer_commit,
        symbol_count, error_count, symbol_rows, signal_rows, feature_rows, readiness_rows,
+  CASE WHEN storage_contract = 'snapshot-parent-v0.2'
+              AND run_source <> 'UNKNOWN' AND runtime_role <> 'UNKNOWN'
+       THEN 'SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED'
+       ELSE 'SOURCE_CONTRACT_OR_RUNTIME_MISSING'
+  END AS source_custody_status,
   CASE
     WHEN symbol_count>0 AND symbol_rows=0 AND now()-created_at <= interval '3 minutes'
       THEN 'PARENT_ONLY_PUBLISHING'
@@ -32,6 +41,9 @@ SELECT collected_at_utc, run_id, run_source, runtime_role, writer_commit,
     WHEN signal_rows>symbol_rows OR feature_rows>symbol_rows OR readiness_rows>symbol_rows
       OR signal_rows<>feature_rows
       THEN 'STAGE_COUNT_ANOMALY'
+    WHEN symbol_rows=symbol_count AND symbol_rows>0
+      AND readiness_rows=0 AND symbol_count>error_count
+      THEN 'READINESS_MISSING_ESCALATE'
     WHEN symbol_rows=signal_rows AND symbol_rows=feature_rows
       AND symbol_rows=readiness_rows AND error_count=0
       THEN 'FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION'
