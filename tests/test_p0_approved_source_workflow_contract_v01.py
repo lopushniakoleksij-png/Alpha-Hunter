@@ -32,6 +32,21 @@ class ApprovedProducerWorkflowContract(unittest.TestCase):
         self.assertIn("steps.live_scan.outcome == 'failure'", self.source)
         self.assertRegex(self.source, r"(?m)^\s*exit 1\s*$")
 
+    def test_failure_guard_is_bound_to_live_scan_step(self):
+        # A stray exit 1 elsewhere must not satisfy failure propagation.
+        self.assertRegex(
+            self.source,
+            r"(?ms)^\s*- name: Run current main against real Bitget market data\n"
+            r"(?:(?!^\s*- name:).)*?^\s*id: live_scan\s*$"
+            r"(?:(?!^\s*- name:).)*?^\s*continue-on-error: true\s*$",
+        )
+        self.assertRegex(
+            self.source,
+            r"(?ms)^\s*- name: Preserve scanner failure status\n"
+            r"(?:(?!^\s*- name:).)*?^\s*if: .*always\(\).*steps\.live_scan\.outcome == 'failure'.*$"
+            r"(?:(?!^\s*- name:).)*?^\s*exit 1\s*$",
+        )
+
     def test_paper_only_guard_present(self):
         for marker in ('"trade_permission": False', '"paper_only": True', '"order_path": "NONE"'):
             self.assertIn(marker, self.source)
