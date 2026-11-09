@@ -113,7 +113,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 | F4 | Trace approved source workflows | **NOT STARTED** | Do not infer host from network ISP |
 | F5 | Identify older-format writer host | **BLOCKED** | Host unknown; privileged telemetry lacks host identity |
 | F6 | Review privileged credential custody | **BLOCKED** | Secure authorized custodian validation required |
-| F7 | Test authenticated source-contract enforcement | **ACTIVE** | Isolated forged modern source claim regression added at `bc6fac570de78a62f88a7fa4402d1c6be80b98db`; requires `SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED` despite matching five-family counts. CI result not yet verified; no authenticated identity or enforcement achieved. |
+| F7 | Test authenticated source-contract enforcement | **ACTIVE** | Isolated forged modern source claim regression added at `bc6fac570de78a62f88a7fa4402d1c6be80b98db`; requires `SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED` despite matching five-family counts. Earlier forged-source CI verified at `f6b05f9717a2f069e3f7ef1ea2aae7bd10d7fd67` (PostgreSQL contract run #42563938326). Added distinct partial-readiness fail-closed regression (2 declared symbols, 1 readiness) at `2a3e7bb4ecb0bcd336da0b1190e9c6b39d60a5e8`; new CI and complete logs PENDING verification. No authenticated identity or enforcement achieved. |
 | F8 | Verify obsolete publishers fail closed | **BLOCKED** | No production change authorized |
 
 ### Pillar G — Scientific and security integrity
