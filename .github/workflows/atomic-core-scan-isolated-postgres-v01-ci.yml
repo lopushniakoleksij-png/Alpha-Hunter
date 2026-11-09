@@ -116,13 +116,14 @@ jobs:
           createdb isolated_source_watch_qa
           psql -X -v ON_ERROR_STOP=1 -d isolated_source_watch_qa -f ops/sql/qa_core_scan_source_watch_fixture_v01.sql
           psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_source_watch_qa -f ops/sql/readonly_core_scan_source_custody_watch_20261108.sql > /tmp/qa-source-watch.txt
-          test "$(grep -c 'QA_WATCH_' /tmp/qa-source-watch.txt)" -eq 6
+          test "$(grep -c 'QA_WATCH_' /tmp/qa-source-watch.txt)" -eq 7
           grep -Eq 'QA_WATCH_MODERN_OK,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_LEGACY_COMPLETE,.*,SOURCE_CONTRACT_OR_RUNTIME_MISSING,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_READINESS_MISSING,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,READINESS_MISSING_ESCALATE' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_SOURCE_MISSING,.*,SOURCE_CONTRACT_OR_RUNTIME_MISSING,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_PARENT_PUBLISHING,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY_PUBLISHING' /tmp/qa-source-watch.txt
           grep -Eq 'QA_WATCH_PARENT_STALE,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY_STALE_ESCALATE' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_PARTIAL_READINESS,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,READINESS_PARTIAL_ESCALATE' /tmp/qa-source-watch.txt
           # F7: a forged modern-looking JSON identity must never be treated as authenticated custody.
           psql -X -v ON_ERROR_STOP=1 -d isolated_source_watch_qa <<'SQL'
           INSERT INTO public.alpha_hunter_snapshots
