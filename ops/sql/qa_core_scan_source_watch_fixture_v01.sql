@@ -47,3 +47,18 @@ insert into public.alpha_hunter_signal_features values
 insert into public.alpha_hunter_readiness_observations_v01 values
  ('QA_WATCH_MODERN_OK','BTCUSDT'),('QA_WATCH_LEGACY_COMPLETE','SOLUSDT'),
  ('QA_WATCH_SOURCE_MISSING','LTCUSDT');
+
+-- Partial readiness is neither complete nor a zero-row readiness failure.
+insert into public.alpha_hunter_snapshots values
+ ('QA_WATCH_PARTIAL_READINESS',now()-interval '5 minutes',now()-interval '5 minutes',2,0,
+  '{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON"}}'::jsonb);
+insert into public.alpha_hunter_symbol_snapshots values
+ ('QA_WATCH_PARTIAL_READINESS','BTCUSDT'),('QA_WATCH_PARTIAL_READINESS','ETHUSDT');
+insert into public.alpha_hunter_signals values
+ ('QA_WATCH_PARTIAL_READINESS','BTCUSDT','QA_SIG_PARTIAL_BTC'),
+ ('QA_WATCH_PARTIAL_READINESS','ETHUSDT','QA_SIG_PARTIAL_ETH');
+insert into public.alpha_hunter_signal_features values
+ ('QA_WATCH_PARTIAL_READINESS','BTCUSDT','QA_SIG_PARTIAL_BTC'),
+ ('QA_WATCH_PARTIAL_READINESS','ETHUSDT','QA_SIG_PARTIAL_ETH');
+insert into public.alpha_hunter_readiness_observations_v01 values
+ ('QA_WATCH_PARTIAL_READINESS','BTCUSDT');
