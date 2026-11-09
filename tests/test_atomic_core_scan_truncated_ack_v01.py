@@ -12,7 +12,30 @@ import pytest
 import requests
 
 from alpha_hunter.storage import SupabaseStorage, SupabaseStorageError
-from tests.test_atomic_core_scan_transport_retry_v01 import atomic_config, sample_snapshot
+from alpha_hunter.storage import SupabaseConfig
+
+def atomic_config():
+    return SupabaseConfig(
+        url="https://example.supabase.co",
+        key="SYNTHETIC_TEST_KEY_ONLY",
+        atomic_core_scan_writes=True,
+        max_retries=1,
+        retry_backoff_seconds=0,
+    )
+
+def sample_snapshot():
+    return {
+        "version": "isolated-truncated-ack-contract",
+        "collected_at_utc": "2026-11-09T12:00:00+00:00",
+        "product_type": "usdt-futures",
+        "symbols": [{
+            "symbol": "BTCUSDT",
+            "last_price": 65000.0,
+            "trade_permission": False,
+            "state": "WATCH",
+            "execution_setup": {"direction": None, "rr": None},
+        }],
+    }
 
 
 @pytest.mark.parametrize("all_responses_truncated", [False, True])
