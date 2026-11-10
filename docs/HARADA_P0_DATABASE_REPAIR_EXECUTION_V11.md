@@ -36,7 +36,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 - **Earlier:** 25 production PostgreSQL timeouts sampled; 21 in payoff-geometry call stack, 20 interrupted within percentile SQL; complete nested time attribution not yet measured.
 - **Clone blocker:** secure production schema export not available to existing private Codespace; known private function bodies and credentials must not enter public GitHub. No paid Supabase branch provisioned.
 
-## 64-action board
+**2026-11-10 E2 — ACTIVE, CI PENDING:** Added a real loopback TCP regression for lost first acknowledgement followed by HTTP 200 with truncated JSON, requiring exact byte-identical retry and fail-closed handling without sequential REST fallback. Engineering SHA `3949990692fee2c8ab0b160e7b54960e97dad7b2`. Workflow runs not returned at initial inspection; do not mark PASS until actual CI logs are verified. This is transport-only, not real PostgreSQL commit-once or production-equivalent network proof. B2/B3 remain BLOCKED; production NO-GO.\n\n## 64-action board
 
 ### Pillar A — Root cause and latency
 
