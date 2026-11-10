@@ -13,6 +13,7 @@ on:
       - 'ops/sql/qa_atomic_core_scan_real_timeout_verify_v01.sql'
       - 'ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh'
       - 'ops/local/qa_atomic_core_scan_lost_ack_v01.sh'
+      - 'ops/local/qa_atomic_http_pg17_lost_ack_v01.py'
       - 'ops/sql/qa_atomic_core_scan_lost_ack_setup_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_lost_ack_verify_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_concurrent_setup_v01.sql'
@@ -155,6 +156,8 @@ jobs:
         run: bash ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh
       - name: E3 simulate committed response lost then idempotent retry in separate sessions
         run: bash ops/local/qa_atomic_core_scan_lost_ack_v01.sh
+      - name: E3/E6 real HTTP lost acknowledgement backed by disposable PostgreSQL 17
+        run: python3 ops/local/qa_atomic_http_pg17_lost_ack_v01.py
       - name: E6 verify overlapping identical/conflicting atomic RPCs across independent PostgreSQL sessions
         run: python3 ops/local/qa_atomic_core_scan_concurrent_v01.py
       - name: Validate service_role RPC invocation under RLS with denied public roles
