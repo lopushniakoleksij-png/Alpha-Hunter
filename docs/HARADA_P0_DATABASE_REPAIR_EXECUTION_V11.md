@@ -153,3 +153,7 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 - Commit `4ecbb86a7e040ed3376d693aa34fbec98f7f0a5e` adds a real loopback HTTP regression with two independent concurrent clients publishing the same deterministic run ID. The synthetic server loses the first response and emulates a single commit under a lock; the test asserts identical wire payloads, same receipts, and no legacy endpoint fallback.
 - This is **transport-only synthetic commit emulation**, not authentic PostgreSQL concurrency, trigger execution, network-partition proof, or a release gate. Existing isolated PostgreSQL E3/E6 PASS evidence remains separately scoped; broader E2 remains ACTIVE. CI run was not yet returned for the new commit when recorded; **no new PASS claimed**.
 - B2/B3 remain BLOCKED; PR #445 must remain DRAFT/UNMERGED; PRODUCTION NO-GO.
+
+### 2026-11-10 — E2 HTTP success-without-receipt QA (ACTIVE; CI unverified)
+- Isolated test commit `1c9b44d6649e0ee00722ab071c2d6676e12d46da` adds five synthetic transport cases: HTTP 200 empty, malformed JSON, JSON null, JSON list, and HTTP 204 empty. Each must fail closed without fallback to per-table writes. This tests only the receipt validation path, not PostgreSQL or real network faults.
+- At initial check GitHub returned **zero PR-triggered CI runs** for the new SHA; do not claim PASS until actual workflow logs are inspected. E2 remains ACTIVE. B2/B3 remain BLOCKED. PR #445 DRAFT/UNMERGED; production NO-GO.
