@@ -301,3 +301,73 @@ def test_atomic_rpc_real_loopback_socket_disconnect_exhaustion_fails_closed(disc
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_atomic_rpc_concurrent_identical_writers_with_lost_first_ack():
+    """E3/E6 transport integration: two callers, same run, one lost response.
+
+    Server-side commit-once is EMULATED under a lock; authentic PostgreSQL
+    advisory locking and trigger side effects are tested separately.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from dataclasses import replace
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from threading import Lock, Thread
+
+    observed = []
+    state = {"commits": 0}
+    lock = Lock()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            assert self.path == "/rest/v1/rpc/alpha_hunter_commit_core_scan_v01"
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            request = json.loads(body)
+            with lock:
+                observed.append(body)
+                if state["commits"] == 0:
+                    state["commits"] = 1
+                    lost_ack = True
+                else:
+                    lost_ack = False
+            if lost_ack:
+                self.close_connection = True
+                return
+            receipt = {
+                "committed": True,
+                "run_id": request["p_parent"][0]["run_id"],
+                "parent_count": len(request["p_parent"]),
+                "symbol_count": len(request["p_children"]),
+                "signal_count": len(request["p_signals"]),
+                "feature_count": len(request["p_features"]),
+                "readiness_count": len(request["p_readiness"]),
+            }
+            data = json.dumps(receipt).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = replace(atomic_config(), url=f"http://127.0.0.1:{server.server_port}")
+        def publish():
+            # Separate clients; identical source identity and immutable run_id.
+            return SupabaseStorage(config, session=requests.Session()).save_snapshot(sample_snapshot())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: publish(), range(2)))
+        assert results[0] == results[1]
+        assert state["commits"] == 1
+        assert len(observed) == 3
+        assert observed[0] == observed[1] == observed[2]
+        assert json.loads(observed[0])["p_parent"][0]["run_id"] == results[0]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
