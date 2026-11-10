@@ -9,7 +9,7 @@ import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.error import RemoteDisconnected
+from http.client import RemoteDisconnected
 from urllib.request import Request, urlopen
 
 CASE = "SIXTY_ONE_LOST_ACK"
