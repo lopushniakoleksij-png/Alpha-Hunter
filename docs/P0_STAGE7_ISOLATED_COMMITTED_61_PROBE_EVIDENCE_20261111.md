@@ -40,6 +40,31 @@
 
 **Interpretation:** one synthetic, durable five-family commit and an idempotent post-commit retry succeeded in a disposable copy of the private QA reference. These two wall-clock durations are *individual observations*, not p50/p95/p99 statistics. The downstream side-effect totals are the probe's recorded counts, not independent complete lifecycle lineage certification.
 
+## Stage 7 rollback-only latency sample — 2026-11-11 13:35 UTC
+
+**Evidence provenance:** Owner-supplied private Codespaces terminal screenshot; console output transcribed below. This is a **separate rollback-only probe**, not a durable transaction benchmark.
+
+| Metric | Observed |
+| --- | ---: |
+| Mode | ISOLATED_QA_ROLLBACK_ONLY_NOT_CERTIFIED |
+| Warmups | 3 |
+| Measured samples | 30 |
+| 61-symbol RPC p50 execution | 22.535 ms |
+| 61-symbol RPC p95 execution | 44.233 ms |
+| 61-symbol RPC p99 execution | 47.501 ms |
+| Maximum | 47.501 ms |
+| Mean | 25.617 ms |
+| WAL bytes mean per EXPLAIN | 77,916 |
+| WAL bytes maximum | 78,882 |
+| WAL records mean | 813 |
+| In-transaction five-family records | 1 / 61 / 7 / 7 / 61 |
+| Core evidence after rollback | 0 / 0 / 0 / 0 / 0 |
+| Production connections | NONE |
+
+The script returned `STAGE7_PROBE=PASS`. With only 30 samples, p99 is the sample maximum by nearest-rank calculation and must **not** be represented as a robust p99 service-level estimate. EXPLAIN execution timing excludes HTTP, network, durable commit and fsync overhead. The WAL metrics are from EXPLAIN's per-query accounting and do **not** measure durable on-disk bytes or entire production workflow throughput.
+
+**Acceptance boundary:** This verifies a preliminary repeated isolated *rollback* RPC measurement, in-transaction five-family completeness and rollback cleanup. It does not verify concurrent load, failure injection, exact production schema drift, all downstream side-effect lineage, durable latency distributions, or independent DBA/security approval.
+
 ## Still open — mandatory acceptance gates
 
 1. Validate and independently attest the private QA reference's full production-equivalent schema, indexes, grants, nested trigger fingerprints and function definitions against the authorised production baseline.
