@@ -41,8 +41,10 @@ def main():
         SELECT 'SIXTY_ONE_HTTP_PG',
           replace(parent_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG')::jsonb,
           replace(children_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG')::jsonb,
-          replace(signals_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG')::jsonb,
-          replace(features_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG')::jsonb,
+          replace(replace(signals_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG'),
+                  'QA61_ACK_SIGNAL_','QA61_HTTP_SIGNAL_')::jsonb,
+          replace(replace(features_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG'),
+                  'QA61_ACK_SIGNAL_','QA61_HTTP_SIGNAL_')::jsonb,
           replace(readiness_rows::text,'QA_61_LOST_ACK','QA_61_HTTP_PG')::jsonb
         FROM public.qa_atomic_scale_fixtures_v01 WHERE case_name='SIXTY_ONE_LOST_ACK'""")
     state = {"requests": [], "dropped": False}
