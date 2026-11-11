@@ -9,6 +9,7 @@ SCRIPTS = (
     "ops/local/qa_stage7_committed_disposable_61_v01.py",
     "ops/local/qa_stage7_61_rpc_rollback_benchmark_v01.py",
     "ops/local/qa_stage7_failed_view_474_inspect_v01.py",
+    "ops/local/qa_stage7_physical_template_61_v01.py",
 )
 
 
@@ -121,6 +122,28 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
             with self.subTest(rejected=row):
                 with self.assertRaises(scope["Blocked"]):
                     parse(row)
+
+
+    def test_physical_template_probe_preserves_cron_and_fails_closed(self):
+        path = ROOT / "ops/local/qa_stage7_physical_template_61_v01.py"
+        content = path.read_text(encoding="utf-8")
+        self.assertIn("CREATE DATABASE", content)
+        self.assertIn(" TEMPLATE ", content)
+        self.assertIn("OWNER supabase_admin", content)
+        self.assertIn("pg_stat_activity", content)
+        self.assertIn("pid<>pg_backend_pid()", content)
+        self.assertIn("cron.database_name", content)
+        self.assertIn("SELECT count(*) FROM cron.job", content)
+        self.assertIn("to_regclass('cron.job')", content)
+        self.assertIn("DISPOSABLE_DB_REMOVED=PASS", content)
+        self.assertIn("NO_PRODUCTION_FALLBACK", content)
+        self.assertIn("NO_INDEPENDENT_DBA_SECURITY_APPROVAL", content)
+        self.assertNotIn("pg_restore", content)
+        self.assertNotIn("pg_dump", content)
+        self.assertNotIn("DROP EXTENSION pg_cron", content)
+        self.assertNotIn("SET cron.database_name", content)
+        self.assertNotIn("pg_terminate_backend", content)
+        self.assertNotIn("pg_cancel_backend", content)
 
 
 if __name__ == "__main__":
