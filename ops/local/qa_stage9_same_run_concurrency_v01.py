@@ -125,10 +125,12 @@ def main():
             "postgres", "SELECT count(*) FROM pg_stat_activity WHERE datname='" + BASE + "'"
         ) != "0":
             raise Blocked("reference database still has active sessions")
-        db = "ah_stage7_ephemeral_qa_" + secrets.token_hex(6)
+        candidate = "ah_stage7_ephemeral_qa_" + secrets.token_hex(6)
         if probe.sql("postgres", "SELECT EXISTS(SELECT 1 FROM pg_database "
-                     "WHERE datname='" + db + "')") != "f":
+                     "WHERE datname='" + candidate + "')") != "f":
             raise Blocked("disposable database name collision")
+        # Only after confirming absence is this random name cleanup-eligible.
+        db = candidate
         try:
             probe.sql("postgres", "CREATE DATABASE " + db + " TEMPLATE " + BASE
                       + " OWNER supabase_admin;",
@@ -144,7 +146,7 @@ def main():
         )
         try:
             race = bounded_race(probe, db, args)
-        except (threading.BrokenBarrierError, Exception) as err:
+        except Exception:
             # Do not expose private SQL and per-connection error details.
             raise Blocked("concurrent same-run RPC attempts did not all succeed") from None
         if len(race) != WORKERS:
@@ -189,7 +191,7 @@ def main():
         print("PRODUCTION_CONNECTIONS=NONE")
         print("REFERENCE_DATABASE_WRITES=NONE")
         print("LIMITATION=ONE_THREE_CLIENT_SAME_RUN_RACE;SYNTHETIC_61_SYMBOLS;NO_DIFFERENT_RUN_CONCURRENCY;NO_INJECTED_FAILURE;NOT_PRODUCTION_CERTIFIED")
-    except (Blocked, OSError, ValueError, subprocess.TimeoutExpired) as error:
+    except Exception as error:
         status = 2
         print("SAME_RUN_RACE_STATUS=BLOCKED")
         print("REASON=" + (str(error) if isinstance(error, Blocked)
