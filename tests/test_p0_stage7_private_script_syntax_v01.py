@@ -394,5 +394,60 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
         self.assertIn("pool.map(attempt, range(WORKERS))", body)
 
 
+    def test_stage9_worker_failures_have_sanitized_diagnostics(self):
+        path = ROOT / "ops/local/qa_stage9_same_run_concurrency_v01.py"
+        source = path.read_text(encoding="utf-8")
+        for required in (
+            "SAME_RUN_WORKERS_",
+            "SAME_RUN_FAILURE_PHASE=",
+            "SAME_RUN_POST_FAILURE_CORE_COUNTS=",
+            "SAME_RUN_SIDE_EFFECT_DELTAS=",
+            'phase = "RACE"',
+            'phase = "RECEIPTS"',
+            'phase = "CORE_COUNTS"',
+            'phase = "SIDE_EFFECTS"',
+            'phase = "POST_RACE_RETRY"',
+            "DISPOSABLE_DB_REMOVED=PASS",
+        ):
+            self.assertIn(required, source)
+        self.assertNotIn('print("REASON="', source)
+        self.assertNotIn('print(str(error))', source)
+        import threading
+        import subprocess
+        import json
+        from concurrent.futures import ThreadPoolExecutor
+        tree = ast.parse(source, filename=str(path))
+        fn = next(node for node in tree.body
+                  if isinstance(node, ast.FunctionDef)
+                  and node.name == "bounded_race")
+        module = ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[]))
+        scope = {
+            "threading": threading,
+            "subprocess": subprocess,
+            "json": json,
+            "ThreadPoolExecutor": ThreadPoolExecutor,
+            "WORKERS": 3,
+        }
+        exec(compile(module, str(path), "exec"), scope)
+        class SyntheticProbe:
+            class Stop(Exception):
+                pass
+            def __init__(self):
+                self.calls = 0
+                self.lock = threading.Lock()
+            def rpc(self, db, args):
+                with self.lock:
+                    self.calls += 1
+                    call = self.calls
+                if call == 3:
+                    raise self.Stop("PRIVATE DB ERROR SQL MUST NOT LEAK")
+                return ({"committed": True}, 2.5)
+        result = scope["bounded_race"](SyntheticProbe(), "isolated_fixture", "data")
+        self.assertEqual(len(result), 3)
+        self.assertEqual(sum(kind == "PASS" for kind, _ in result), 2)
+        self.assertEqual(sum(kind == "DB_RPC" for kind, _ in result), 1)
+        self.assertNotIn("PRIVATE", str(result))
+
+
 if __name__ == "__main__":
     unittest.main()
