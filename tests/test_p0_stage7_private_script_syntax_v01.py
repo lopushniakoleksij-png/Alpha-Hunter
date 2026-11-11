@@ -12,6 +12,7 @@ SCRIPTS = (
     "ops/local/qa_stage7_physical_template_61_v01.py",
     "ops/local/qa_stage7_cron_quiescence_controller_v01.py",
     "ops/local/qa_stage7_durable_30_trials_v01.py",
+    "ops/local/qa_stage9_same_run_concurrency_v01.py",
 )
 
 
@@ -339,6 +340,58 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
         self.assertEqual(scope["percentile_ms"](samples, 50), 15)
         self.assertEqual(scope["percentile_ms"](samples, 95), 29)
         self.assertEqual(scope["percentile_ms"](samples, 99), 30)
+
+
+    def test_stage9_same_run_race_uses_exact_verified_qa_probe(self):
+        path = ROOT / "ops/local/qa_stage9_same_run_concurrency_v01.py"
+        text = path.read_text(encoding="utf-8")
+        controller = (ROOT / "ops/local/qa_stage7_cron_quiescence_controller_v01.py"
+                      ).read_text(encoding="utf-8")
+        for token in (
+            "SINGLE_BLOB = \"f04bb2a33e04bf98a0df65f8f649f5c494400318\"",
+            "ThreadPoolExecutor(max_workers=WORKERS)",
+            "WORKERS = 3",
+            "threading.Barrier(WORKERS",
+            "AH_STAGE7_SINGLE_PROBE",
+            "git\", \"hash-object\"",
+            "true|none",
+            "reference database still has active sessions",
+            "cron.database_name",
+            "CREATE DATABASE ",
+            "TEMPLATE ",
+            "OWNER supabase_admin",
+            "probe.drop_disposable(db)",
+            "SAME_RUN_RACE_STATUS=PASS",
+            "SAME_RUN_ALL_RECEIPTS=PASS",
+            "SAME_RUN_CORE_COUNTS=1,61,7,7,61",
+            "SAME_RUN_PRIVATE_SNAPSHOT_ONCE=PASS",
+            "SAME_RUN_POST_RACE_RETRY=PASS",
+            "NO_PRODUCTION_FALLBACK",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, text)
+        self.assertIn('"SAME_RUN_"', controller)
+        self.assertLess(text.index("disposable database name collision"),
+                        text.index("db = candidate"))
+        self.assertNotIn("pg_terminate_backend", text)
+        self.assertNotIn("pg_cancel_backend", text)
+        self.assertNotIn("ALTER SYSTEM", text)
+        self.assertNotIn("docker run ", text)
+
+    def test_stage9_bounded_race_requires_three_independent_receipts(self):
+        path = ROOT / "ops/local/qa_stage9_same_run_concurrency_v01.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "bounded_race")
+        self.assertTrue(any(isinstance(node, ast.With) for node in ast.walk(fn)))
+        self.assertTrue(any(isinstance(node, ast.Call)
+                            and isinstance(node.func, ast.Attribute)
+                            and node.func.attr == "wait"
+                            for node in ast.walk(fn)))
+        body = ast.unparse(fn)
+        self.assertIn("ThreadPoolExecutor(max_workers=WORKERS)", body)
+        self.assertIn("probe.rpc(db, args)", body)
+        self.assertIn("pool.map(attempt, range(WORKERS))", body)
 
 
 if __name__ == "__main__":
