@@ -54,11 +54,13 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
             "5129; 0 0 TABLE DATA cron job supabase_admin",
             "10017; 0 0 SEQUENCE SET cron jobid_seq supabase_admin",
             "3908; 826 16720 DEFAULT ACL cron DEFAULT PRIVILEGES FOR SEQUENCES supabase_admin",
+            "5124; 3466 23484 EVENT TRIGGER - issue_pg_cron_access supabase_admin",
         )
         retained = (
             "9799; 1255 17049 FUNCTION extensions grant_pg_cron_access() supabase_admin",
             "9679; 0 0 COMMENT extensions FUNCTION grant_pg_cron_access() supabase_admin",
-            "5124; 826 24384 EVENT TRIGGER - issue_pg_cron_access supabase_admin",
+            "5124; 826 24384 EVENT TRIGGER - unrelated_app_event supabase_admin",
+            "5124; 826 24384 EVENT TRIGGER - issue_pg_cron_access_other supabase_admin",
             "701; 1259 1009 TABLE public alpha_hunter_snapshots postgres",
             "; Archive dump header",
         )
