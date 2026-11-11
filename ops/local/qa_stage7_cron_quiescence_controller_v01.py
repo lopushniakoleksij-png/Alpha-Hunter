@@ -96,29 +96,37 @@ def guard(child):
         raise Blocked("not permitted in GitHub Actions")
     if run(["git", "branch", "--show-current"]) != BRANCH:
         raise Blocked("wrong repair branch")
+    print("QA_GUARD_GIT_BRANCH=PASS")
     inspect_container()
+    print("QA_GUARD_CONTAINER=PASS")
     if not child.is_file() or child.is_symlink():
         raise Blocked("verified child probe file missing")
     if child.stat().st_mode & 0o077:
         raise Blocked("child probe file must be private mode 0600")
+    print("QA_GUARD_FIXTURE_FILE=PASS")
     pgid = sql("postgres", (
         "SELECT current_setting('server_version_num') || '|' || "
         "current_setting('cron.database_name');"
     ))
     if not re.fullmatch(r"17\d{4}\|" + re.escape(BASE), pgid):
         raise Blocked("unexpected QA server or cron target")
+    print("QA_GUARD_PG_IDENTITY=PASS")
     if sql(BASE, "SELECT count(*) FROM cron.job") != "0":
         raise Blocked("QA reference has scheduled cron jobs")
+    print("QA_GUARD_ZERO_JOBS=PASS")
     if sql("postgres", (
         "SELECT count(*) FROM pg_stat_activity "
         "WHERE backend_type='client backend' AND pid<>pg_backend_pid()"
     )) != "0":
         raise Blocked("other client sessions exist; no QA restart")
+    print("QA_GUARD_ZERO_OTHER_CLIENTS=PASS")
     if source_sessions() != "1|pg_cron launcher":
         raise Blocked("unexpected reference sessions; no QA restart")
+    print("QA_GUARD_SOURCE_SESSIONS=PASS")
     old = original_override()
     if old not in (BASE, "__UNSET__"):
         raise Blocked("unexpected original auto-conf override; no restart")
+    print("QA_GUARD_AUTO_CONF_OVERRIDE=PASS")
     return old
 
 
@@ -143,7 +151,10 @@ def main():
     old = None
     probe_status = False
     restored = False
-    if len(sys.argv) != 2:
+    diagnose_only = (
+        len(sys.argv) == 3 and sys.argv[2] == "--diagnose"
+    )
+    if not (len(sys.argv) == 2 or diagnose_only):
         print("QA_CRON_CONTROLLER=BLOCKED")
         print("REASON=exact child script path required")
         return 2
@@ -151,6 +162,10 @@ def main():
     try:
         old = guard(child)
         print("QA_ONLY_GUARDS=PASS")
+        if diagnose_only:
+            print("QA_GUARD_DIAGNOSTIC=PASS")
+            print("QA_DATABASE_MUTATIONS=NONE")
+            return 0
         changed = True  # restore even if ALTER SYSTEM partially succeeds
         sql("postgres", "ALTER SYSTEM SET cron.database_name = 'postgres';")
         restart_qa()
