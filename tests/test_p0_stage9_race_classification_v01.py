@@ -126,5 +126,41 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         self.assertEqual(result, [("BARRIER", None)] * stage9.WORKERS)
         self.assertEqual(calls, [])
 
+    def test_clone_validation_rejects_missing_private_callbacks(self):
+        """Never race a clone whose nested trigger topology is incomplete."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "pg_trigger" in query:
+                    return "4"
+                return "0"
+
+            def counts(self, db, rid):
+                raise AssertionError("counts must not be inspected after topology failure")
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
+    def test_clone_validation_rejects_existing_run_records(self):
+        """A nonempty disposable clone cannot be accepted as a fresh race."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "pg_trigger" in query:
+                    return "5"
+                return "0"
+
+            def counts(self, db, rid):
+                return (1, 0, 0, 0, 0)
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
 if __name__ == "__main__":
     unittest.main()
