@@ -123,6 +123,20 @@ def guard(child):
     if source_sessions() != "1|pg_cron launcher":
         raise Blocked("unexpected reference sessions; no QA restart")
     print("QA_GUARD_SOURCE_SESSIONS=PASS")
+    # PostgreSQL/Supabase may use a non-superuser postgres role. Check the
+    # two distinct privileges *before* reading pg_file_settings, altering
+    # system settings or restarting the isolated QA container.
+    privilege = sql("postgres", (
+        "SELECT has_parameter_privilege(current_user,"
+        "'cron.database_name','ALTER SYSTEM')::text || '|' || "
+        "has_table_privilege(current_user,"
+        "'pg_catalog.pg_file_settings','SELECT')::text;"
+    ))
+    if privilege != "true|true":
+        print("QA_GUARD_CONFIG_PRIVILEGES=BLOCKED")
+        print("QA_CONFIG_ROUTE=REQUIRES_AUTHORIZED_ADMIN")
+        raise Blocked("QA role lacks privileged config access; no restart")
+    print("QA_GUARD_CONFIG_PRIVILEGES=PASS")
     old = original_override()
     if old not in (BASE, "__UNSET__"):
         raise Blocked("unexpected original auto-conf override; no restart")
