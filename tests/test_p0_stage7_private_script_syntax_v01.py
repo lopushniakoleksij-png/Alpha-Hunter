@@ -11,6 +11,7 @@ SCRIPTS = (
     "ops/local/qa_stage7_failed_view_474_inspect_v01.py",
     "ops/local/qa_stage7_physical_template_61_v01.py",
     "ops/local/qa_stage7_cron_quiescence_controller_v01.py",
+    "ops/local/qa_stage7_durable_30_trials_v01.py",
 )
 
 
@@ -253,6 +254,91 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
         self.assertIn('if role not in ("postgres", "supabase_admin"):', source)
         self.assertNotIn("GRANT ", source)
         self.assertNotIn("ALTER ROLE ", source)
+
+
+    def test_durable_driver_reuses_verified_probe_and_requires_all_30(self):
+        path = ROOT / "ops/local/qa_stage7_durable_30_trials_v01.py"
+        source = path.read_text(encoding="utf-8")
+        ctrl = (ROOT / "ops/local/qa_stage7_cron_quiescence_controller_v01.py"
+                ).read_text(encoding="utf-8")
+        for required in (
+            "SINGLE_PROBE_BLOB = \"f04bb2a33e04bf98a0df65f8f649f5c494400318\"",
+            "TRIALS = 30",
+            "AH_STAGE7_SINGLE_PROBE",
+            "git\", \"hash-object\"",
+            "cron.database_name",
+            "true|none",
+            "source database has sessions",
+            "DURABLE_TRIAL_STATUS=PASS",
+            "DURABLE_ALL_DISPOSABLE_DATABASES_REMOVED=PASS",
+            "DURABLE_SIDE_EFFECTS_STABLE=PASS",
+            "NO_PRODUCTION_FALLBACK",
+        ):
+            with self.subTest(driver_token=required):
+                self.assertIn(required, source)
+        for token in ("--durable30", "timeout=1200 if durable30 else 300",
+                      "DURABLE_TRIALS_COMPLETED=30",
+                      "DURABLE_ALL_DISPOSABLE_DATABASES_REMOVED=PASS"):
+            self.assertIn(token, ctrl)
+        for forbidden in ("pg_terminate_backend", "pg_cancel_backend",
+                          "ALTER SYSTEM", "DROP DATABASE",
+                          "docker run ", "docker rm "):
+            self.assertNotIn(forbidden, source)
+
+    def test_durable_driver_parses_actual_commit_receipts(self):
+        path = ROOT / "ops/local/qa_stage7_durable_30_trials_v01.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        wanted = {"Blocked", "parse_trial", "percentile_ms"}
+        nodes = [node for node in tree.body
+                 if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+                 and node.name in wanted]
+        self.assertEqual(len(nodes), 3)
+        module = ast.fix_missing_locations(ast.Module(body=nodes, type_ignores=[]))
+        import math
+        scope = {
+            "math": math, "re": re,
+            "EXPECTED": {
+                "STAGE7_PHYSICAL_CLONE_COMMIT": "PASS",
+                "COMMITTED_CORE_COUNTS": "1,61,7,7,61",
+                "RETRY_NO_DUPLICATES": "PASS",
+                "PRIVATE_SNAPSHOT_SIDE_EFFECT": "PASS",
+                "CRON_DEPENDENT_VIEW_PRESERVED_BY_TEMPLATE": "PASS",
+                "CRON_REDIRECTED_DURING_DISPOSABLE_TEST": "YES",
+                "PRODUCTION_CONNECTIONS": "NONE",
+                "REFERENCE_DATABASE_WRITES": "NONE",
+                "DISPOSABLE_DB_REMOVED": "PASS",
+            },
+            "SIDE_KEYS": (
+                "SIDE_EFFECT_COUNT_PRIVATE_ALPHA_HUNTER_SNAPSHOT_SLIM_V01",
+                "SIDE_EFFECT_COUNT_PUBLIC_ALPHA_HUNTER_ACCOUNT_LEDGER_MATERIALIZATION_EVENTS",
+                "SIDE_EFFECT_COUNT_PUBLIC_ALPHA_HUNTER_ACCOUNT_STATE_SNAPSHOTS",
+            ),
+        }
+        exec(compile(module, str(path), "exec"), scope)
+        data = {
+            **scope["EXPECTED"],
+            **dict(zip(scope["SIDE_KEYS"], ("1", "1", "2"))),
+            "FIRST_TRANSACTION_CLIENT_WALL_MS": "117.852",
+            "RETRY_TRANSACTION_CLIENT_WALL_MS": "94.088",
+        }
+        raw = "\n".join(f"{key}={value}" for key, value in data.items())
+        self.assertEqual(scope["parse_trial"](raw), (117.852, 94.088, (1, 1, 2)))
+        invalid = raw.replace("RETRY_NO_DUPLICATES=PASS",
+                              "RETRY_NO_DUPLICATES=BLOCKED")
+        with self.assertRaises(scope["Blocked"]):
+            scope["parse_trial"](invalid)
+        invalid = raw.replace("DISPOSABLE_DB_REMOVED=PASS",
+                              "DISPOSABLE_DB_REMOVED=NOT_VERIFIED")
+        with self.assertRaises(scope["Blocked"]):
+            scope["parse_trial"](invalid)
+        invalid = raw.replace("FIRST_TRANSACTION_CLIENT_WALL_MS=117.852",
+                              "FIRST_TRANSACTION_CLIENT_WALL_MS=nan")
+        with self.assertRaises(scope["Blocked"]):
+            scope["parse_trial"](invalid)
+        samples = list(range(1, 31))
+        self.assertEqual(scope["percentile_ms"](samples, 50), 15)
+        self.assertEqual(scope["percentile_ms"](samples, 95), 29)
+        self.assertEqual(scope["percentile_ms"](samples, 99), 30)
 
 
 if __name__ == "__main__":
