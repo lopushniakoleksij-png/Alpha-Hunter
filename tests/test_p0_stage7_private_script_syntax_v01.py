@@ -216,5 +216,20 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
                         body.index("ALTER SYSTEM SET"))
 
 
+    def test_cron_controller_checks_privileges_before_configuration(self):
+        path = ROOT / "ops/local/qa_stage7_cron_quiescence_controller_v01.py"
+        source = path.read_text(encoding="utf-8")
+        self.assertIn("has_parameter_privilege", source)
+        self.assertIn("has_table_privilege", source)
+        self.assertIn("QA_CONFIG_ROUTE=REQUIRES_AUTHORIZED_ADMIN", source)
+        self.assertIn("no restart", source)
+        self.assertLess(
+            source.index('privilege = sql("postgres"'),
+            source.index('old = original_override()'))
+        self.assertLess(
+            source.index('privilege = sql("postgres"'),
+            source.index("ALTER SYSTEM SET cron.database_name"))
+
+
 if __name__ == "__main__":
     unittest.main()
