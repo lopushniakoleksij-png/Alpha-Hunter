@@ -1,0 +1,76 @@
+"""Offline Stage 9 race-result classification tests; no database access."""
+import importlib.util
+from pathlib import Path
+import subprocess
+import threading
+import unittest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "ops/local/qa_stage9_same_run_concurrency_v01.py"
+spec = importlib.util.spec_from_file_location("qa_stage9_same_run", SOURCE)
+stage9 = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stage9)
+
+
+class Stage9RaceClassificationTests(unittest.TestCase):
+    def test_three_successful_workers_keep_receipts(self):
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                return ({"run_id": "fixture"}, 12.5)
+
+        result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        self.assertEqual(len(result), stage9.WORKERS)
+        self.assertTrue(all(kind == "PASS" for kind, _ in result))
+        self.assertTrue(all(value[0]["run_id"] == "fixture" for _, value in result))
+
+    def test_database_error_is_classified_without_exception_details(self):
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                raise self.Stop("private SQL must not appear in output")
+
+        result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        self.assertEqual(result, [("DB_RPC", None)] * stage9.WORKERS)
+
+    def test_transport_timeout_is_classified(self):
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                raise subprocess.TimeoutExpired("private command", 1)
+
+        result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        self.assertEqual(result, [("TIMEOUT", None)] * stage9.WORKERS)
+
+    def test_invalid_receipt_is_classified(self):
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                raise ValueError("private malformed response")
+
+        result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        self.assertEqual(result, [("RECEIPT", None)] * stage9.WORKERS)
+
+    def test_unexpected_exception_is_fail_closed(self):
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                raise RuntimeError("private exception")
+
+        result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        self.assertEqual(result, [("OTHER", None)] * stage9.WORKERS)
+
+
+if __name__ == "__main__":
+    unittest.main()
