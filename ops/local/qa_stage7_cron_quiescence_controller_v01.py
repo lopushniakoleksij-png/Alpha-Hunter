@@ -158,7 +158,7 @@ def evidence(lines):
         "RETRY_TRANSACTION_CLIENT_WALL_MS=", "LIMITATION=",
         "DISPOSABLE_DB_REMOVED=", "PRODUCTION_CONNECTIONS=",
         "REFERENCE_DATABASE_WRITES=", "NO_PRODUCTION_FALLBACK",
-        "DURABLE_", "QA_MANUAL_DISPOSABLE_CLEANUP_REQUIRED=",
+        "DURABLE_", "SAME_RUN_", "QA_MANUAL_DISPOSABLE_CLEANUP_REQUIRED=",
     )
     for line in lines.splitlines():
         if line.startswith(accepted) and re.fullmatch(r"[A-Z0-9_.=,;+-]{1,160}", line):
