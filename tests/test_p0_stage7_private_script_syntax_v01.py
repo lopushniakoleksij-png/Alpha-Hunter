@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = (
     "ops/local/qa_stage7_committed_disposable_61_v01.py",
     "ops/local/qa_stage7_61_rpc_rollback_benchmark_v01.py",
+    "ops/local/qa_stage7_failed_view_474_inspect_v01.py",
 )
 
 
@@ -94,6 +95,32 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
         self.assertNotIn("PRIVATE SQL", str(diagnostic(stderr, toc)))
         self.assertNotIn("private_sensitive_table",
                          str(diagnostic(stderr, toc)))
+
+
+    def test_failed_view_inspector_only_accepts_simple_view_474_metadata(self):
+        path = ROOT / "ops/local/qa_stage7_failed_view_474_inspect_v01.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        pieces = [node for node in tree.body
+                  if isinstance(node, ast.ClassDef) and node.name == "Blocked"
+                  or isinstance(node, ast.FunctionDef) and node.name == "parse_view_toc"]
+        self.assertEqual(len(pieces), 2)
+        module = ast.fix_missing_locations(ast.Module(body=pieces, type_ignores=[]))
+        scope = {"re": re}
+        exec(compile(module, str(path), "exec"), scope)
+        parse = scope["parse_view_toc"]
+        self.assertEqual(
+            parse("474; 1259 17234 VIEW public internal_cron_status supabase_admin"),
+            ("public", "internal_cron_status"),
+        )
+        for row in (
+            "474; 1259 17234 TABLE public internal_cron_status supabase_admin",
+            "475; 1259 17234 VIEW public internal_cron_status supabase_admin",
+            "474; 1259 17234 VIEW public bad'name supabase_admin",
+            "474; 1259 17234 VIEW public internal_cron_status supabase_admin more",
+        ):
+            with self.subTest(rejected=row):
+                with self.assertRaises(scope["Blocked"]):
+                    parse(row)
 
 
 if __name__ == "__main__":
