@@ -268,7 +268,7 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
             "git\", \"hash-object\"",
             "cron.database_name",
             "true|none",
-            "source database has sessions",
+            "reference database has sessions",
             "DURABLE_TRIAL_STATUS=PASS",
             "DURABLE_ALL_DISPOSABLE_DATABASES_REMOVED=PASS",
             "DURABLE_SIDE_EFFECTS_STABLE=PASS",
