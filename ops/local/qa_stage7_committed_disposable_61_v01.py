@@ -128,18 +128,18 @@ def drop_disposable(db):
 
 def excluded_pg_cron_toc(row):
     """Select only known pg_cron-owned TOC items; leave app objects intact."""
-    m = re.match(r"^[0-9]+;\\s+[0-9]+\\s+[0-9]+\\s+(.+)$", row)
+    m = re.match(r"^[0-9]+;\s+[0-9]+\s+[0-9]+\s+(.+)$", row)
     if not m:
         return False
     desc = m.group(1)
     if desc.startswith(("EXTENSION - pg_cron", "COMMENT - EXTENSION pg_cron")):
         return True
     return bool(re.match(
-        r"^(?:ACL - SCHEMA cron(?:\\s|$)"
-        r"|ACL cron (?:FUNCTION|TABLE|SEQUENCE|TYPE)\\s"
-        r"|TABLE DATA cron\\s"
-        r"|SEQUENCE SET cron\\s"
-        r"|DEFAULT ACL cron\\s)", desc))
+        r"^(?:ACL - SCHEMA cron(?:\s|$)"
+        r"|ACL cron (?:FUNCTION|TABLE|SEQUENCE|TYPE)\s"
+        r"|TABLE DATA cron\s"
+        r"|SEQUENCE SET cron\s"
+        r"|DEFAULT ACL cron\s)", desc))
 
 def main():
     db = None
@@ -197,10 +197,10 @@ def main():
             # explicitly reviewed class here, never blanket-skip a schema.
             for row in rows:
                 if (re.match(r"^[0-9]+;", row)
-                        and re.search(r"\\bcron\\b", row)
+                        and re.search(r"\bcron\b", row)
                         and not excluded_pg_cron_toc(row)
-                        and not re.search(r"\\b(?:FUNCTION|COMMENT) extensions grant_pg_cron_access\\(", row)
-                        and not re.search(r"\\bEVENT TRIGGER - issue_pg_cron_access\\b", row)):
+                        and not re.search(r"\b(?:FUNCTION|COMMENT) extensions grant_pg_cron_access\(", row)
+                        and not re.search(r"\bEVENT TRIGGER - issue_pg_cron_access\b", row)):
                     raise Stop("unclassified pg_cron archive dependency")
             filtered_toc = "".join(
                 row for row in rows if not excluded_pg_cron_toc(row))
