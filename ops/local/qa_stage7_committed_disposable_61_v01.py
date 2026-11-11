@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 7 disposable committed persistence and retry probe.
 ONLY in existing private Codespace + network-isolated QA PostgreSQL 17.
-The restored reference database is logically dumped into an empty temporary database; only
+The reference is copied into an empty DB excluding pg_cron (single-DB extension); only
 that disposable copy receives durable synthetic writes. Never production.
 One commit/retry does NOT establish p95/p99 or full end-to-end readiness.
 """
@@ -133,23 +133,102 @@ def main():
         db = "ah_stage7_ephemeral_qa_" + secrets.token_hex(6)
         if sql("postgres", f"SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname='{db}')") != "f":
             raise Stop("disposable DB name collision")
-        # TEMPLATE BASE requires zero other sessions, which isn't a valid
-        # assumption in a shared Codespace. Create a brand-new empty DB from
-        # template0 then logically copy the *isolated QA reference* over a
-        # local, in-container pipe. No network, production connection, or
-        # intermediate SQL archive; pg_dump uses a consistent snapshot.
+        # TEMPLATE BASE cannot be used with active source connections.
+        # pg_cron is bound to cron.database_name (the reference DB): trying
+        # to CREATE EXTENSION pg_cron in the disposable DB is forbidden.
+        # Use a local, private custom archive with a filtered restore TOC,
+        # excluding ONLY pg_cron's extension + extension-comment entries.
+        # No network, production access, cluster settings changes, or job
+        # activation. Cron behavior is intentionally OUTSIDE this test.
+        if sql(BASE, "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_cron')") != "t":
+            raise Stop("reference pg_cron extension inventory differs")
         sql("postgres",
             "CREATE DATABASE " + db + " TEMPLATE template0 OWNER supabase_admin;",
             role="supabase_admin", timeout=90)
         stream = (
-            "set -euo pipefail; "
-            "pg_dump -U supabase_admin -d " + BASE + " -Fc "
-            "| pg_restore -U supabase_admin -d " + db
-            + " --single-transaction --exit-on-error"
+            "set -euo pipefail; umask 077; "
+            "archive=$(mktemp /tmp/ah_stage7_restore_XXXXXX.dump); "
+            "toc=$(mktemp /tmp/ah_stage7_restore_XXXXXX.list); "
+            "trap 'rm -f \"$archive\" \"$toc\"' EXIT; "
+            "pg_dump -U supabase_admin -d " + BASE + " -Fc -f \"$archive\"; "
+            "pg_restore --list \"$archive\" > \"$toc\"; "
+            "matches=$(grep -Ec '^[0-9]+;.* EXTENSION - pg_cron
+        # The prior Stage 6 reconciliation is required in the scratch copy.
+        verify = (
+            "SELECT count(*) FROM pg_trigger t "
+            "JOIN pg_class c ON c.oid=t.tgrelid "
+            "JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "JOIN pg_proc p ON p.oid=t.tgfoid "
+            "JOIN pg_namespace pn ON pn.oid=p.pronamespace "
+            "WHERE n.nspname='public' AND pn.nspname='private' "
+            "AND c.relname IN ('alpha_hunter_snapshots',"
+            "'alpha_hunter_symbol_snapshots','alpha_hunter_signals',"
+            "'alpha_hunter_signal_features',"
+            "'alpha_hunter_readiness_observations_v01') "
+            "AND NOT t.tgisinternal "
+            "AND p.proowner='postgres'::regrole::oid "
+            "AND p.prosecdef"
+        )
+        if sql(db, verify) != "5":
+            raise Stop("disposable copy failed five-callback owner/security baseline")
+        if counts(db, rid) != (0, 0, 0, 0, 0):
+            raise Stop("existing fixture ID in disposable clone")
+        side_before = downstream(db, rid)
+        args = ",".join(
+            "'" + json.dumps(d[k], separators=(",", ":"), ensure_ascii=True).replace("'", "''") + "'::jsonb"
+            for k in K)
+        result1, first_ms = rpc(db, args)
+        if result1.get("run_id") != rid or counts(db, rid) != EXPECTED:
+            raise Stop("post-COMMIT core evidence incomplete")
+        side_after = downstream(db, rid)
+        if side_after[SIDE[0]] != side_before[SIDE[0]] + 1:
+            raise Stop("private snapshot trigger side effect missing")
+        if any(side_after[t] < side_before[t] for t in SIDE):
+            raise Stop("side-effect evidence count decreased")
+        result2, retry_ms = rpc(db, args)
+        if result2.get("run_id") != rid or counts(db, rid) != EXPECTED:
+            raise Stop("post-RETRY core evidence changed")
+        if downstream(db, rid) != side_after:
+            raise Stop("retry replayed downstream side effects")
+        print("STAGE7_DISPOSABLE_COMMIT=PASS")
+        print("COMMITTED_CORE_COUNTS=1,61,7,7,61")
+        print("RETRY_NO_DUPLICATES=PASS")
+        print("PRIVATE_SNAPSHOT_SIDE_EFFECT=PASS")
+        for t in SIDE:
+            print("SIDE_EFFECT_COUNT_" + t.upper().replace(".", "_") + "=" + str(side_after[t]))
+        print(f"FIRST_TRANSACTION_CLIENT_WALL_MS={first_ms:.3f}")
+        print(f"RETRY_TRANSACTION_CLIENT_WALL_MS={retry_ms:.3f}")
+        print("LIMITATION=NO_PG_CRON_IN_DISPOSABLE;ONE_COMMIT_RETRY;NO_P95_P99_OR_CONCURRENT_LOAD")
+        print("PRODUCTION_CONNECTIONS=NONE")
+    except (Stop, OSError, ValueError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
+        status = 2
+        print("STAGE7_DISPOSABLE_COMMIT=BLOCKED")
+        print("REASON=" + (str(e) if isinstance(e, Stop) else "private QA input unavailable"))
+        print("NO_PRODUCTION_FALLBACK")
+    finally:
+        if db is not None:
+            try:
+                drop_disposable(db)
+                print("DISPOSABLE_DB_REMOVED=PASS")
+            except (Stop, OSError, subprocess.TimeoutExpired):
+                status = 3
+                print("DISPOSABLE_DB_REMOVED=NOT_VERIFIED")
+                print("CLEANUP_ATTENTION_REQUIRED=" + db)
+    return status
+
+if __name__ == "__main__":
+    sys.exit(main())
+ \"$toc\" || true); "
+            "test \"$matches\" = 1 || { echo 'QA pg_cron TOC mismatch' >&2; exit 91; }; "
+            "sed -i -E '/^[0-9]+;.* (EXTENSION - pg_cron|COMMENT - EXTENSION pg_cron)$/d' \"$toc\"; "
+            "pg_restore -U supabase_admin -d " + db
+            + " --use-list \"$toc\" --single-transaction --exit-on-error \"$archive\""
         )
         run(["docker", "exec", N, "bash", "-c", stream], timeout=180)
         if sql(db, "SELECT current_database()") != db:
             raise Stop("disposable clone identity mismatch")
+        if sql(db, "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_cron')") != "f":
+            raise Stop("disposable copy unexpectedly contains pg_cron")
         # The prior Stage 6 reconciliation is required in the scratch copy.
         verify = (
             "SELECT count(*) FROM pg_trigger t "
