@@ -72,5 +72,59 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         self.assertEqual(result, [("OTHER", None)] * stage9.WORKERS)
 
 
+    def test_mixed_worker_failures_are_all_collected_without_leaking_details(self):
+        """A failed RPC must not suppress other concurrent worker outcomes."""
+        import itertools
+        outcomes = itertools.cycle(("success", "database", "timeout"))
+        lock = threading.Lock()
+
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                with lock:
+                    outcome = next(outcomes)
+                if outcome == "database":
+                    raise self.Stop("private database error text")
+                if outcome == "timeout":
+                    raise subprocess.TimeoutExpired("private command", 1)
+                return ({"run_id": "fixture"}, 3.0)
+
+        result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        self.assertEqual(len(result), stage9.WORKERS)
+        self.assertCountEqual([kind for kind, _ in result],
+                              ["PASS", "DB_RPC", "TIMEOUT"])
+        self.assertTrue(all(value is None for kind, value in result
+                            if kind != "PASS"))
+
+    def test_barrier_failure_fails_closed_without_entering_rpc(self):
+        """A broken start barrier must never permit a database call."""
+        original = stage9.threading.Barrier
+        calls = []
+
+        class BrokenBarrier:
+            def __init__(self, parties, timeout):
+                self.parties = parties
+
+            def wait(self, timeout):
+                raise threading.BrokenBarrierError()
+
+        class Probe:
+            class Stop(Exception):
+                pass
+
+            def rpc(self, db, args):
+                calls.append(True)
+                return ({"run_id": "fixture"}, 1.0)
+
+        try:
+            stage9.threading.Barrier = BrokenBarrier
+            result = stage9.bounded_race(Probe(), "disposable", "fixture")
+        finally:
+            stage9.threading.Barrier = original
+        self.assertEqual(result, [("BARRIER", None)] * stage9.WORKERS)
+        self.assertEqual(calls, [])
+
 if __name__ == "__main__":
     unittest.main()
