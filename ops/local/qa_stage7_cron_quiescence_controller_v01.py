@@ -3,7 +3,7 @@
 
 Scope: already existing network-isolated Codespaces PostgreSQL 17 QA container.
 Zero scheduled jobs required. No production connections, scanner changes,
-credential output, pg_terminate_backend, or schema-altering SQL.
+credential output, session termination, or schema-altering SQL.
 Runs the verified child probe while cron.database_name temporarily = postgres.
 Restores the original postmaster setting and restarts QA even if probe blocks.
 This is limited QA evidence, NOT production certification.
