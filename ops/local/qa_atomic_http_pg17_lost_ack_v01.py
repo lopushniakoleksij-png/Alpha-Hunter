@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from http.client import RemoteDisconnected
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 CASE = "SIXTY_ONE_LOST_ACK"
 RUN = "QA_61_LOST_ACK"
@@ -107,6 +108,17 @@ def main():
             list(pool.map(lambda _: client(), range(2)))
         assert len(state["requests"]) == 3, state["requests"]
         assert len(set(state["requests"])) == 1
+        # Reject a conflicting transport identity before invoking the database RPC.
+        bad = Request(f"http://127.0.0.1:{server.server_port}/test-only-atomic-rpc",
+                      data=b'{"run_id":"QA_61_HTTP_PG_CONFLICT"}',
+                      headers={"Content-Type": "application/json"})
+        try:
+            urlopen(bad, timeout=10)
+        except HTTPError as exc:
+            assert exc.code == 400, exc.code
+        else:
+            raise AssertionError("conflicting HTTP identity unexpectedly accepted")
+        assert len(state["requests"]) == 3, "invalid request reached RPC request ledger"
         counts = sql("""SELECT
           (SELECT count(*) FROM public.alpha_hunter_snapshots WHERE run_id='QA_61_HTTP_PG'),
           (SELECT count(*) FROM public.alpha_hunter_symbol_snapshots WHERE run_id='QA_61_HTTP_PG'),
