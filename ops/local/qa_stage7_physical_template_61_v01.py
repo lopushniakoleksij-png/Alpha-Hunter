@@ -142,15 +142,18 @@ def main():
             raise Stop("reference pg_cron inventory mismatch")
         if sql(BASE, "SELECT to_regclass('cron.job') IS NOT NULL") != "t":
             raise Stop("cron.job absent from private QA reference")
-        if sql(BASE, "SELECT current_setting('cron.database_name', true)") != BASE:
-            raise Stop("cron database target does not match reference; clone blocked")
+        # This probe is run only inside the guarded QA-only cron-quiescence
+        # controller, after it temporarily moves the pg_cron launcher to
+        # the default postgres DB. It restores BASE after the probe.
+        if sql(BASE, "SELECT current_setting('cron.database_name', true)") != "postgres":
+            raise Stop("QA cron launcher not redirected; physical clone blocked")
         if sql(BASE, "SELECT count(*) FROM cron.job") != "0":
             raise Stop("reference contains cron jobs; physical clone blocked")
         if sql(BASE, "SELECT count(*) FROM pg_stat_activity WHERE "
                "datname=current_database() AND pid<>pg_backend_pid()") != "0":
             raise Stop("reference has other sessions; physical clone blocked")
-        # The network-isolated QA cluster has cron configured to read BASE.
-        # The clone is disposable and contains no cron job records.
+        # QA cron worker temporarily targets postgres, never the BASE.
+        # The clone is disposable and contains no scheduled cron jobs.
         try:
             sql("postgres", "CREATE DATABASE " + db + " TEMPLATE "
                 + BASE + " OWNER supabase_admin;",
@@ -207,6 +210,7 @@ def main():
         print("RETRY_NO_DUPLICATES=PASS")
         print("PRIVATE_SNAPSHOT_SIDE_EFFECT=PASS")
         print("CRON_DEPENDENT_VIEW_PRESERVED_BY_TEMPLATE=PASS")
+        print("CRON_REDIRECTED_DURING_DISPOSABLE_TEST=YES")
         for t in SIDE:
             print("SIDE_EFFECT_COUNT_" + t.upper().replace(".", "_") + "=" + str(side_after[t]))
         print(f"FIRST_TRANSACTION_CLIENT_WALL_MS={first_ms:.3f}")
