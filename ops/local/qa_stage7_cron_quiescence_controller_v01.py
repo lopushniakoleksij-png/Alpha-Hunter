@@ -34,9 +34,11 @@ def run(args, payload=None, timeout=50):
     return p.stdout.strip()
 
 
-def sql(db, query):
+def sql(db, query, role="postgres"):
+    if role not in ("postgres", "supabase_admin"):
+        raise Blocked("unapproved local QA database role")
     return run(["docker", "exec", "-i", N, "psql", "-XqAt",
-                "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db],
+                "-v", "ON_ERROR_STOP=1", "-U", role, "-d", db],
                payload=query, timeout=35)
 
 
@@ -77,7 +79,7 @@ def original_override():
         "AND sourcefile=current_setting('data_directory')"
         "||'/postgresql.auto.conf' ORDER BY seqno DESC LIMIT 1),"
         "'__UNSET__');"
-    ))
+    ), role="supabase_admin")
 
 
 def source_sessions():
@@ -131,12 +133,14 @@ def guard(child):
         "'cron.database_name','ALTER SYSTEM')::text || '|' || "
         "has_table_privilege(current_user,"
         "'pg_catalog.pg_file_settings','SELECT')::text;"
-    ))
+    ), role="supabase_admin")
     if privilege != "true|true":
         print("QA_GUARD_CONFIG_PRIVILEGES=BLOCKED")
         print("QA_CONFIG_ROUTE=REQUIRES_AUTHORIZED_ADMIN")
         raise Blocked("QA role lacks privileged config access; no restart")
     print("QA_GUARD_CONFIG_PRIVILEGES=PASS")
+    # Configuration operations always use the existing authorised isolated-QA
+    # supabase_admin role, never the non-superuser postgres compatibility role.
     old = original_override()
     if old not in (BASE, "__UNSET__"):
         raise Blocked("unexpected original auto-conf override; no restart")
@@ -181,7 +185,8 @@ def main():
             print("QA_DATABASE_MUTATIONS=NONE")
             return 0
         changed = True  # restore even if ALTER SYSTEM partially succeeds
-        sql("postgres", "ALTER SYSTEM SET cron.database_name = 'postgres';")
+        sql("postgres", "ALTER SYSTEM SET cron.database_name = 'postgres';",
+            role="supabase_admin")
         restart_qa()
         if sql("postgres", "SELECT current_setting('cron.database_name')") != "postgres":
             raise Blocked("temporary cron redirect not active")
@@ -226,9 +231,11 @@ def main():
                 elif status != "true":
                     raise Blocked("QA restart state unknown")
                 if old == "__UNSET__":
-                    sql("postgres", "ALTER SYSTEM RESET cron.database_name;")
+                    sql("postgres", "ALTER SYSTEM RESET cron.database_name;",
+                        role="supabase_admin")
                 else:
-                    sql("postgres", "ALTER SYSTEM SET cron.database_name = '" + BASE + "';")
+                    sql("postgres", "ALTER SYSTEM SET cron.database_name = '" + BASE + "';",
+                        role="supabase_admin")
                 restart_qa()
                 if sql("postgres", "SELECT current_setting('cron.database_name')") != BASE:
                     raise Blocked("original QA cron target not restored")
