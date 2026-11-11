@@ -231,5 +231,29 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
             source.index("ALTER SYSTEM SET cron.database_name"))
 
 
+    def test_cron_controller_uses_existing_authorised_admin_for_config(self):
+        path = ROOT / "ops/local/qa_stage7_cron_quiescence_controller_v01.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        privileged = []
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "sql"):
+                sql_expr = ast.unparse(node.args[1]) if len(node.args) > 1 else ""
+                if ("ALTER SYSTEM" in sql_expr
+                        or "pg_file_settings" in sql_expr
+                        or "has_parameter_privilege" in sql_expr):
+                    privileged.append(node)
+                    role = next((k.value for k in node.keywords
+                                 if k.arg == "role"), None)
+                    self.assertIsInstance(role, ast.Constant)
+                    self.assertEqual(role.value, "supabase_admin")
+        self.assertGreaterEqual(len(privileged), 5)
+        self.assertIn('if role not in ("postgres", "supabase_admin"):', source)
+        self.assertNotIn("GRANT ", source)
+        self.assertNotIn("ALTER ROLE ", source)
+
+
 if __name__ == "__main__":
     unittest.main()
