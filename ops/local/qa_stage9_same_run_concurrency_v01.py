@@ -166,10 +166,12 @@ def main():
         if probe.counts(db, run_id) != probe.EXPECTED:
             raise Blocked("core records duplicated or incomplete after race")
         after = probe.downstream(db, run_id)
-        if after[probe.SIDE[0]] != before[probe.SIDE[0]] + 1:
-            raise Blocked("concurrent scan private snapshot not exactly once")
-        if any(after[k] < before[k] for k in probe.SIDE):
-            raise Blocked("concurrent scan reduced side effects")
+        # Exact known Stage 7 baseline: one private snapshot, one ledger
+        # materialization event and two account-state snapshots per run.
+        # Detect duplicate downstream effects from concurrent writers.
+        observed_delta = tuple(after[k] - before[k] for k in probe.SIDE)
+        if observed_delta != (1, 1, 2):
+            raise Blocked("concurrent scan downstream effects not exactly once")
         replay_receipt, retry_elapsed = probe.rpc(db, args)
         if replay_receipt.get("run_id") != run_id:
             raise Blocked("post-race retry receipt run identity changed")
