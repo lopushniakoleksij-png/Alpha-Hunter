@@ -158,6 +158,7 @@ def evidence(lines):
         "RETRY_TRANSACTION_CLIENT_WALL_MS=", "LIMITATION=",
         "DISPOSABLE_DB_REMOVED=", "PRODUCTION_CONNECTIONS=",
         "REFERENCE_DATABASE_WRITES=", "NO_PRODUCTION_FALLBACK",
+        "DURABLE_", "QA_MANUAL_DISPOSABLE_CLEANUP_REQUIRED=",
     )
     for line in lines.splitlines():
         if line.startswith(accepted) and re.fullmatch(r"[A-Z0-9_.=,;+-]{1,160}", line):
@@ -172,7 +173,10 @@ def main():
     diagnose_only = (
         len(sys.argv) == 3 and sys.argv[2] == "--diagnose"
     )
-    if not (len(sys.argv) == 2 or diagnose_only):
+    durable30 = (
+        len(sys.argv) == 3 and sys.argv[2] == "--durable30"
+    )
+    if not (len(sys.argv) == 2 or diagnose_only or durable30):
         print("QA_CRON_CONTROLLER=BLOCKED")
         print("REASON=exact child script path required")
         return 2
@@ -198,7 +202,8 @@ def main():
         print("QA_CRON_LAUNCHER_REDIRECTED=PASS")
         child_result = subprocess.run(
             [sys.executable, str(child)], text=True,
-            capture_output=True, timeout=300, check=False,
+            capture_output=True, timeout=1200 if durable30 else 300,
+            check=False,
         )
         evidence(child_result.stdout)
         probe_status = (
@@ -207,6 +212,10 @@ def main():
             and "DISPOSABLE_DB_REMOVED=PASS" in child_result.stdout
             and "COMMITTED_CORE_COUNTS=1,61,7,7,61" in child_result.stdout
             and "RETRY_NO_DUPLICATES=PASS" in child_result.stdout
+            and (not durable30 or
+                 ("DURABLE_TRIAL_STATUS=PASS" in child_result.stdout and
+                  "DURABLE_TRIALS_COMPLETED=30" in child_result.stdout and
+                  "DURABLE_ALL_DISPOSABLE_DATABASES_REMOVED=PASS" in child_result.stdout))
         )
         if not probe_status:
             print("QA_PROBE_STATUS=BLOCKED")
