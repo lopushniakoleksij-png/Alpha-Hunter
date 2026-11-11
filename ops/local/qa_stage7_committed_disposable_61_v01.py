@@ -145,14 +145,46 @@ def main():
         sql("postgres",
             "CREATE DATABASE " + db + " TEMPLATE template0 OWNER supabase_admin;",
             role="supabase_admin", timeout=90)
-        stream = (
-            "set -euo pipefail; umask 077; "
-            "archive=$(mktemp /tmp/ah_stage7_restore_XXXXXX.dump); "
-            "toc=$(mktemp /tmp/ah_stage7_restore_XXXXXX.list); "
-            "trap 'rm -f \"$archive\" \"$toc\"' EXIT; "
-            "pg_dump -U supabase_admin -d " + BASE + " -Fc -f \"$archive\"; "
-            "pg_restore --list \"$archive\" > \"$toc\"; "
-            "matches=$(grep -Ec '^[0-9]+;.* EXTENSION - pg_cron
+        # Store all private schema bytes only in container-local, randomized
+        # temporary files. Avoid shell pipelines and shell interpolation.
+        token = secrets.token_hex(12)
+        archive = "/tmp/ah_stage7_copy_" + token + ".dump"
+        tocfile = "/tmp/ah_stage7_copy_" + token + ".list"
+        try:
+            run(
+                ["docker", "exec", N, "bash", "-c",
+                 "umask 077; exec pg_dump -U supabase_admin -d "
+                 + BASE + " -Fc -f " + archive],
+                timeout=180
+            )
+            raw_toc = run(["docker", "exec", N, "pg_restore",
+                           "--list", archive], timeout=45)
+            rows = raw_toc.splitlines(keepends=True)
+            def excluded(row):
+                if not re.match(r"^[0-9]+;", row):
+                    return False
+                return (row.rstrip().endswith("EXTENSION - pg_cron")
+                        or row.rstrip().endswith("COMMENT - EXTENSION pg_cron"))
+            extension_count = sum(
+                row.rstrip().endswith("EXTENSION - pg_cron")
+                and bool(re.match(r"^[0-9]+;", row)) for row in rows
+            )
+            if extension_count != 1:
+                raise Stop("unexpected pg_cron extension TOC inventory")
+            filtered_toc = "".join(row for row in rows if not excluded(row))
+            run(["docker", "exec", "-i", N, "bash", "-c",
+                 "umask 077; cat > " + tocfile], payload=filtered_toc)
+            run(["docker", "exec", N, "pg_restore",
+                 "-U", "supabase_admin", "-d", db,
+                 "--use-list", tocfile, "--single-transaction",
+                 "--exit-on-error", archive], timeout=180)
+        finally:
+            # The reference clone remains untouched even if restore fails.
+            run(["docker", "exec", N, "rm", "-f", archive, tocfile])
+        if sql(db, "SELECT current_database()") != db:
+            raise Stop("disposable clone identity mismatch")
+        if sql(db, "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_cron')") != "f":
+            raise Stop("disposable copy unexpectedly contains pg_cron")
         # The prior Stage 6 reconciliation is required in the scratch copy.
         verify = (
             "SELECT count(*) FROM pg_trigger t "
