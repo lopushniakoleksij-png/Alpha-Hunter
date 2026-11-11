@@ -72,5 +72,29 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
                 self.assertFalse(excluded(row))
 
 
+    def test_restore_failure_diagnostic_never_leaks_sql(self):
+        path = ROOT / "ops/local/qa_stage7_committed_disposable_61_v01.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                  and node.name == "restore_failure_evidence")
+        module = ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[]))
+        scope = {"re": re}
+        exec(compile(module, str(path), "exec"), scope)
+        diagnostic = scope["restore_failure_evidence"]
+        toc = ["5993; 0 0 ACL - TABLE private_sensitive_table postgres"]
+        stderr = ("pg_restore: from TOC entry 5993; 0 0 ACL ...\\n"
+                  "Command was: PRIVATE SQL MUST NEVER BE PRINTED\\n"
+                  'ERROR: relation "cron.job" does not exist\\n')
+        self.assertEqual(diagnostic(stderr, toc), ("5993", "ACL"))
+        self.assertEqual(diagnostic("unexpected failure", toc),
+                         ("UNKNOWN", "UNKNOWN"))
+        self.assertEqual(diagnostic(
+            "pg_restore: processing item 5993 0 0 ACL private...",
+            toc), ("5993", "ACL"))
+        self.assertNotIn("PRIVATE SQL", str(diagnostic(stderr, toc)))
+        self.assertNotIn("private_sensitive_table",
+                         str(diagnostic(stderr, toc)))
+
+
 if __name__ == "__main__":
     unittest.main()
