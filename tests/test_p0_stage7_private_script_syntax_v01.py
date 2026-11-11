@@ -10,6 +10,7 @@ SCRIPTS = (
     "ops/local/qa_stage7_61_rpc_rollback_benchmark_v01.py",
     "ops/local/qa_stage7_failed_view_474_inspect_v01.py",
     "ops/local/qa_stage7_physical_template_61_v01.py",
+    "ops/local/qa_stage7_cron_quiescence_controller_v01.py",
 )
 
 
@@ -144,6 +145,42 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
         self.assertNotIn("SET cron.database_name", content)
         self.assertNotIn("pg_terminate_backend", content)
         self.assertNotIn("pg_cancel_backend", content)
+
+
+    def test_qa_cron_controller_is_reversible_and_never_touches_production(self):
+        path = ROOT / "ops/local/qa_stage7_cron_quiescence_controller_v01.py"
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        main = next(node for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "main")
+        self.assertTrue(any(isinstance(node, ast.Try)
+                            and node.finalbody for node in ast.walk(main)))
+        for required in (
+            "cron.database_name = 'postgres'",
+            "ALTER SYSTEM RESET cron.database_name",
+            "ALTER SYSTEM SET cron.database_name",
+            "QA_ORIGINAL_CRON_CONFIG_RESTORED=PASS",
+            "QA_ORIGINAL_CRON_CONFIG_RESTORED=NOT_VERIFIED",
+            "QA_MANUAL_CONFIG_RECOVERY_REQUIRED=YES",
+            "SELECT count(*) FROM cron.job",
+            "source_sessions()",
+            "docker", "restart",
+            "no|true|none",
+            "PRODUCTION_RELEASE=NO_GO",
+            "capture_output=True",
+            "private stderr withheld",
+        ):
+            with self.subTest(token=required):
+                self.assertIn(required, source)
+        for forbidden in (
+            "pg_terminate_backend", "pg_cancel_backend",
+            "DROP DATABASE ah_authentic_schema_20261110",
+            "DROP EXTENSION pg_cron",
+            "docker rm ", "docker run ", "ALTER ROLE",
+            "GITHUB_ACTIONS = true",
+        ):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, source)
 
 
 if __name__ == "__main__":
