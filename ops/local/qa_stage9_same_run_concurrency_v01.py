@@ -68,13 +68,27 @@ def load_verified_single_probe():
 
 
 def bounded_race(probe, db, args):
+    """Collect safe per-worker classifications without releasing private SQL."""
     barrier = threading.Barrier(WORKERS, timeout=15)
 
     def attempt(_):
-        barrier.wait(timeout=15)
-        return probe.rpc(db, args)
+        try:
+            barrier.wait(timeout=15)
+        except threading.BrokenBarrierError:
+            return ("BARRIER", None)
+        try:
+            return ("PASS", probe.rpc(db, args))
+        except probe.Stop:
+            return ("DB_RPC", None)
+        except subprocess.TimeoutExpired:
+            return ("TIMEOUT", None)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            return ("RECEIPT", None)
+        except Exception:
+            return ("OTHER", None)
 
     # Each RPC creates its own isolated local psql connection.
+    # Collect *every* result rather than stopping on first worker error.
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         results = list(pool.map(attempt, range(WORKERS)))
     return results
@@ -114,9 +128,13 @@ def main():
     db = None
     status = 0
     probe = None
+    phase = "ENVIRONMENT"
+    run_id = None
     try:
         probe = load_verified_single_probe()
+        phase = "FIXTURE"
         fixture, run_id = probe.guard()
+        phase = "REFERENCE"
         if probe.sql(BASE, "SELECT current_setting('cron.database_name')") != "postgres":
             raise Blocked("QA cron launcher not redirected")
         if probe.sql(BASE, "SELECT count(*) FROM cron.job") != "0":
@@ -125,6 +143,7 @@ def main():
             "postgres", "SELECT count(*) FROM pg_stat_activity WHERE datname='" + BASE + "'"
         ) != "0":
             raise Blocked("reference database still has active sessions")
+        phase = "CLONE"
         candidate = "ah_stage7_ephemeral_qa_" + secrets.token_hex(6)
         if probe.sql("postgres", "SELECT EXISTS(SELECT 1 FROM pg_database "
                      "WHERE datname='" + candidate + "')") != "f":
@@ -137,20 +156,26 @@ def main():
                       role="supabase_admin", timeout=90)
         except probe.Stop:
             raise Blocked("physical QA clone failed; private SQL withheld")
+        phase = "CLONE_VALIDATION"
         verify_clone(probe, db, run_id)
+        phase = "SIDE_EFFECT_BASELINE"
         before = probe.downstream(db, run_id)
         args = ",".join(
             "'" + json.dumps(fixture[k], separators=(",", ":"),
                              ensure_ascii=True).replace("'", "''") + "'::jsonb"
             for k in probe.K
         )
-        try:
-            race = bounded_race(probe, db, args)
-        except Exception:
-            # Do not expose private SQL and per-connection error details.
-            raise Blocked("concurrent same-run RPC attempts did not all succeed") from None
-        if len(race) != WORKERS:
-            raise Blocked("wrong concurrent RPC receipt count")
+        phase = "RACE"
+        race_results = bounded_race(probe, db, args)
+        if len(race_results) != WORKERS:
+            raise Blocked("wrong concurrent RPC worker count")
+        for cls in ("PASS", "DB_RPC", "TIMEOUT", "RECEIPT", "BARRIER", "OTHER"):
+            print("SAME_RUN_WORKERS_" + cls + "=" +
+                  str(sum(kind == cls for kind, _ in race_results)))
+        if any(kind != "PASS" for kind, _ in race_results):
+            raise Blocked("concurrent RPC worker failure; safe counters above")
+        race = [value for _, value in race_results]
+        phase = "RECEIPTS"
         elapsed = []
         for receipt, duration in race:
             if receipt.get("run_id") != run_id:
@@ -163,15 +188,20 @@ def main():
             if not math.isfinite(duration) or not 0 < duration < 45000:
                 raise Blocked("concurrent RPC timing invalid")
             elapsed.append(duration)
+        phase = "CORE_COUNTS"
         if probe.counts(db, run_id) != probe.EXPECTED:
             raise Blocked("core records duplicated or incomplete after race")
+        phase = "SIDE_EFFECTS"
         after = probe.downstream(db, run_id)
         # Exact known Stage 7 baseline: one private snapshot, one ledger
         # materialization event and two account-state snapshots per run.
         # Detect duplicate downstream effects from concurrent writers.
         observed_delta = tuple(after[k] - before[k] for k in probe.SIDE)
+        print("SAME_RUN_SIDE_EFFECT_DELTAS=" +
+              ",".join(str(value) for value in observed_delta))
         if observed_delta != (1, 1, 2):
             raise Blocked("concurrent scan downstream effects not exactly once")
+        phase = "POST_RACE_RETRY"
         replay_receipt, retry_elapsed = probe.rpc(db, args)
         if replay_receipt.get("run_id") != run_id:
             raise Blocked("post-race retry receipt run identity changed")
@@ -193,11 +223,18 @@ def main():
         print("PRODUCTION_CONNECTIONS=NONE")
         print("REFERENCE_DATABASE_WRITES=NONE")
         print("LIMITATION=ONE_THREE_CLIENT_SAME_RUN_RACE;SYNTHETIC_61_SYMBOLS;NO_DIFFERENT_RUN_CONCURRENCY;NO_INJECTED_FAILURE;NOT_PRODUCTION_CERTIFIED")
-    except Exception as error:
+    except Exception:
         status = 2
         print("SAME_RUN_RACE_STATUS=BLOCKED")
-        print("REASON=" + (str(error) if isinstance(error, Blocked)
-                           else "private QA race input unavailable"))
+        # Fixed enumerated stage only; never print exception/SQL/identifiers.
+        print("SAME_RUN_FAILURE_PHASE=" + phase)
+        if db is not None and probe is not None and run_id is not None:
+            try:
+                observed = probe.counts(db, run_id)
+                print("SAME_RUN_POST_FAILURE_CORE_COUNTS=" +
+                      ",".join(str(value) for value in observed))
+            except Exception:
+                print("SAME_RUN_POST_FAILURE_CORE_COUNTS=UNAVAILABLE")
         print("NO_PRODUCTION_FALLBACK")
     finally:
         if db is not None and probe is not None:
