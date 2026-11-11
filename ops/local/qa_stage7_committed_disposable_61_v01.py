@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage 7 disposable committed persistence and retry probe.
 ONLY in existing private Codespace + network-isolated QA PostgreSQL 17.
-The restored reference database is copied to a temporary database; only
+The restored reference database is logically dumped into an empty temporary database; only
 that disposable copy receives durable synthetic writes. Never production.
 One commit/retry does NOT establish p95/p99 or full end-to-end readiness.
 """
@@ -133,11 +133,41 @@ def main():
         db = "ah_stage7_ephemeral_qa_" + secrets.token_hex(6)
         if sql("postgres", f"SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname='{db}')") != "f":
             raise Stop("disposable DB name collision")
-        # supabase_admin owns the source DB; postgres is not a superuser.
-        sql("postgres", "CREATE DATABASE " + db + " TEMPLATE " + BASE + ";",
+        # TEMPLATE BASE requires zero other sessions, which isn't a valid
+        # assumption in a shared Codespace. Create a brand-new empty DB from
+        # template0 then logically copy the *isolated QA reference* over a
+        # local, in-container pipe. No network, production connection, or
+        # intermediate SQL archive; pg_dump uses a consistent snapshot.
+        sql("postgres",
+            "CREATE DATABASE " + db + " TEMPLATE template0 OWNER supabase_admin;",
             role="supabase_admin", timeout=90)
+        stream = (
+            "set -euo pipefail; "
+            "pg_dump -U supabase_admin -d " + BASE + " -Fc "
+            "| pg_restore -U supabase_admin -d " + db
+            + " --single-transaction --exit-on-error"
+        )
+        run(["docker", "exec", N, "bash", "-c", stream], timeout=180)
         if sql(db, "SELECT current_database()") != db:
             raise Stop("disposable clone identity mismatch")
+        # The prior Stage 6 reconciliation is required in the scratch copy.
+        verify = (
+            "SELECT count(*) FROM pg_trigger t "
+            "JOIN pg_class c ON c.oid=t.tgrelid "
+            "JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "JOIN pg_proc p ON p.oid=t.tgfoid "
+            "JOIN pg_namespace pn ON pn.oid=p.pronamespace "
+            "WHERE n.nspname='public' AND pn.nspname='private' "
+            "AND c.relname IN ('alpha_hunter_snapshots',"
+            "'alpha_hunter_symbol_snapshots','alpha_hunter_signals',"
+            "'alpha_hunter_signal_features',"
+            "'alpha_hunter_readiness_observations_v01') "
+            "AND NOT t.tgisinternal "
+            "AND p.proowner='postgres'::regrole::oid "
+            "AND p.prosecdef"
+        )
+        if sql(db, verify) != "5":
+            raise Stop("disposable copy failed five-callback owner/security baseline")
         if counts(db, rid) != (0, 0, 0, 0, 0):
             raise Stop("existing fixture ID in disposable clone")
         side_before = downstream(db, rid)
