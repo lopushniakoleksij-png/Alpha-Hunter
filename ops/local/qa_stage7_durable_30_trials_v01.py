@@ -51,12 +51,6 @@ def run(args, timeout=40):
     return proc.stdout.strip()
 
 
-def q(db, statement):
-    return run(["docker", "exec", "-i", N, "psql", "-XqAt",
-                "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db],
-               timeout=30) if statement is None else query(db, statement)
-
-
 def query(db, statement):
     proc = subprocess.run(
         ["docker", "exec", "-i", N, "psql", "-XqAt", "-v",
@@ -116,10 +110,11 @@ def guard():
             "{{.State.Running}}|{{.HostConfig.NetworkMode}}", N],
            timeout=15) != "true|none":
         raise Blocked("network-isolated QA container unavailable")
-    if query(BASE, "SELECT current_database()||'|'||current_setting('server_version_num')") != BASE + "|170006" and not re.fullmatch(
-        re.escape(BASE) + r"\|17\d{4}",
-        query(BASE, "SELECT current_database()||'|'||current_setting('server_version_num')"),
-    ):
+    identity = query(
+        BASE, "SELECT current_database()||'|'||current_user||'|'||"
+              "current_setting('server_version_num')"
+    )
+    if not re.fullmatch(re.escape(BASE) + r"\|postgres\|17\d{4}", identity):
         raise Blocked("QA identity or PostgreSQL version mismatch")
     if query("postgres", "SELECT current_setting('cron.database_name')") != "postgres":
         raise Blocked("cron launcher must be temporarily redirected")
