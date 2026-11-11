@@ -183,5 +183,38 @@ class Stage7PrivateScriptSyntaxTests(unittest.TestCase):
                 self.assertNotIn(forbidden, source)
 
 
+    def test_cron_guard_diagnostic_returns_before_any_mutation(self):
+        path = ROOT / "ops/local/qa_stage7_cron_quiescence_controller_v01.py"
+        source = path.read_text(encoding="utf-8")
+        for name in (
+            "QA_GUARD_GIT_BRANCH=PASS",
+            "QA_GUARD_CONTAINER=PASS",
+            "QA_GUARD_FIXTURE_FILE=PASS",
+            "QA_GUARD_PG_IDENTITY=PASS",
+            "QA_GUARD_ZERO_JOBS=PASS",
+            "QA_GUARD_ZERO_OTHER_CLIENTS=PASS",
+            "QA_GUARD_SOURCE_SESSIONS=PASS",
+            "QA_GUARD_AUTO_CONF_OVERRIDE=PASS",
+            "QA_GUARD_DIAGNOSTIC=PASS",
+            "QA_DATABASE_MUTATIONS=NONE",
+        ):
+            with self.subTest(check=name):
+                self.assertIn(name, source)
+        tree = ast.parse(source, filename=str(path))
+        main = next(node for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "main")
+        statements = [node for node in ast.walk(main) if isinstance(node, ast.If)]
+        diagnostic = [node for node in statements
+                      if isinstance(node.test, ast.Name)
+                      and node.test.id == "diagnose_only"
+                      and any(isinstance(n, ast.Return) for n in ast.walk(node))]
+        self.assertEqual(len(diagnostic), 1)
+        body = source[source.index('        print("QA_ONLY_GUARDS=PASS")'):]
+        self.assertLess(body.index("if diagnose_only:"),
+                        body.index("changed = True"))
+        self.assertLess(body.index("if diagnose_only:"),
+                        body.index("ALTER SYSTEM SET"))
+
+
 if __name__ == "__main__":
     unittest.main()
