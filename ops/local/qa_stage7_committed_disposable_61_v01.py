@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Stage 7 disposable committed persistence and retry probe.
 ONLY in existing private Codespace + network-isolated QA PostgreSQL 17.
-The reference is copied into an empty DB excluding pg_cron (single-DB extension); only
-that disposable copy receives durable synthetic writes. Never production.
+The reference is copied into an empty DB excluding pg_cron (single-DB extension)
+and its scoped access-grant event trigger; only that disposable copy receives
+durable synthetic writes. Never production. Cron callbacks OUTSIDE this probe.
 One commit/retry does NOT establish p95/p99 or full end-to-end readiness.
 """
 import json
@@ -134,6 +135,11 @@ def excluded_pg_cron_toc(row):
     desc = m.group(1)
     if desc.startswith(("EXTENSION - pg_cron", "COMMENT - EXTENSION pg_cron")):
         return True
+    # The restored Supabase access-grant DDL event trigger invokes a function
+    # that expects cron.job, absent here because pg_cron is single-DB.
+    # Skip only this cron-scoped event trigger, never application row triggers.
+    if re.match(r"^EVENT TRIGGER - issue_pg_cron_access(?:\s|$)", desc):
+        return True
     return bool(re.match(
         r"^(?:ACL - SCHEMA cron(?:\s|$)"
         r"|ACL cron (?:FUNCTION|TABLE|SEQUENCE|TYPE)\s"
@@ -153,11 +159,23 @@ def main():
         # pg_cron is bound to cron.database_name (the reference DB): trying
         # to CREATE EXTENSION pg_cron in the disposable DB is forbidden.
         # Use a local, private custom archive with a filtered restore TOC,
-        # excluding ONLY pg_cron's extension + extension-comment entries.
+        # excluding only verified cron-owned entries and the cron-specific
+        # access-grant DDL event trigger (not application row triggers).
         # No network, production access, cluster settings changes, or job
         # activation. Cron behavior is intentionally OUTSIDE this test.
         if sql(BASE, "SELECT EXISTS(SELECT 1 FROM pg_extension WHERE extname='pg_cron')") != "t":
             raise Stop("reference pg_cron extension inventory differs")
+        cron_event_identity = (
+            "SELECT count(*) FROM pg_event_trigger e "
+            "JOIN pg_proc p ON p.oid=e.evtfoid "
+            "JOIN pg_namespace n ON n.oid=p.pronamespace "
+            "WHERE e.evtname='issue_pg_cron_access' "
+            "AND e.evtevent='ddl_command_end' "
+            "AND n.nspname='extensions' "
+            "AND p.proname='grant_pg_cron_access'"
+        )
+        if sql(BASE, cron_event_identity) != "1":
+            raise Stop("reference cron access event trigger identity differs")
         sql("postgres",
             "CREATE DATABASE " + db + " TEMPLATE template0 OWNER supabase_admin;",
             role="supabase_admin", timeout=90)
@@ -180,9 +198,11 @@ def main():
             # extension-owned cron schema cannot be restored in this
             # disposable DB. Exclude only known pg_cron TOC entries:
             # extension/comment, cron-schema ACLs, cron function/table
-            # grants, cron runtime table data and sequence/default ACLs.
-            # Keep extensions.grant_pg_cron_access and its event trigger:
-            # they are not automatically extension-owned. No production SQL.
+            # grants, cron runtime table data and sequence/default ACLs,
+            # plus the one verified cron-scoped access-grant event trigger.
+            # Keep the access-grant function definition; suppress its
+            # invocation by omitting only its event-trigger registration.
+            # No production SQL or scheduler changes.
             excluded_rows = [row for row in rows if excluded_pg_cron_toc(row)]
             extension_count = sum(
                 "EXTENSION - pg_cron" in row
@@ -191,6 +211,12 @@ def main():
             )
             if extension_count != 1:
                 raise Stop("unexpected pg_cron extension TOC inventory")
+            cron_trigger_count = sum(
+                bool(re.search(r"EVENT TRIGGER - issue_pg_cron_access(?:\s|$)", row))
+                for row in excluded_rows
+            )
+            if cron_trigger_count != 1:
+                raise Stop("unexpected cron access event trigger TOC inventory")
             if not any("TABLE DATA cron job " in row for row in excluded_rows):
                 raise Stop("unexpected pg_cron runtime table inventory")
             # Refuse to silently omit any unexpected cron objects: add an
@@ -199,8 +225,7 @@ def main():
                 if (re.match(r"^[0-9]+;", row)
                         and re.search(r"\bcron\b", row)
                         and not excluded_pg_cron_toc(row)
-                        and not re.search(r"\b(?:FUNCTION|COMMENT) extensions grant_pg_cron_access\(", row)
-                        and not re.search(r"\bEVENT TRIGGER - issue_pg_cron_access\b", row)):
+                        and not re.search(r"\b(?:FUNCTION|COMMENT) extensions grant_pg_cron_access\(", row)):
                     raise Stop("unclassified pg_cron archive dependency")
             filtered_toc = "".join(
                 row for row in rows if not excluded_pg_cron_toc(row))
@@ -258,11 +283,12 @@ def main():
         print("COMMITTED_CORE_COUNTS=1,61,7,7,61")
         print("RETRY_NO_DUPLICATES=PASS")
         print("PRIVATE_SNAPSHOT_SIDE_EFFECT=PASS")
+        print("CRON_DDL_EVENT_TRIGGER_EXCLUDED_IN_DISPOSABLE=PASS")
         for t in SIDE:
             print("SIDE_EFFECT_COUNT_" + t.upper().replace(".", "_") + "=" + str(side_after[t]))
         print(f"FIRST_TRANSACTION_CLIENT_WALL_MS={first_ms:.3f}")
         print(f"RETRY_TRANSACTION_CLIENT_WALL_MS={retry_ms:.3f}")
-        print("LIMITATION=NO_PG_CRON_IN_DISPOSABLE;ONE_COMMIT_RETRY;NO_P95_P99_OR_CONCURRENT_LOAD")
+        print("LIMITATION=NO_PG_CRON_OR_CRON_DDL_EVENT_TRIGGER_IN_DISPOSABLE;ONE_COMMIT_RETRY;NO_P95_P99_OR_CONCURRENT_LOAD")
         print("PRODUCTION_CONNECTIONS=NONE")
     except (Stop, OSError, ValueError, subprocess.TimeoutExpired, json.JSONDecodeError) as e:
         status = 2
