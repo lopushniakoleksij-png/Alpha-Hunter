@@ -65,6 +65,39 @@ The script returned `STAGE7_PROBE=PASS`. With only 30 samples, p99 is the sample
 
 **Acceptance boundary:** This verifies a preliminary repeated isolated *rollback* RPC measurement, in-transaction five-family completeness and rollback cleanup. It does not verify concurrent load, failure injection, exact production schema drift, all downstream side-effect lineage, durable latency distributions, or independent DBA/security approval.
 
+## Stage 8 durable-commit distribution — 2026-11-11 13:56 UTC
+
+**Evidence provenance:** Owner-supplied private Codespaces terminal screenshot. This table transcribes the controller's sanitized output for the `--durable30` QA run; it does not constitute an independent review.
+
+| Metric | Observed |
+| --- | ---: |
+| `DURABLE_TRIAL_STATUS` | PASS |
+| Durable committed trials | 30 / 30 |
+| Fresh disposable PostgreSQL TEMPLATE clones | 30 |
+| Committed five-family counts in each trial | 1 / 61 / 7 / 7 / 61 |
+| Retry deduplication | PASS |
+| Side-effect count stability across trials | PASS |
+| Durable commit p50 | 92.574 ms |
+| Durable commit p95 | 120.610 ms |
+| Durable commit p99 / maximum | 121.843 ms |
+| Durable commit mean | 97.231 ms |
+| Post-commit retry p50 | 81.156 ms |
+| Post-commit retry p95 | 97.308 ms |
+| Post-commit retry p99 / maximum | 107.367 ms |
+| Post-commit retry mean | 83.831 ms |
+| All disposable databases removed | PASS |
+| Production connections | NONE |
+| Reference database writes | NONE |
+| QA original cron configuration restored | PASS |
+| `QA_CRON_CONTROLLER` | PASS |
+| `PRODUCTION_RELEASE` | NO_GO |
+
+**Engineering interpretation:** The test provides a 30-trial distribution of local client/psql wall-clock durable COMMIT+receipt operations and idempotent retries against the same synthetic 61-symbol fixture on *separate*, freshly cloned private QA databases, with preserved authentic trigger graph. The p99 is the observed sample maximum (nearest rank), not a reliable production p99 estimate.
+
+**Limits:** tests were sequential (no concurrent calls), repeated the same synthetic input, and did not represent a production HTTP/Render network deadline or a mix of real workloads. The probe's covered side-effect families are not proof of complete lifecycle lineage. It did not inject timeouts/errors at each transaction boundary or independently certify trigger/function equivalence, locks, WAL-under-concurrency, or production-safe rollout.
+
+**Follow-on acceptance priority:** bounded concurrent same-run and different-run RPC attempts in *fresh disposable QA clones*, followed by injected-error atomicity/rollback tests and complete downstream record-lineage inspection. Protect main branch, disabled trading, production NO-GO and £0.
+
 ## Still open — mandatory acceptance gates
 
 1. Validate and independently attest the private QA reference's full production-equivalent schema, indexes, grants, nested trigger fingerprints and function definitions against the authorised production baseline.
