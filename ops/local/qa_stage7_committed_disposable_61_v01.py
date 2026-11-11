@@ -125,6 +125,22 @@ def drop_disposable(db):
     if sql("postgres", f"SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname='{db}')") != "f":
         raise Stop("disposable cleanup unverified")
 
+
+def excluded_pg_cron_toc(row):
+    """Select only known pg_cron-owned TOC items; leave app objects intact."""
+    m = re.match(r"^[0-9]+;\\s+[0-9]+\\s+[0-9]+\\s+(.+)$", row)
+    if not m:
+        return False
+    desc = m.group(1)
+    if desc.startswith(("EXTENSION - pg_cron", "COMMENT - EXTENSION pg_cron")):
+        return True
+    return bool(re.match(
+        r"^(?:ACL - SCHEMA cron(?:\\s|$)"
+        r"|ACL cron (?:FUNCTION|TABLE|SEQUENCE|TYPE)\\s"
+        r"|TABLE DATA cron\\s"
+        r"|SEQUENCE SET cron\\s"
+        r"|DEFAULT ACL cron\\s)", desc))
+
 def main():
     db = None
     status = 0
@@ -160,18 +176,34 @@ def main():
             raw_toc = run(["docker", "exec", N, "pg_restore",
                            "--list", archive], timeout=45)
             rows = raw_toc.splitlines(keepends=True)
-            def excluded(row):
-                if not re.match(r"^[0-9]+;", row):
-                    return False
-                return (row.rstrip().endswith("EXTENSION - pg_cron")
-                        or row.rstrip().endswith("COMMENT - EXTENSION pg_cron"))
+            # pg_cron belongs to one cluster-configured database. Its
+            # extension-owned cron schema cannot be restored in this
+            # disposable DB. Exclude only known pg_cron TOC entries:
+            # extension/comment, cron-schema ACLs, cron function/table
+            # grants, cron runtime table data and sequence/default ACLs.
+            # Keep extensions.grant_pg_cron_access and its event trigger:
+            # they are not automatically extension-owned. No production SQL.
+            excluded_rows = [row for row in rows if excluded_pg_cron_toc(row)]
             extension_count = sum(
-                row.rstrip().endswith("EXTENSION - pg_cron")
-                and bool(re.match(r"^[0-9]+;", row)) for row in rows
+                "EXTENSION - pg_cron" in row
+                for row in excluded_rows
+                if re.match(r"^[0-9]+;", row)
             )
             if extension_count != 1:
                 raise Stop("unexpected pg_cron extension TOC inventory")
-            filtered_toc = "".join(row for row in rows if not excluded(row))
+            if not any("TABLE DATA cron job " in row for row in excluded_rows):
+                raise Stop("unexpected pg_cron runtime table inventory")
+            # Refuse to silently omit any unexpected cron objects: add an
+            # explicitly reviewed class here, never blanket-skip a schema.
+            for row in rows:
+                if (re.match(r"^[0-9]+;", row)
+                        and re.search(r"\\bcron\\b", row)
+                        and not excluded_pg_cron_toc(row)
+                        and not re.search(r"\\b(?:FUNCTION|COMMENT) extensions grant_pg_cron_access\\(", row)
+                        and not re.search(r"\\bEVENT TRIGGER - issue_pg_cron_access\\b", row)):
+                    raise Stop("unclassified pg_cron archive dependency")
+            filtered_toc = "".join(
+                row for row in rows if not excluded_pg_cron_toc(row))
             run(["docker", "exec", "-i", N, "bash", "-c",
                  "umask 077; cat > " + tocfile], payload=filtered_toc)
             run(["docker", "exec", N, "pg_restore",
