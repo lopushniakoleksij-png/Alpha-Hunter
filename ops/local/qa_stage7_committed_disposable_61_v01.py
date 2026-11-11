@@ -147,6 +147,32 @@ def excluded_pg_cron_toc(row):
         r"|SEQUENCE SET cron\s"
         r"|DEFAULT ACL cron\s)", desc))
 
+
+def restore_failure_evidence(stderr, rows):
+    """Return safe TOC id/class only, never stderr or private SQL text."""
+    ids = re.findall(r"from TOC entry ([0-9]+);", stderr)
+    if not ids:
+        ids = re.findall(r"processing item ([0-9]+)\s", stderr)
+    if not ids:
+        return "UNKNOWN", "UNKNOWN"
+    toc_id = ids[-1]
+    toc_line = next(
+        (line for line in rows if line.startswith(toc_id + ";")), "")
+    if not toc_line:
+        return toc_id, "UNKNOWN"
+    # Whitelist broad object classes; never print object names or SQL.
+    parts = re.match(r"^[0-9]+;\s+[0-9]+\s+[0-9]+\s+(.+)$", toc_line)
+    desc = parts.group(1) if parts else ""
+    for kind in ("DEFAULT ACL", "TABLE DATA", "SEQUENCE SET",
+                 "EVENT TRIGGER", "FK CONSTRAINT", "MATERIALIZED VIEW",
+                 "ROW SECURITY", "PUBLICATION TABLE", "COMMENT",
+                 "ACL", "TRIGGER", "FUNCTION", "TABLE", "VIEW",
+                 "INDEX", "EXTENSION", "SCHEMA", "SEQUENCE", "TYPE",
+                 "CONSTRAINT", "POLICY", "RULE", "DOMAIN", "CAST"):
+        if desc.startswith(kind + " ") or desc == kind:
+            return toc_id, kind.replace(" ", "_")
+    return toc_id, "OTHER"
+
 def main():
     db = None
     status = 0
@@ -231,10 +257,26 @@ def main():
                 row for row in rows if not excluded_pg_cron_toc(row))
             run(["docker", "exec", "-i", N, "bash", "-c",
                  "umask 077; cat > " + tocfile], payload=filtered_toc)
-            run(["docker", "exec", N, "pg_restore",
+            # Never print pg_restore stderr: it may contain private
+            # definitions/SQL. Capture a numeric failing TOC entry only.
+            restore = subprocess.run(
+                ["docker", "exec", N, "pg_restore",
                  "-U", "supabase_admin", "-d", db,
                  "--use-list", tocfile, "--single-transaction",
-                 "--exit-on-error", archive], timeout=180)
+                 "--exit-on-error", "--verbose", archive],
+                text=True, capture_output=True, timeout=180,
+            )
+            if restore.returncode:
+                toc_id, toc_class = restore_failure_evidence(
+                    restore.stderr, rows)
+                print("RESTORE_FAILURE_TOC_ID=" + toc_id)
+                print("RESTORE_FAILURE_TOC_CLASS=" + toc_class)
+                print("RESTORE_FAILURE_CRON_JOB_REFERENCE=" +
+                      ("YES" if 'relation "cron.job" does not exist'
+                       in restore.stderr else "NOT_CONFIRMED"))
+                raise Stop(
+                    "isolated pg_restore failed; failing TOC metadata above; "
+                    "private SQL withheld")
         finally:
             # The reference clone remains untouched even if restore fails.
             run(["docker", "exec", N, "rm", "-f", archive, tocfile])
