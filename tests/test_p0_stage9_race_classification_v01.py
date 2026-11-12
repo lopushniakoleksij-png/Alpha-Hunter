@@ -198,5 +198,37 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         with self.assertRaises(stage9.Blocked):
             stage9.verify_clone(Probe(), "disposable", "fixture")
 
+    def test_clone_validation_rejects_wrong_database_identity_before_other_queries(self):
+        """A database-name mismatch must stop before any schema or record access."""
+        class Probe:
+            def sql(self, db, query):
+                if query == "SELECT current_database()":
+                    return "unexpected_database"
+                raise AssertionError("must stop after identity mismatch")
+
+            def counts(self, db, rid):
+                raise AssertionError("must not inspect counts")
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
+    def test_clone_validation_rejects_missing_pg_cron_extension(self):
+        """No concurrency probe if expected cron safety dependencies are absent."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query:
+                    return "t"
+                if "pg_extension" in query:
+                    return "f"
+                raise AssertionError("must stop before cron jobs or trigger queries")
+
+            def counts(self, db, rid):
+                raise AssertionError("must not inspect counts")
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
 if __name__ == "__main__":
     unittest.main()
