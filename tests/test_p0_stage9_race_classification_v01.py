@@ -162,5 +162,41 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         with self.assertRaises(stage9.Blocked):
             stage9.verify_clone(Probe(), "disposable", "fixture")
 
+    def test_clone_validation_rejects_orphan_child_without_parent(self):
+        """Orphan child evidence must block a supposedly fresh QA race."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "pg_trigger" in query:
+                    return "5"
+                return "0"
+
+            def counts(self, db, rid):
+                return (0, 0, 0, 0, 1)
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
+    def test_clone_validation_rejects_scheduled_cron_job(self):
+        """Never run the private race when the disposable clone has a cron job."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "SELECT count(*) FROM cron.job" in query:
+                    return "1"
+                raise AssertionError("must stop before trigger or evidence queries")
+
+            def counts(self, db, rid):
+                raise AssertionError("must not read counts after cron guard failure")
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
 if __name__ == "__main__":
     unittest.main()
