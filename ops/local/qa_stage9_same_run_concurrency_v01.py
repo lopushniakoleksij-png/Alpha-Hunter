@@ -114,7 +114,7 @@ def verify_clone(probe, db, rid):
         "'alpha_hunter_symbol_snapshots','alpha_hunter_signals',"
         "'alpha_hunter_signal_features',"
         "'alpha_hunter_readiness_observations_v01') "
-        "AND NOT t.tgisinternal "
+        "AND NOT t.tgisinternal AND t.tgenabled IN ('O','A') "
         "AND p.proowner='postgres'::regrole::oid "
         "AND p.prosecdef"
     )
