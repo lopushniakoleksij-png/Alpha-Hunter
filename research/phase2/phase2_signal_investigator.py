@@ -57,7 +57,8 @@ def investigate(setup: Setup, bars: Sequence[Bar]) -> Investigation:
             if not b.low <= ep <= b.high:
                 continue
             entry_at = b.timestamp_utc
-            if b.low <= sl or b.high >= tp:
+            entry_bar_exit = (b.low <= sl or b.high >= tp) if setup.direction == "LONG" else (b.high >= sl or b.low <= tp)
+            if entry_bar_exit:
                 return result("AMBIGUOUS", entry_at, b.timestamp_utc, "ENTRY_AND_EXIT_SAME_BAR")
             continue
         hit_sl = b.low <= sl if setup.direction == "LONG" else b.high >= sl
