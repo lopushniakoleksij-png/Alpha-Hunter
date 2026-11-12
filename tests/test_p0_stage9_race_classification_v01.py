@@ -144,6 +144,31 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         with self.assertRaises(stage9.Blocked):
             stage9.verify_clone(Probe(), "disposable", "fixture")
 
+    def test_clone_validation_rejects_disabled_private_callback(self):
+        """A disabled trigger must not count toward the five required callbacks."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "cron.job" in query:
+                    return "0"
+                if "pg_trigger" in query:
+                    self.assert_enabled_filter(query)
+                    return "4"
+                raise AssertionError("unexpected query")
+
+            def assert_enabled_filter(self, query):
+                if "t.tgenabled IN ('O','A')" not in query:
+                    raise AssertionError("disabled trigger must be excluded")
+
+            def counts(self, db, rid):
+                raise AssertionError("must stop before evidence inspection")
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
     def test_clone_validation_rejects_existing_run_records(self):
         """A nonempty disposable clone cannot be accepted as a fresh race."""
         class Probe:
