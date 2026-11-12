@@ -6,7 +6,7 @@ def s(direction="LONG", disposition="BLOCKED", entry="100", stop="95", target="1
     return Setup("sig1", direction, D(entry), D(stop), D(target), disposition, "S1")
 
 def b(t, low, high):
-    return Bar(t, D(low), D(high))
+    return Bar(t, D(high), D(low))
 
 class InvestigatorTests(unittest.TestCase):
     def test_tp_first(self):
