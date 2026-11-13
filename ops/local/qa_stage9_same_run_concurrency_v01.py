@@ -104,7 +104,7 @@ def verify_clone(probe, db, rid):
     if probe.sql(db, "SELECT count(*) FROM cron.job") != "0":
         raise Blocked("disposable cron jobs unexpectedly present")
     verified_callbacks = (
-        "SELECT count(*) FROM pg_trigger t "
+        "SELECT count(DISTINCT c.relname) FROM pg_trigger t "
         "JOIN pg_class c ON c.oid=t.tgrelid "
         "JOIN pg_namespace n ON n.oid=c.relnamespace "
         "JOIN pg_proc p ON p.oid=t.tgfoid "
