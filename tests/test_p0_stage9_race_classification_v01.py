@@ -196,6 +196,35 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         with self.assertRaises(stage9.Blocked):
             stage9.verify_clone(Probe(), "disposable", "fixture")
 
+    def test_clone_requires_private_security_definer_owned_callbacks(self):
+        """Reject any future preflight query that drops callback custody guards."""
+        class Probe:
+            def sql(self, db, query):
+                if query == "SELECT current_database()":
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "cron.job" in query:
+                    return "0"
+                if "pg_trigger" in query:
+                    required = (
+                        "pn.nspname='private'",
+                        "n.nspname='public'",
+                        "p.proowner='postgres'::regrole::oid",
+                        "p.prosecdef",
+                        "t.tgenabled IN ('O','A')",
+                        "count(DISTINCT c.relname)",
+                    )
+                    if not all(clause in query for clause in required):
+                        return "0"
+                    return "5"
+                raise AssertionError("unexpected preflight SQL")
+
+            def counts(self, db, rid):
+                return (0, 0, 0, 0, 0)
+
+        stage9.verify_clone(Probe(), "disposable", "fixture")
+
     def test_clone_accepts_complete_quiescent_disposable_preflight(self):
         """Positive control: all safety gates and five core tables are required."""
         seen = []
