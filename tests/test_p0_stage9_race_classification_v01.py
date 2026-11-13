@@ -169,6 +169,33 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         with self.assertRaises(stage9.Blocked):
             stage9.verify_clone(Probe(), "disposable", "fixture")
 
+    def test_clone_requires_one_enabled_private_callback_per_core_table(self):
+        """Five callbacks on fewer than five tables must not satisfy the gate."""
+        class Probe:
+            def sql(self, db, query):
+                if "current_database()" in query:
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "cron.job" in query:
+                    return "0"
+                if "pg_trigger" in query:
+                    # COUNT(*) could return five despite one core table missing.
+                    # Distinct relation count correctly returns only four.
+                    self.assert_distinct_tables(query)
+                    return "4"
+                raise AssertionError("unexpected query")
+
+            def assert_distinct_tables(self, query):
+                if "count(DISTINCT c.relname)" not in query:
+                    raise AssertionError("preflight must count distinct core tables")
+
+            def counts(self, db, rid):
+                raise AssertionError("must stop before evidence inspection")
+
+        with self.assertRaises(stage9.Blocked):
+            stage9.verify_clone(Probe(), "disposable", "fixture")
+
     def test_clone_validation_rejects_existing_run_records(self):
         """A nonempty disposable clone cannot be accepted as a fresh race."""
         class Probe:
