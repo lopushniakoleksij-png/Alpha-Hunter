@@ -196,6 +196,31 @@ class Stage9RaceClassificationTests(unittest.TestCase):
         with self.assertRaises(stage9.Blocked):
             stage9.verify_clone(Probe(), "disposable", "fixture")
 
+    def test_clone_accepts_complete_quiescent_disposable_preflight(self):
+        """Positive control: all safety gates and five core tables are required."""
+        seen = []
+        class Probe:
+            def sql(self, db, query):
+                seen.append(query)
+                if query == "SELECT current_database()":
+                    return db
+                if "to_regclass" in query or "pg_extension" in query:
+                    return "t"
+                if "cron.job" in query:
+                    return "0"
+                if "pg_trigger" in query:
+                    if "count(DISTINCT c.relname)" not in query:
+                        raise AssertionError("distinct table coverage required")
+                    return "5"
+                raise AssertionError("unexpected preflight SQL")
+            def counts(self, db, rid):
+                seen.append("counts")
+                return (0, 0, 0, 0, 0)
+
+        stage9.verify_clone(Probe(), "disposable", "fixture")
+        self.assertEqual(len(seen), 6)
+        self.assertEqual(seen[-1], "counts")
+
     def test_clone_validation_rejects_existing_run_records(self):
         """A nonempty disposable clone cannot be accepted as a fresh race."""
         class Probe:
