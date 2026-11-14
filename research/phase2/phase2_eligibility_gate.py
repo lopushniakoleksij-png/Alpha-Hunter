@@ -5,7 +5,7 @@ No network, DB access, orders, or repository changes.
 """
 import csv
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -38,9 +38,19 @@ def validate_row(row: dict) -> None:
         raise ValueError("invalid listing evidence status")
     if row["backfill_allowed"] != "NO":
         raise ValueError("broad backfill remains NO-GO")
+    listing_source = row.get("listing_event_source_url", "")
+    listing_day = row.get("listing_event_date_as_published", "")
     if row["listing_event_evidence"] == "VERIFIED":
-        if row["documented_event_type"] != "OFFICIAL_LISTING_ANNOUNCEMENT" or not official(row["dated_official_source_url"]):
-            raise ValueError("verified listing claim missing official source")
+        if not official(listing_source) or not listing_day:
+            raise ValueError("verified listing event must have separate official dated listing source")
+        try:
+            announced = date.fromisoformat(listing_day)
+        except ValueError as exc:
+            raise ValueError("invalid listing announcement date") from exc
+        if announced > WINDOW_START.date():
+            raise ValueError("future listing announcement cannot support this period")
+    elif listing_source or listing_day:
+        raise ValueError("listing evidence supplied but not verified")
     if status == "VERIFIED":
         # Intentionally no auto-certification path; future process needs independent
         # historical availability, suspension/delisting audit, and human approval.
@@ -69,7 +79,8 @@ def validate_registry(path: Path = REGISTER) -> Counter:
                     "window_eligibility", "listing_event_evidence",
                     "documented_event_type", "documented_effective_utc",
                     "dated_official_source_url", "backfill_allowed",
-                    "catalogue_request_time_ms"}
+                    "catalogue_request_time_ms", "listing_event_source_url",
+                    "listing_event_date_as_published"}
         if not required.issubset(reader.fieldnames or []):
             raise ValueError("missing required schema columns")
         rows = list(reader)
