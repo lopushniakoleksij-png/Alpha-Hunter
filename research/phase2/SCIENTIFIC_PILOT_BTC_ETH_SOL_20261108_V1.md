@@ -44,6 +44,14 @@
 - An hourly market candle's TP/SL touches cannot prove exact order execution, and the first post-detection hour method excludes potentially important earlier partial-hour movements.
 - This is **one historical day**, one directional regime (all SHORT), and three selected symbols; it is not a forecast, trustworthy profit rate, statistically representative comparison, or authorization to weaken blocked-signal safeguards.
 
+## Private QA capture and certification implementation (subsequent stage)
+- `phase2_pilot_private_capture.py`: manually run, *only in existing private Codespace*, to re-fetch **exactly three** public V2 Bitget 48h market-candle responses and atomically create new raw-response files plus SHA-256 manifests in a new private directory. Public GET only; no trading, Supabase credentials or database writes.
+- `PILOT_SIGNALS_READ_ONLY_EXPORT.sql`: fixed-cohort read-only query for all 175 stored signal records including `created_at`, EP/SL/TP and state. Private export must be performed using an authorized read-only connection. Do not commit private CSVs.
+- `phase2_pilot_offline_certify.py`: accepts a newly captured 3-response raw archive and a user-supplied private CSV of the exact 175-row signal cohort. Verifies all SHA-256 fingerprints, exact symbol/product/horizon URL parameters, unique IDs, symbol counts BTC59/ETH57/SOL59, trade_permission=false, post-detection hour timing, and reconciles status totals. It writes a **private** certificate and per-signal findings only if all gates pass.
+- `test_phase2_pilot_private_capture.py`, `test_phase2_pilot_offline_certify.py`: mocked offline QA covering valid scope, tampering, missing/duplicate records, and fail-closed certifications.
+- **Status:** code committed and tested; live recapture and local 175-row cohort export into the existing private Codespace have **not** been performed through these scripts. This stage is ready for manual run in Codespace; do not mark the full private-data replay as PASS until actual evidence output is inspected.
+- **Provenance distinction:** a newly captured raw 48h response will have a new exchange requestTime and SHA-256, even if candle OHLC matches the earlier pilot's in-session fetch. This is a *recapture*, not proof that identical original response bytes were preserved.
+
 ## Reproduction and next QA gate
 - Code: `research/phase2/phase2_scientific_pilot_replay.py` (pure offline deterministic replay using `phase2_signal_investigator.py` and `phase2_bitget_response_verifier.py`).
 - Tests: `research/phase2/test_phase2_scientific_pilot_replay.py` (source-boundary, no-permission and ambiguity checks).
