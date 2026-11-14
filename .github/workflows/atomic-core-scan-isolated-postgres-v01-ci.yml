@@ -1,0 +1,170 @@
+name: Atomic Core Scan Isolated PostgreSQL QA
+
+on:
+  push:
+    branches:
+      - fix/supabase-write-timeout-qa
+    paths:
+      - 'ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_real_timeout_setup_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_real_timeout_verify_v01.sql'
+      - 'ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh'
+      - 'ops/local/qa_atomic_core_scan_lost_ack_v01.sh'
+      - 'ops/local/qa_atomic_http_pg17_lost_ack_v01.py'
+      - 'ops/sql/qa_atomic_core_scan_lost_ack_setup_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_lost_ack_verify_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_concurrent_setup_v01.sql'
+      - 'ops/sql/qa_atomic_core_scan_concurrent_verify_v01.sql'
+      - 'ops/local/qa_atomic_core_scan_concurrent_v01.py'
+      - 'ops/sql/qa_atomic_core_scan_service_role_v01.sql'
+      - 'ops/sql/readonly_core_scan_failure_taxonomy_v01.sql'
+      - 'ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql'
+      - 'ops/sql/readonly_legacy_full_parent_signature_v01.sql'
+      - 'ops/sql/readonly_core_scan_source_custody_watch_20261108.sql'
+      - 'ops/sql/qa_core_scan_source_watch_fixture_v01.sql'
+      - 'ops/sql/qa_legacy_full_parent_signature_fixture_v01.sql'
+      - 'ops/sql/atomic_core_scan_rpc_candidate_v01.sql'
+      - 'ops/sql/strategy_payoff_percentile_hotpath_index_candidate_v01.sql'
+      - 'ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql'
+      - 'ops/sql/qa_atomic_fullpath_505k_benchmark_setup_v01.sql'
+      - 'ops/sql/qa_atomic_fullpath_505k_benchmark_verify_v01.sql'
+      - 'ops/local/qa_atomic_fullpath_505k_benchmark_v01.py'
+      - 'ops/sql/qa_atomic_fullpath_2x2_sequential_v01.sql'
+      - 'ops/sql/qa_atomic_fullpath_2x2_verify_v01.sql'
+      - 'ops/local/qa_atomic_fullpath_2x2_matrix_v01.py'
+      - 'tests/test_atomic_core_scan_rpc_candidate.py'
+      - 'tests/test_atomic_core_scan_transport_retry_v01.py'
+      - 'tests/test_p0_approved_source_workflow_contract_v01.py'
+      - 'ops/sql/readonly_core_scan_trigger_inventory_v01.sql'
+      - 'docs/atomic-core-scan-release-gate-20261107.md'
+      - '.github/workflows/atomic-core-scan-isolated-postgres-v01-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-sql-rollback:
+    name: Ephemeral PostgreSQL 17 rollback and idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated_test_password
+          POSTGRES_DB: isolated_atomic_scan_qa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d isolated_atomic_scan_qa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGPASSWORD: isolated_test_password
+      PGDATABASE: isolated_atomic_scan_qa
+    steps:
+      - name: Check out isolated QA branch
+        uses: actions/checkout@v4
+      - name: Guard production branch and verify client
+        run: |
+          test "${GITHUB_REF_NAME}" = "fix/supabase-write-timeout-qa"
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+      - name: Re-run current Python persistence regressions
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          python -m pip install -q -r requirements.txt pytest
+          python -m pytest -q tests/test_storage.py tests/test_canonical_universe_scan_persistence_v02.py tests/test_scan_partial_persistence_characterization.py tests/test_atomic_core_scan_rpc_candidate.py tests/test_atomic_core_scan_transport_retry_v01.py tests/test_p0_approved_source_workflow_contract_v01.py
+      - name: Verify read-only scan failure taxonomy in isolated PostgreSQL 17
+        run: |
+          set -euo pipefail
+          createdb isolated_taxonomy_qa
+          psql -X -v ON_ERROR_STOP=1 -d isolated_taxonomy_qa -f ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_taxonomy_qa -f ops/sql/readonly_core_scan_failure_taxonomy_v01.sql > /tmp/qa-taxonomy.txt
+          test "$(grep -c '^QA_' /tmp/qa-taxonomy.txt)" -eq 5
+          grep -Eq '^QA_COMPLETE,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,CORE_PASS$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_READY_MISSING,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,READINESS_MISSING$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_UNVERSIONED_COMPLETE,.*,UNVERSIONED,UNATTRIBUTED,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_MISSING_RUNTIME,.*,snapshot-parent-v0[.]2,RENDER_CRON,MISSING_SOURCE_CLAIM,CORE_COUNTS_MATCH_SOURCE_UNVERIFIED$' /tmp/qa-taxonomy.txt
+          grep -Eq '^QA_PARENT_ONLY,.*,snapshot-parent-v0[.]2,RENDER_CRON,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY$' /tmp/qa-taxonomy.txt
+          echo "PASS: modern source claim plus complete counts required; legacy and incomplete custody fail closed"
+      - name: Verify old full-parent writer signature separately from compact source claims
+        run: |
+          set -euo pipefail
+          createdb isolated_legacy_signature_qa
+          psql -X -v ON_ERROR_STOP=1 -d isolated_legacy_signature_qa -f ops/sql/qa_legacy_full_parent_signature_fixture_v01.sql
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_legacy_signature_qa -f ops/sql/readonly_legacy_full_parent_signature_v01.sql > /tmp/qa-legacy-signatures.txt
+          grep -Eq '^LEGACY_FULL_PARENT_UNATTRIBUTED,1,1,0,' /tmp/qa-legacy-signatures.txt
+          grep -Eq '^MODERN_COMPACT_CLAIM_NOT_AUTHENTICATED,1,0,1,' /tmp/qa-legacy-signatures.txt
+          grep -Eq '^OTHER_SOURCE_OR_FORMAT_UNVERIFIED,1,1,0,' /tmp/qa-legacy-signatures.txt
+          test "$(grep -c '^.*_.*,' /tmp/qa-legacy-signatures.txt)" -eq 3
+          echo "PASS: historical full-payload writer fingerprints as legacy; source claims remain unauthenticated"
+      - name: Verify separate publisher identity and persistence states
+        run: |
+          set -euo pipefail
+          createdb isolated_source_watch_qa
+          psql -X -v ON_ERROR_STOP=1 -d isolated_source_watch_qa -f ops/sql/qa_core_scan_source_watch_fixture_v01.sql
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_source_watch_qa -f ops/sql/readonly_core_scan_source_custody_watch_20261108.sql > /tmp/qa-source-watch.txt
+          test "$(grep -c 'QA_WATCH_' /tmp/qa-source-watch.txt)" -eq 7
+          grep -Eq 'QA_WATCH_MODERN_OK,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_LEGACY_COMPLETE,.*,SOURCE_CONTRACT_OR_RUNTIME_MISSING,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_READINESS_MISSING,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,READINESS_MISSING_ESCALATE' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_SOURCE_MISSING,.*,SOURCE_CONTRACT_OR_RUNTIME_MISSING,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_PARENT_PUBLISHING,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY_PUBLISHING' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_PARENT_STALE,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,PARENT_ONLY_STALE_ESCALATE' /tmp/qa-source-watch.txt
+          grep -Eq 'QA_WATCH_PARTIAL_READINESS,.*,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,READINESS_PARTIAL_ESCALATE' /tmp/qa-source-watch.txt
+          # F7: a forged modern-looking JSON identity must never be treated as authenticated custody.
+          psql -X -v ON_ERROR_STOP=1 -d isolated_source_watch_qa <<'SQL'
+          INSERT INTO public.alpha_hunter_snapshots
+            (run_id,collected_at_utc,created_at,symbol_count,error_count,payload)
+          VALUES ('QA_WATCH_SPOOFED_SOURCE',now(),now(),1,0,
+            '{"_storage_contract":"snapshot-parent-v0.2","validation_identity":{"run_source":"RENDER_CRON","runtime_role":"RENDER_CRON","git_commit":"forged"}}'::jsonb);
+          INSERT INTO public.alpha_hunter_symbol_snapshots VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT');
+          INSERT INTO public.alpha_hunter_signals VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT','QA_SIG_SPOOFED');
+          INSERT INTO public.alpha_hunter_signal_features VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT','QA_SIG_SPOOFED');
+          INSERT INTO public.alpha_hunter_readiness_observations_v01 VALUES ('QA_WATCH_SPOOFED_SOURCE','BTCUSDT');
+          SQL
+          psql -X -v ON_ERROR_STOP=1 -At -F ',' -d isolated_source_watch_qa -f ops/sql/readonly_core_scan_source_custody_watch_20261108.sql > /tmp/qa-spoofed-source.txt
+          grep -Eq 'QA_WATCH_SPOOFED_SOURCE,RENDER_CRON,RENDER_CRON,forged,1,0,1,1,1,1,SOURCE_CLAIM_PRESENT_NOT_AUTHENTICATED,FIVE_FAMILY_ROW_COUNTS_MATCH_NOT_FULL_CERTIFICATION' /tmp/qa-spoofed-source.txt
+          ! grep -E 'QA_WATCH_SPOOFED_SOURCE,.*(AUTHENTICATED|CORE_PASS)' /tmp/qa-spoofed-source.txt | grep -v 'NOT_AUTHENTICATED'
+          echo 'PASS: spoofed complete modern publisher claims remain explicitly unauthenticated'
+          echo 'PASS: custody, readiness, publishing grace and stale parent states are separate'
+      - name: Construct synthetic core schema and trigger graph
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_schema_v01.sql
+      - name: Install candidate function in ephemeral test database ONLY
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/atomic_core_scan_rpc_candidate_v01.sql
+      - name: Verify rollback, replay, completeness, and restricted privileges
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql
+      - name: Prove 50-symbol atomic rollback, full persistence and idempotent replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
+      - name: Verify 61-symbol 57014 atomic rollback and 30-symbol source-aware replay
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql
+      - name: Verify real PostgreSQL statement_timeout rollback and idempotent retry
+        run: bash ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh
+      - name: E3 simulate committed response lost then idempotent retry in separate sessions
+        run: bash ops/local/qa_atomic_core_scan_lost_ack_v01.sh
+      - name: E3/E6 real HTTP lost acknowledgement backed by disposable PostgreSQL 17
+        run: python3 ops/local/qa_atomic_http_pg17_lost_ack_v01.py
+      - name: E6 verify overlapping identical/conflicting atomic RPCs across independent PostgreSQL sessions
+        run: python3 ops/local/qa_atomic_core_scan_concurrent_v01.py
+      - name: Validate service_role RPC invocation under RLS with denied public roles
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
+      - name: Compare payoff percentile query against 495k synthetic outcomes
+        run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_payoff_percentile_synthetic_benchmark_v01.sql
+      - name: Harada C6-C7 benchmark combined atomic RPC with synthetic 505569-outcome nested graph
+        run: python3 ops/local/qa_atomic_fullpath_505k_benchmark_v01.py
+      - name: Harada D 2x2 sequential vs atomic and current vs proposed indexing QA
+        run: python3 ops/local/qa_atomic_fullpath_2x2_matrix_v01.py

@@ -3557,6 +3557,18 @@ def print_report(
 # MAIN
 # =========================================================
 
+def cloud_persistence_exit_code(*, enabled: bool, status: str) -> int:
+    """Fail a configured cloud scan closed when Supabase did not save it.
+
+    The local snapshot remains inspectable, but the caller/Render cron must
+    not classify failed remote persistence as a successful scan. Never fall
+    back to a parent-only or unverified write.
+    """
+    if not enabled:
+        return 0
+    return 0 if status == "SAVED" else 2
+
+
 def main() -> int:
 
     parser = argparse.ArgumentParser(
@@ -4223,7 +4235,10 @@ def main() -> int:
         f"{private_status}"
     )
 
-    return 0
+    return cloud_persistence_exit_code(
+        enabled=config.get("supabase", {}).get("enabled", False) is True,
+        status=cloud_status,
+    )
 
 
 if __name__ == "__main__":

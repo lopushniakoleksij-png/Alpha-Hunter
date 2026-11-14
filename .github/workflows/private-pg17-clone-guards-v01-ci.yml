@@ -1,0 +1,53 @@
+name: Private PostgreSQL 17 Clone Script Safety Guards
+
+on:
+  push:
+    branches:
+      - fix/supabase-write-timeout-qa
+    paths:
+      - 'ops/local/check_private_pg17_clone_readiness_v01.sh'
+      - 'ops/local/inspect_private_pg_archive_topology_v01.sh'
+      - 'ops/local/verify_restored_private_pg17_fingerprints_v01.sh'
+      - 'ops/local/export_private_pg_schema.sh'
+      - '.github/workflows/private-pg17-clone-guards-v01-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-safety-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout isolated draft branch
+        uses: actions/checkout@v4
+      - name: Check script shell syntax without credentials or databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n ops/local/check_private_pg17_clone_readiness_v01.sh
+          bash -n ops/local/inspect_private_pg_archive_topology_v01.sh
+          bash -n ops/local/verify_restored_private_pg17_fingerprints_v01.sh
+          bash -n ops/local/export_private_pg_schema.sh
+          echo 'PASS: all private-clone scripts parse in Bash'
+      - name: Verify every private-clone operation refuses CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in \
+            ops/local/check_private_pg17_clone_readiness_v01.sh \
+            ops/local/inspect_private_pg_archive_topology_v01.sh \
+            ops/local/verify_restored_private_pg17_fingerprints_v01.sh \
+            ops/local/export_private_pg_schema.sh
+          do
+            set +e
+            CODESPACES='' GITHUB_ACTIONS='true' bash "$script" > /tmp/ah-private-guard.log 2>&1
+            result=$?
+            set -e
+            if [[ "$result" -ne 2 ]] || ! grep -q 'REFUSED' /tmp/ah-private-guard.log; then
+              echo "FAIL: protected script did not refuse CI: $script"
+              exit 1
+            fi
+          done
+          echo 'PASS: all private PostgreSQL clone scripts refuse unattended CI'
