@@ -15,6 +15,7 @@ class HistoricalIntervalTests(unittest.TestCase):
         result=validate_intervals()
         self.assertEqual(result["contracts"],15)
         self.assertEqual(result["with_scanner_evidence"],14)
+        self.assertEqual(result["with_dated_listing_evidence"],11)
         self.assertEqual(result["close_only_signals"],6)
         self.assertEqual(result["post_termination_signals"],1)
         self.assertEqual(result["post_termination_snapshots"],2)
@@ -22,6 +23,9 @@ class HistoricalIntervalTests(unittest.TestCase):
     def test_valid_record(self): validate_row(dict(EVENTS["SCRTUSDT"]),ELIGIBILITY)
     def test_false_source_rejected(self):
         r=dict(EVENTS["STBLUSDT"]);r["official_delisting_source"]="https://fraud.example/support/articles/x"
+        with self.assertRaises(ValueError):validate_row(r,ELIGIBILITY)
+    def test_listing_cross_register_provenance(self):
+        r=dict(EVENTS["GOATUSDT"]);r["official_listing_source"]="https://www.bitget.com/support/articles/99999999999"
         with self.assertRaises(ValueError):validate_row(r,ELIGIBILITY)
     def test_wrong_order_rejected(self):
         r=dict(EVENTS["STBLUSDT"]);r["new_positions_block_scheduled_utc"]="2026-08-20T04:00:00Z"
