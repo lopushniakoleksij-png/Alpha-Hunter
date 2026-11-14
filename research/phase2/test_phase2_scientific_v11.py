@@ -59,7 +59,11 @@ class UniqueOpportunityTests(unittest.TestCase):
     def test_blocked_certificate_is_read_without_modification(self):
         with tempfile.TemporaryDirectory() as root:
             d=Path(root)
-            original=d/"certificate.json"
+            archive=d/"pilot-original-archive"
+            cert_dir=d/"pilot-original-certificate"
+            archive.mkdir()
+            cert_dir.mkdir()
+            original=cert_dir/"certificate.json"
             snapshot=b"private test cohort"
             sha=hashlib.sha256(snapshot).hexdigest()
             source={"BTCUSDT":"a"*64,"ETHUSDT":"b"*64,"SOLUSDT":"c"*64}
@@ -80,12 +84,12 @@ class UniqueOpportunityTests(unittest.TestCase):
             with (patch("phase2_scientific_v11.validate_sources",return_value=({},manifest)),
                   patch("phase2_scientific_v11.validate_signals",return_value=([{"signal_id":"any"}]*175,sha)),
                   patch("phase2_scientific_v11.inspect_independent_opportunities",return_value=pretend)):
-                result=run(d,d/"signals.csv",original,out)
+                result=run(archive,d/"signals.csv",original,out)
             self.assertTrue((out/"v11_independent_research.json").is_file())
             self.assertEqual(original.read_bytes(),before)
             self.assertEqual(result["original_private_certificate_sha256"],hashlib.sha256(before).hexdigest())
             with (patch("phase2_scientific_v11.validate_sources",return_value=({},manifest)),
                   patch("phase2_scientific_v11.validate_signals",return_value=([{"signal_id":"any"}]*175,sha)),
                   patch("phase2_scientific_v11.inspect_independent_opportunities",return_value=pretend)):
-                with self.assertRaises(ValueError):run(d,d/"signals.csv",original,out)
+                with self.assertRaises(ValueError):run(archive,d/"signals.csv",original,out)
 if __name__=="__main__": unittest.main()
