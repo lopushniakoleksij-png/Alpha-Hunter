@@ -75,6 +75,12 @@ def validate_row(row, eligibility):
         raise ValueError("interval not linked to sealed eligibility register")
     if r["dated_official_source_url"] != row["official_delisting_source"] or date_utc(r["documented_effective_utc"]) != ended:
         raise ValueError("official event conflicts with eligibility register")
+    has_listing = bool(row["official_listing_source"])
+    if (r["listing_event_evidence"] == "VERIFIED") != has_listing:
+        raise ValueError("independent listing event status differs from main registry")
+    if has_listing and (r.get("listing_event_source_url") != row["official_listing_source"]
+                        or r.get("listing_event_date_as_published") != row["listing_announcement_date_as_published"]):
+        raise ValueError("listing announcement provenance differs from main registry")
 
 def validate_intervals(interval_path=INTERVALS, eligibility_path=ELIGIBILITY):
     with eligibility_path.open(newline="", encoding="utf-8") as f:
@@ -89,6 +95,7 @@ def validate_intervals(interval_path=INTERVALS, eligibility_path=ELIGIBILITY):
     return {
         "contracts":len(rows),
         "with_scanner_evidence":sum(int(r["scanner_snapshots"])>0 for r in rows),
+        "with_dated_listing_evidence":sum(bool(r["official_listing_source"]) for r in rows),
         "close_only_signals":sum(int(r["signals_during_close_only_window"]) for r in rows),
         "post_termination_signals":sum(int(r["signals_after_scheduled_termination"]) for r in rows),
         "post_termination_snapshots":sum(int(r["snapshots_after_scheduled_termination"]) for r in rows),
