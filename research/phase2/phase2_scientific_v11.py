@@ -18,7 +18,7 @@ import json
 import os
 from collections import Counter
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from phase2_pilot_offline_certify import (OUTCOME_EXPECTED, validate_signals,
@@ -39,7 +39,7 @@ def valid_price_geometry(row):
         return False
     try:
         ep=D(str(row["entry_price"])); sl=D(str(row["stop_loss"])); tp=D(str(row["take_profit"]))
-    except (TypeError,ValueError):
+    except (TypeError,ValueError,InvalidOperation):
         return False
     if not all(x.is_finite() and x>0 for x in (ep,sl,tp)):
         return False
