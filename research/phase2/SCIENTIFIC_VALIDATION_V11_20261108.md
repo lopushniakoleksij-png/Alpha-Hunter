@@ -1,6 +1,6 @@
 # Alpha Hunter — Phase 2 Scientific Validation V1.1
 
-**Research date:** 14 November 2026. **Cohort:** 8 November 2026 00:00–9 November 2026 00:00 UTC, three USDT-M perpetual futures contracts (BTCUSDT / ETHUSDT / SOLUSDT). **Status:** live read-only research calculation performed; the separate V1.1 private replay against the immutable Codespace archive remains an additional acceptance gate. No DB writes, trading, deployment, broad backfill, modified certificates or raw evidence.
+**Research date:** 14 November 2026. **Cohort:** 8 November 2026 00:00–9 November 2026 00:00 UTC, three USDT-M perpetual futures contracts (BTCUSDT / ETHUSDT / SOLUSDT). **Status:** live read-only research calculation and **private V1.1 replay PASS**, confirmed by the owner's existing Codespace terminal output on 14 November 2026. The frozen V1.0 evidence was read-only; V1.1 results were written to a separate private directory. No DB writes, trading, deployment, broad backfill, modified certificates or raw evidence.
 
 ## Evidence and integrity boundary
 
@@ -72,6 +72,19 @@ The 1H entry/target touch periods (ETH 06:00 and 21:00, SOL 04:00 and 21:00) str
 - The most concerning structural issue is **weak R:R**: among 43 complete signal instances, 36 have nominal R:R < 1, and the first SOL candidate offers only 0.131 nominal R:R. Low R:R means a target-touch-heavy cohort can still have poor expectancy over multiple markets and losing periods.
 - The 24-hour OHLC procedure, frozen episode choice, fee/slippage scenarios and historical funding observations are explainable, but they do not settle signal as-of feature provenance, spread, quote executable depth, nonfilled orders, independent exposure, fees actually paid, or reliable long-run profitability.
 - **No sample win rate, calibrated confidence, Sharpe ratio or £1,000 profit projection is certified from this one-day single-regime cohort.**
-- **Private evidence protection:** original `pilot-48h-20261108-recapture/`, `pilot_signals_20261108_verified.csv`, and `pilot-certificate-20261108/` are **read-only inputs**. New script `phase2_scientific_v11.py` checks source SHA-256 and the original certificate, then writes only to a **new** separate private directory; it refuses overwrites. These original bytes have not been read from this chat's runtime, so a **separate private V1.1 replay remains pending** after this code review.
-- **Next acceptance:** execute that offline V1.1 replay against the original sealed evidence; verify expected 3 selected signals and reported cost scenarios; pre-register selection for new dates; review true filter counterfactuals without relaxing production safeguards; obtain historic instrument-universe and exchange-execution evidence before expanding.
+- **Private evidence protection:** original `pilot-48h-20261108-recapture/`, `pilot_signals_20261108_verified.csv`, and `pilot-certificate-20261108/` are **read-only inputs**. New script `phase2_scientific_v11.py` checks source SHA-256 and the original certificate, then writes only to a **new** separate private directory; it refuses overwrites. These original bytes have not been read from this chat's runtime, and the **private V1.1 replay has now been run successfully**, as attested by the Codespace terminal screenshot. The raw source files and certificate have not been independently copied into this chat.
+- **Next acceptance:** freeze the selection rule before testing unseen dates, investigate R:R/participation/momentum filters across independent regimes, review source-as-of eligibility, verify execution assumptions/ambiguous bars, and obtain historical-universe certification before scaling. Keep the original sealed private evidence unchanged.
 - **No PR merge, production scanner/data changes, new trade permissions, live trading, spending or broad backfill.**
+
+## V1.1 private replay acceptance — 14 November 2026, 12:05 London time
+
+The owner's existing GitHub Codespace terminal screenshot confirms an actual private V1.1 run after fetching `phase2_scientific_v11.py` and `test_phase2_scientific_v11.py` into the isolated Phase 2 research folder, using the sealed original sources via `--archive`, `--signals`, and `--certificate`, and a new `--out` sibling folder.
+
+- Unit tests: `Ran 9 tests` — `OK`.
+- Offline replay: `source_signal_instances=175`, `complete_signal_instances=43`, `distinct_symbol_candidates=3`.
+- Selected candidate outcomes: `hypothetical_outcomes={"TP_FIRST":3}`.
+- 1,000 USDT modelled notional per candidate: total USDT scenario net excluding funding `fees_only=22.745651`, `baseline=19.758824`, `stress=16.771997`.
+- `verified_fills=0`, `research_only=true`.
+- Code validates the original source/certificate hashes, refuses overwrites and creates `v11_independent_research.json` in a fresh V1.1 output folder. The screenshot attests to successful completion, but does not independently prove the original files are byte-for-byte unchanged outside these implemented checks.
+
+**Gate:** V1.1 private evidence replay and model reconciliation **PASS**. Scientific profitability, independent market-event sampling, historical universe completeness, execution fills and real trading **NOT CERTIFIED / NO-GO**. Preserve original V1.0 evidence and separate V1.1 results in private QA; do not commit raw data.
