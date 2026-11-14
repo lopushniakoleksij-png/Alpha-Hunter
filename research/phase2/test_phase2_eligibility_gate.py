@@ -15,6 +15,7 @@ def row(**overrides):
         "dated_official_source_url": "https://api.bitget.com/api/v2/mix/market/contracts?productType=USDT-FUTURES",
         "nov08_candles_status": "NOT_TESTED", "reason_code": "",
         "backfill_allowed": "NO", "catalogue_request_time_ms": "1794628383976",
+        "listing_event_source_url": "", "listing_event_date_as_published": "",
     }
     data.update(overrides)
     return data
@@ -29,7 +30,9 @@ class EligibilityGateTests(unittest.TestCase):
     def test_listing_evidence_not_window_certification(self):
         validate_row(row(symbol="DASHUSDT", listing_event_evidence="VERIFIED",
                          documented_event_type="OFFICIAL_LISTING_ANNOUNCEMENT",
-                         dated_official_source_url="https://www.bitget.com/support/articles/12560603841543"))
+                         dated_official_source_url="https://www.bitget.com/support/articles/12560603841543",
+                         listing_event_source_url="https://www.bitget.com/support/articles/12560603841543",
+                         listing_event_date_as_published="2025-11-04"))
     def test_excluded_with_official_date(self):
         validate_row(row(symbol="EPICUSDT",current_catalogue="NO",
                          window_eligibility="EXCLUDED",documented_event_type="DELISTED_FUTURES",
@@ -58,6 +61,19 @@ class EligibilityGateTests(unittest.TestCase):
                              window_eligibility="EXCLUDED",documented_event_type="DELISTED_FUTURES",
                              documented_effective_utc="2026-10-20T07:00:00Z",
                              dated_official_source_url="https://evil.example/support/articles/1"))
+    def test_excluded_with_separately_verified_listing_event(self):
+        validate_row(row(symbol="SCRTUSDT", current_catalogue="NO",
+                         window_eligibility="EXCLUDED", listing_event_evidence="VERIFIED",
+                         documented_event_type="DELISTED_FUTURES",
+                         documented_effective_utc="2026-08-26T07:00:00Z",
+                         dated_official_source_url="https://www.bitget.com/support/articles/12560603892891",
+                         listing_event_source_url="https://www.bitget.com/support/articles/12560603818612",
+                         listing_event_date_as_published="2024-11-21"))
+    def test_false_listing_event_source_rejected(self):
+        with self.assertRaises(ValueError):
+            validate_row(row(listing_event_evidence="VERIFIED",
+                             listing_event_source_url="https://wrong.example/support/articles/1",
+                             listing_event_date_as_published="2025-11-04"))
     def test_wrong_window_rejected(self):
         with self.assertRaises(ValueError):
             validate_row(row(target_window_start_utc="2026-11-07T00:00:00Z"))
