@@ -1,6 +1,6 @@
 # Alpha Hunter Phase 2 — Scientific Pilot V1.0 (BTC, ETH, SOL)
 
-**Execution:** 14 November 2026, offline research adjudication based on READ-ONLY Supabase evidence and a bounded public Bitget historical candle retrieval. **Production unchanged; no orders; no broad backfill; no profitability certification.**
+**Execution:** 14 November 2026, offline research adjudication based on READ-ONLY Supabase evidence and bounded public Bitget historical candle retrieval, followed by private Codespace raw-evidence recapture, read-only snapshot export, and successful isolated replay. **Production unchanged; no orders; no broad backfill; no profitability certification.**
 
 ## Frozen pilot cohort and inputs
 - Signal detection cohort **2026-11-08 00:00 UTC (inclusive)–2026-11-09 00:00 UTC (exclusive)**.
@@ -11,7 +11,7 @@
   - BTC requestTime 1794652927683
   - ETH requestTime 1794652927681
   - SOL requestTime 1794652927733
-- Prior privately archived 24h samples (Nov 8) and 7d ETH/SOL were QA-validated in Codespace. **The additional Nov 9 raw 48h responses retrieved in this pilot were validated in-session but have NOT yet been deposited with immutable SHA-256 manifests in private QA**. The `phase2_scientific_pilot_replay.py` tool supports offline SHA-256 source validation once a private snapshot is available. Do not call this pilot fully reproducible until source bytes + filtered signal snapshot are privately archived and replayed.
+- Prior privately archived 24h samples (Nov 8) and 7d ETH/SOL were QA-validated in Codespace. The original in-session Nov 8–10 HTTP response bytes were not preserved, so a **new bounded private recapture** was subsequently made on 14 November: BTCUSDT/ETHUSDT/SOLUSDT 48/48 hourly candles each, SHA-256 source manifests PASS, and the full frozen read-only 175-row signal snapshot was exported to private Codespace. **Independent replay on this new captured evidence returned `REPLAY_MATCH_PRELIMINARY_COUNTS`**. This certifies a reproducible evidence replay only—not historical exchange permission, trade fills or profitability.
 
 ## Outcome method — conservative hourly OHLC
 1. For a signal detected at e.g. 02:04 UTC, begin only at the first *complete hourly bar starting after detection* (03:00 UTC). **Exclude the signal's unfinished 02:00–03:00 candle** so its full high/low cannot leak into an as-of judgment. Require 24 complete consecutive hourly candles (03:00 to next-day 03:00).
@@ -49,12 +49,18 @@
 - `PILOT_SIGNALS_READ_ONLY_EXPORT.sql`: fixed-cohort read-only query for all 175 stored signal records including `created_at`, EP/SL/TP and state. Private export must be performed using an authorized read-only connection. Do not commit private CSVs.
 - `phase2_pilot_offline_certify.py`: accepts a newly captured 3-response raw archive and a user-supplied private CSV of the exact 175-row signal cohort. Verifies all SHA-256 fingerprints, exact symbol/product/horizon URL parameters, unique IDs, symbol counts BTC59/ETH57/SOL59, trade_permission=false, post-detection hour timing, and reconciles status totals. It writes a **private** certificate and per-signal findings only if all gates pass.
 - `test_phase2_pilot_private_capture.py`, `test_phase2_pilot_offline_certify.py`: mocked offline QA covering valid scope, tampering, missing/duplicate records, and fail-closed certifications.
-- **Status:** code committed and tested; live recapture and local 175-row cohort export into the existing private Codespace have **not** been performed through these scripts. This stage is ready for manual run in Codespace; do not mark the full private-data replay as PASS until actual evidence output is inspected.
+- **Status 14 Nov 2026:** Private Codespace screenshot confirms the capture completed (3 sources, 144/144 hourly candles, SHA-256 PASS), the 175-row read-only Python database export passed, and the offline replay returned `REPLAY_MATCH_PRELIMINARY_COUNTS` with 29 `TP_FIRST`, 11 `NO_ENTRY`, 3 `AMBIGUOUS`, and 132 `NOT_EVALUABLE`. A private `certificate.json` and per-signal findings were written. Screenshot evidence attests to script output; the private certificate's raw bytes have not been independently imported into this chat. No source snapshots or credentials were committed publicly.
 - **Provenance distinction:** a newly captured raw 48h response will have a new exchange requestTime and SHA-256, even if candle OHLC matches the earlier pilot's in-session fetch. This is a *recapture*, not proof that identical original response bytes were preserved.
 
 ## Reproduction and next QA gate
 - Code: `research/phase2/phase2_scientific_pilot_replay.py` (pure offline deterministic replay using `phase2_signal_investigator.py` and `phase2_bitget_response_verifier.py`).
 - Tests: `research/phase2/test_phase2_scientific_pilot_replay.py` (source-boundary, no-permission and ambiguity checks).
-- Archive exact 3 raw 48h Bitget responses and a read-only filtered 175-row Supabase signal snapshot **outside the repository, in the existing private QA environment**, with URI/response time/UTC window/hash and export time; then run the offline replay and reconcile the 29/3/11/4 counts.
-- Next: assess same-hour outcomes using smaller trusted 1m bars where permitted, reduce correlated duplicate setups using a predeclared rule, review regime / filter provenance, and independently certify historical instrument availability.
+- **COMPLETED (private evidence gate):** Re-captured 3 raw 48h Bitget responses, exported 175 read-only frozen-cohort signals, verified SHA-256 manifests and replayed offline. Certificate output matches the preliminary research counts: 29 TP_FIRST, 3 AMBIGUOUS, 11 NO_ENTRY and 132 NOT_EVALUABLE (128 non-directional + 4 missing levels). Research-only. Preserve all files and hashes in the existing private QA directory.
+- **Next independent gate:** Predeclare a no-hindsight rule to collapse repeated/correlated setup instances into unique opportunities, independently review signal as-of provenance and blocked-filter reasons, assess 1m same-hour order ambiguity where permitted, include realistic fees/slippage if any hypothetical net-return model is attempted, and independently certify historical instrument availability.
 - **Broad backfill and real trading remain NO-GO.** No PR merge, production write, scanner restarts or deployment.
+
+## Private replay acceptance evidence (14 November 2026)
+- User-supplied terminal screenshot after isolated private execution shows `READ-ONLY SIGNAL EXPORT: PASS`, `Records: 175`, and `REPLAY_MATCH_PRELIMINARY_COUNTS`.
+- Outcome counters: `TP_FIRST=29`, `NO_ENTRY=11`, `AMBIGUOUS=3`, `NOT_EVALUABLE=132`; sum 175. `zero_verified_fills=true`.
+- Private paths under `$HOME/.alpha-hunter-phase2-private/` contain the 3-source 48h recapture, `pilot_signals_20261108_verified.csv`, and `pilot-certificate-20261108` (private; not committed).
+- This verifies **reproducible research evidence**, not market-order execution, historical-universe completeness, profit rate, or statistical independence. Production release and real trading remain **NO-GO**.
