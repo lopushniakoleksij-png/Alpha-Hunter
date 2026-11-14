@@ -13,6 +13,7 @@ import json
 import os
 from collections import Counter
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from phase2_scientific_pilot_replay import replay, SYMBOLS, SOURCE_START_MS, SOURCE_END_MS
 
@@ -56,8 +57,14 @@ def validate_sources(archive):
         content=path.read_bytes()
         if hashlib.sha256(content).hexdigest()!=item.get("sha256"):
             raise ValueError("source SHA-256 mismatch")
-        if not str(item.get("source_url","")).startswith("https://api.bitget.com/api/v2/mix/market/history-candles?"):
-            raise ValueError("unapproved market-data endpoint")
+        u=urlparse(item.get("source_url",""))
+        params=parse_qs(u.query,strict_parsing=True)
+        expected={"symbol":[sym],"productType":["USDT-FUTURES"],"granularity":["1H"],
+                  "startTime":[str(SOURCE_START_MS)],"endTime":[str(SOURCE_END_MS)],
+                  "limit":["48"]}
+        if (u.scheme!="https" or u.netloc!="api.bitget.com" or
+            u.path!="/api/v2/mix/market/history-candles" or params!=expected):
+            raise ValueError("market-data URL, instrument or dates invalid")
         raw[sym]=content
     if set(raw)!=set(SYMBOLS):
         raise ValueError("not three complete source files")
