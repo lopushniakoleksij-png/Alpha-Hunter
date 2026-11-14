@@ -79,6 +79,16 @@ fi
 python phase2_oos_v12_replay.py --archive "$MARKET" \
   --signals "$SNAPSHOT" --out "$CERT"
 
+# Re-verify every original V1.0 price-response SHA-256 and signal CSV.
+python - <<'PY'
+from pathlib import Path
+from phase2_pilot_offline_certify import validate_sources,validate_signals
+base=Path.home()/".alpha-hunter-phase2-private"
+raw,_=validate_sources(base/"pilot-48h-20261108-recapture")
+rows,_=validate_signals(base/"pilot_signals_20261108_verified.csv")
+assert len(raw)==3 and len(rows)==175
+print("PROTECTED V1.0 MARKET/COHORT SOURCE RECHECK: PASS")
+PY
 FROZEN_AFTER="$(sha256sum "$OLD_CANDLE/manifest.json" "$OLD_SIGNAL" "$OLD_CERT" "$OLD_V11")"
 if [[ "$FROZEN_BEFORE" != "$FROZEN_AFTER" ]]; then
   echo "CRITICAL: sealed V1.0/V1.1 hash changed; STOP and investigate." >&2
