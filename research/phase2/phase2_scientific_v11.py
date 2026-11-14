@@ -161,6 +161,15 @@ def run(archive,signals,certificate,out):
     out=Path(out).absolute()
     if not out.is_absolute() or out.exists():
         raise ValueError("new absolute directory required; no overwrite")
+    # Enforce a NEW SIBLING folder alongside sealed inputs: never write
+    # anywhere inside the raw-source archive or original certificate tree.
+    raw_root=Path(archive).resolve()
+    signals_file=Path(signals).resolve()
+    certificate_file=Path(certificate).resolve()
+    if (out.parent.resolve()!=signals_file.parent or
+        out.parent.resolve()!=raw_root.parent or
+        out==raw_root or out==certificate_file.parent):
+        raise ValueError("V1.1 output must be a distinct sibling of sealed private evidence")
     raw,manifest=validate_sources(archive)
     cohort,snapshot_sha=validate_signals(signals)
     cert_path=Path(certificate)
