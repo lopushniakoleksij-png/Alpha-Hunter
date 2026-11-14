@@ -23,7 +23,7 @@ class EligibilityGateTests(unittest.TestCase):
     def test_sealed_register(self):
         counts = validate_registry(REGISTER)
         self.assertGreaterEqual(counts["UNKNOWN"], 885)
-        self.assertGreaterEqual(counts["EXCLUDED"], 7)
+        self.assertGreaterEqual(counts["EXCLUDED"], 8)
         self.assertEqual(counts["VERIFIED"], 0)
     def test_unknown_passes(self): validate_row(row())
     def test_listing_evidence_not_window_certification(self):
