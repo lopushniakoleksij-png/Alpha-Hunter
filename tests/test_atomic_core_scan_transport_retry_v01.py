@@ -227,6 +227,32 @@ def test_atomic_rpc_rejects_boolean_in_every_count_field(count_field):
     assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.calls)
 
 
+
+@pytest.mark.parametrize("invalid_payload", ["", "{truncated", "not-json"])
+def test_atomic_rpc_http_200_invalid_json_fails_closed_without_fallback(invalid_payload):
+    """E2: successful HTTP status without parseable receipt is not a commit proof."""
+    class InvalidJsonSession:
+        def __init__(self):
+            self.calls = []
+
+        def post(self, url, **kwargs):
+            self.calls.append((url, kwargs["data"]))
+            class Response:
+                status_code = 200
+                text = invalid_payload
+
+                def json(self):
+                    raise ValueError("synthetic malformed JSON receipt")
+            return Response()
+
+    session = InvalidJsonSession()
+    with pytest.raises(SupabaseStorageError, match="returned invalid JSON"):
+        SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
+    assert len(session.calls) == 1
+    assert session.calls[0][0].endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
+
+
+
 def test_atomic_rpc_real_loopback_socket_drop_replays_identical_body(monkeypatch):
     """E2: real TCP disconnect before HTTP acknowledgement, isolated loopback only.
 
