@@ -195,6 +195,8 @@ class InvalidReceiptSession:
             receipt["symbol_count"] = None
         elif self.mutation == "string_commit":
             receipt["committed"] = "true"
+        elif self.mutation.startswith("boolean_"):
+            receipt[self.mutation.removeprefix("boolean_")] = True
         return QAResponse(receipt)
 
 
@@ -210,6 +212,19 @@ def test_atomic_rpc_success_http_requires_exact_receipt_and_never_falls_back(mut
         SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
     assert len(session.calls) == 1
     assert session.calls[0][0].endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
+
+
+@pytest.mark.parametrize("count_field", [
+    "parent_count", "symbol_count", "signal_count",
+    "feature_count", "readiness_count",
+])
+def test_atomic_rpc_rejects_boolean_in_every_count_field(count_field):
+    """E2: JSON true must never be accepted as integer 1 in any family."""
+    session = InvalidReceiptSession("boolean_" + count_field)
+    with pytest.raises(SupabaseStorageError, match="confirmation did not match payload"):
+        SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
+    assert len(session.calls) == 1
+    assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.calls)
 
 
 def test_atomic_rpc_real_loopback_socket_drop_replays_identical_body(monkeypatch):
