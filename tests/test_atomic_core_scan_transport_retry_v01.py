@@ -187,13 +187,22 @@ class InvalidReceiptSession:
             receipt["committed"] = False
         elif self.mutation == "list_receipt":
             receipt = [receipt]
+        elif self.mutation == "string_count":
+            receipt["symbol_count"] = str(receipt["symbol_count"])
+        elif self.mutation == "float_count":
+            receipt["symbol_count"] = float(receipt["symbol_count"])
+        elif self.mutation == "null_count":
+            receipt["symbol_count"] = None
+        elif self.mutation == "string_commit":
+            receipt["committed"] = "true"
         return QAResponse(receipt)
 
 
 @pytest.mark.parametrize(
     "mutation",
     ["wrong_run", "boolean_count", "missing_readiness",
-     "extra_symbol", "not_committed", "list_receipt"],
+     "extra_symbol", "not_committed", "list_receipt",
+     "string_count", "float_count", "null_count", "string_commit"],
 )
 def test_atomic_rpc_success_http_requires_exact_receipt_and_never_falls_back(mutation):
     session = InvalidReceiptSession(mutation)
