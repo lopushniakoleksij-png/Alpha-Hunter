@@ -469,3 +469,34 @@ def test_atomic_rpc_truncated_success_body_after_lost_ack_fails_closed():
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_lost_ack_followed_by_conflicting_run_http_409_fails_closed():
+    """E3: an ambiguous first ACK followed by a conflict is never success.
+
+    Mock transport only: neither a real PostgreSQL commit nor an authenticated
+    server-side conflict is established by this test.
+    """
+    class AmbiguousThenConflictSession:
+        def __init__(self):
+            self.calls = []
+
+        def post(self, url, **kwargs):
+            self.calls.append((url, kwargs["data"]))
+            if len(self.calls) == 1:
+                raise requests.ConnectionError("synthetic lost acknowledgement")
+            response = QAResponse({"error": "synthetic run identity conflict"})
+            response.status_code = 409
+            response.text = "synthetic run identity conflict"
+            return response
+
+    session = AmbiguousThenConflictSession()
+    with pytest.raises(SupabaseStorageError, match="HTTP 409"):
+        SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot())
+
+    assert len(session.calls) == 2
+    assert session.calls[0] == session.calls[1]
+    assert all(
+        url.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
+        for url, _ in session.calls
+    )
