@@ -51,4 +51,16 @@ Read-only Render log filter `Supabase: FAILED` for **17:00–22:15 UTC** returne
 - The next **critical path** is A1/B2/B3 in `docs/P0_REPAIR_COMPLETION_EXECUTION_BOARD_20261114.md`: recover the same isolated private QA reference after diagnosis; verify authorised private schema and role/trigger/index fingerprints; then run genuine same-/different-run concurrent writes, fault injection, full downstream ledger and HTTP latency tests before qualified DBA and security review.
 - No merge/deploy, production DDL, scanner restart, new spend or real-money trading is authorised; do not treat a successful Render scheduled job as proof of child persistence.
 
+## 22:23 UTC follow-up checkpoint — iPhone-only remote audit
+
+Read-only production SELECT over the rolling latest 50 parents still shows **22 core complete / 28 parent-only**; latest 12 still show **4 complete / 8 parent-only**. The newest incomplete parent is now at **22:23:02.897607 UTC**, so failures are ongoing and not merely old missing children.
+
+Claimed source grouping: 48 `RENDER_CRON` parents (20 complete / 28 parent-only), two `GITHUB_REALTIME_HOURLY` parents (both complete). These are untrusted JSON labels; separate authenticated source linkage is still open.
+
+Render cron read-only log filter for **18:00–22:24 UTC** reports **ten distinct `Supabase: FAILED` messages** in the returned window: five PostgreSQL SQLSTATE 57014 `alpha_hunter_symbol_snapshots` statement timeouts and five client read timeouts. Latest log at **22:24:01.744869 UTC** is temporally associated with the 22:23 incomplete parent; no direct run-ID causality proven. Current service metadata: branch `main`, cron command `python3 hourly.py --once`, schedule `0 * * * *`; Render's **live deployment** still reports commit `33e8820bc8e4e2958e2fc20c7fb80899c4e2e65e` (6 Oct 2026). This is **not** repair PR #445.
+
+Added focused **offline launcher fail-closed regression** `tests/test_p0_runner_cloud_persistence_exit_propagation_v01.py`, commit `98f7ffdc2497676f06cbf22a60362f0726c489ab`. Extracts production collector exit helper and actual `run.py` launcher function, mocks all external calls, proves failed configured Supabase status returns nonzero and never proceeds to universe/account/fill-ledger persistence, and asserts CLI propagates `SystemExit(run())`. Exact SHA: **11/11 GitHub workflows SUCCESS, Full Production Test Suite 1,495 passed + 101 subtests**. This is protective offline coverage, **not a live production fix or authentic DB transaction test**.
+
+Private QA container and authorised schema archive still not remotely accessible. No attempt was made to restart the old container, benchmark on a substitute environment, deploy, migrate, change scanner/trading permissions or spend.
+
 **Custody boundary:** publish sanitized aggregates only. Archive, credentials, raw DB functions, SQL bodies, detailed logs and sensitive source manifests remain private.
