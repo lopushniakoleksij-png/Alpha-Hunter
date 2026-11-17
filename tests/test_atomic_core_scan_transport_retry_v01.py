@@ -500,3 +500,59 @@ def test_lost_ack_followed_by_conflicting_run_http_409_fails_closed():
         url.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
         for url, _ in session.calls
     )
+
+
+def test_atomic_rpc_concurrent_identical_callers_one_conflict_fails_closed():
+    """E6: concurrent same-run clients must not interpret HTTP 409 as success.
+
+    A synthetic shared transport assigns one success and one conflict. This
+    does not establish authentic PostgreSQL locking, trigger side effects,
+    or production idempotency.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Lock
+
+    barrier = Barrier(2)
+    lock = Lock()
+    calls = []
+
+    class SharedConflictSession:
+        def post(self, url, **kwargs):
+            body = kwargs["data"]
+            with lock:
+                calls.append((url, body))
+                ordinal = len(calls)
+            if ordinal == 1:
+                request = json.loads(body)
+                response = QAResponse({
+                    "committed": True,
+                    "run_id": request["p_parent"][0]["run_id"],
+                    "parent_count": len(request["p_parent"]),
+                    "symbol_count": len(request["p_children"]),
+                    "signal_count": len(request["p_signals"]),
+                    "feature_count": len(request["p_features"]),
+                    "readiness_count": len(request["p_readiness"]),
+                })
+                return response
+            response = QAResponse({"error": "synthetic concurrent identity conflict"})
+            response.status_code = 409
+            response.text = "synthetic concurrent identity conflict"
+            return response
+
+    session = SharedConflictSession()
+
+    def publish():
+        barrier.wait(timeout=5)
+        try:
+            return ("ok", SupabaseStorage(atomic_config(), session=session).save_snapshot(sample_snapshot()))
+        except SupabaseStorageError as exc:
+            return ("error", str(exc))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _: publish(), range(2)))
+
+    assert sorted(kind for kind, _ in outcomes) == ["error", "ok"]
+    assert "HTTP 409" in next(detail for kind, detail in outcomes if kind == "error")
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+    assert all(url.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01") for url, _ in calls)
