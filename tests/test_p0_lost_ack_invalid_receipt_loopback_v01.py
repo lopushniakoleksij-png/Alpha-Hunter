@@ -67,3 +67,41 @@ def test_lost_ack_then_false_success_receipt_fails_closed(invalid_receipt):
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def test_lost_ack_then_real_loopback_http_409_fails_closed():
+    """E3: a real socket drop followed by HTTP 409 cannot confirm a commit.
+
+    Distinct from mock-only 409 and loopback invalid-HTTP-200 receipt tests.
+    Server commit state is emulated; no PostgreSQL or private trigger proof.
+    """
+    bodies = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers["Content-Length"]))
+            bodies.append((self.path, body))
+            if len(bodies) == 1:
+                self.close_connection = True
+                return
+            self.send_response(409)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = replace(atomic_config(), url=f"http://127.0.0.1:{server.server_port}")
+        with pytest.raises(SupabaseStorageError, match="HTTP 409"):
+            SupabaseStorage(config, session=requests.Session()).save_snapshot(sample_snapshot())
+        assert len(bodies) == 2
+        assert bodies[0] == bodies[1]
+        assert all(path.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01") for path, _ in bodies)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
