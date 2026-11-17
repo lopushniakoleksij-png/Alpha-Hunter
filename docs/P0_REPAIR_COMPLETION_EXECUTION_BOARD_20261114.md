@@ -72,6 +72,17 @@ All checked items above are **evidence-limited** to their stated scope.
 
 **Priority order unchanged:** A1 private QA container health and archive custody → B2/B3 authentic role/trigger fingerprints → C3 concurrency/fault injection and complete downstream semantics → D HTTP/SQL latency → E publisher/error truth → F independent release approval. Do not bypass A1 because isolated mock CI is green.
 
+## B2/B3 QA database identity reconciliation — 17 November 2026
+
+**Audit finding: two distinct QA database identities in the same named isolated container, not interchangeable.**
+
+- Prior Stage 7 physical-template probe and cron controller explicitly target reference database `ah_authentic_schema_20261110`; their earlier 61-symbol commit/retry and 30-trial evidence is valid **only for the stated private QA copy, fixture and date**.
+- The later full production-fingerprint verifier `verify_restored_private_pg17_fingerprints_v01.sh` and `qa_authentic_pg17_rpc_latency_v01.py` explicitly target `alpha_hunter_private_qa`, which is the proposed **restored full-parity target**. Presence or success of the Stage 7 reference does **not** prove this target has been restored or matches the live private trigger/role/schema graph.
+- Prepared `ops/local/p0_private_qa_identity_readonly_v01.py`: an owner-controlled Codespace-only **SELECT-only** local inventory of both names. It checks the exact image, process, network isolation and restart policy and **blocks if the container is stopped or full-parity target is absent**. Even when both exist, it prints `QA_SCHEMA_PARITY=NOT_VERIFIED`. No restore, restart, SQL source, passwords, raw logs or production connection.
+- Dedicated offline regressions: `tests/test_p0_private_qa_identity_readonly_v01.py`; CI passing would validate only this guard, **not the real private environment**.
+
+**Blocking sequence:** first finish A1 exit-255 forensics, private backup/custody and approved safe recovery; then run the B2/B3 identity inventory, verify authorised archive and restore *only* inside private isolated PostgreSQL, compare all fingerprints; only then execute C/D authentic concurrent 30/50/61-symbol tests. Do not auto-select an older database as a shortcut.
+
 ## Next single action
 
 **A1:** Run the *read-only* isolated QA exit-255 diagnostic in the existing Codespace; do not restart or delete the container. Move to A2 only after returning the sanitized status. All other gates retain `BLOCKED` dependencies on A1/B2.
