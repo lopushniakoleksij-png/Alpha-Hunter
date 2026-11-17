@@ -244,3 +244,23 @@ def test_candidate_aware_fingerprint_only_excludes_one_named_index():
     assert candidate_sql.count("where ic.relname <> '" + name + "'") == 1
     assert "triggers_functions_fingerprint" in candidate_sql
     assert "table_grants_rls_fingerprint" in candidate_sql
+
+
+@pytest.mark.parametrize("bad_ms", [
+    float("nan"), float("inf"), float("-inf"),
+    True, "321.5", None, 0.0, -1.0,
+])
+def test_offline_measurement_rejects_nonfinite_or_invalid_sql_execution_time(bad_ms):
+    """Never permit malformed EXPLAIN values into a private p95/p99 result."""
+    f = qa.validate_fixture(fixture(), 30)
+    coverage = {
+        "parents": 1, "symbols": 30, "signals": 0,
+        "features": 0, "readiness": 30,
+        **{name: 1 for name in (
+            "observations", "quotes", "freezes", "payoff",
+            "calibrated_orders", "queue",
+        )},
+    }
+    response = json.dumps([{"Execution Time": bad_ms}]) + "\n" + json.dumps(coverage)
+    with pytest.raises(qa.QABlocked, match="malformed"):
+        qa.parse_measured_trial(response, f)
