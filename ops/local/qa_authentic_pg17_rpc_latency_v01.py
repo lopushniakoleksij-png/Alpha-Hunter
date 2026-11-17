@@ -9,6 +9,7 @@ offline named Docker container. No SQL, identifiers or secrets leave the host.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import statistics
@@ -224,10 +225,16 @@ def parse_measured_trial(output: str, fixture: dict) -> float:
     try:
         plan, offset = json.JSONDecoder().raw_decode(output)
         coverage = json.loads(output[offset:].strip())
-        elapsed_ms = float(plan[0]["Execution Time"])
+        raw_elapsed_ms = plan[0]["Execution Time"]
+        # bool and numeric strings must not masquerade as measured timings.
+        if type(raw_elapsed_ms) not in (int, float):
+            raise TypeError("Execution Time must be a JSON number")
+        elapsed_ms = float(raw_elapsed_ms)
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise QABlocked("Offline EXPLAIN/coverage result malformed") from exc
-    if not isinstance(coverage, dict) or elapsed_ms < 0:
+    # Python's JSON decoder accepts NaN/Infinity by default.  Those, zero,
+    # and negative timings cannot be evidence for a trustworthy p95/p99.
+    if not isinstance(coverage, dict) or not math.isfinite(elapsed_ms) or elapsed_ms <= 0:
         raise QABlocked("Offline execution metrics or coverage malformed")
     expected = {
         "parents": len(fixture["p_parent"]),
