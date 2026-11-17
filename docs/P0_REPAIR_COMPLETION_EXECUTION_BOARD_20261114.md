@@ -66,6 +66,12 @@ All checked items above are **evidence-limited** to their stated scope.
 - [ ] F5. Run signed acceptance observation window covering peak load, no partial or false-success scans. Publish dated certification and close P0 only after gate owners accept all evidence.
 **Exit:** release GO signed, evidence archived private, current PR no longer blocked.
 
+## 17 November 2026 — new read-only P0 severity checkpoint
+
+**Live production still failing, not certified.** In the latest 50 parents, **22 core-shape complete, 28 parent-only** (56% incomplete); in the latest 12, **4 complete, 8 parent-only**. The 22:05 UTC parent is still missing all four child families. Render logs 17:00–22:15 UTC contain **5 PostgreSQL 57014 symbol-upsert timeouts and 4 HTTP client timeouts**. Source labels remain self-reported. Candidate atomic RPC absent from production. See `docs/P0_PRODUCTION_READONLY_PERSISTENCE_EVIDENCE_20261117.md` for redacted evidence and cumulative-statistics limitations.
+
+**Priority order unchanged:** A1 private QA container health and archive custody → B2/B3 authentic role/trigger fingerprints → C3 concurrency/fault injection and complete downstream semantics → D HTTP/SQL latency → E publisher/error truth → F independent release approval. Do not bypass A1 because isolated mock CI is green.
+
 ## Next single action
 
 **A1:** Run the *read-only* isolated QA exit-255 diagnostic in the existing Codespace; do not restart or delete the container. Move to A2 only after returning the sanitized status. All other gates retain `BLOCKED` dependencies on A1/B2.
