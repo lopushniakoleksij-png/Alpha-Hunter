@@ -556,3 +556,49 @@ def test_atomic_rpc_concurrent_identical_callers_one_conflict_fails_closed():
     assert len(calls) == 2
     assert calls[0] == calls[1]
     assert all(url.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01") for url, _ in calls)
+
+
+# 18 Nov 2026 production regression: Render reported SUCCESS despite a
+# canonical Supabase POST read timeout and zero persisted core child records.
+# These tests are mock-only; authentic PG17 trigger benchmarks remain required.
+@pytest.mark.parametrize(
+    "enabled,status,expected",
+    [
+        (True, "SAVED", 0),
+        (True, "FAILED: Supabase POST timed out", 2),
+        (True, "NOT_CONFIGURED", 2),
+        (True, "DISABLED", 2),
+        (False, "DISABLED", 0),
+    ],
+)
+def test_p0_cloud_scan_failure_cannot_be_reported_as_success(
+    enabled, status, expected
+):
+    from alpha_hunter.collector import cloud_persistence_exit_code
+
+    assert cloud_persistence_exit_code(enabled=enabled, status=status) == expected
+
+
+def test_p0_hourly_run_propagates_failed_canonical_write_without_auxiliary_jobs(
+    monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+    import hourly
+
+    invocations = []
+
+    def failed_scan(command, **kwargs):
+        invocations.append((command, kwargs))
+        return SimpleNamespace(returncode=2)
+
+    monkeypatch.setattr(hourly.subprocess, "run", failed_scan)
+
+    assert hourly.run_once(
+        tmp_path,
+        "config.json",
+        run_auxiliary_jobs=False,
+        run_source_override="RENDER_CRON",
+    ) == 2
+    assert len(invocations) == 1
+    assert invocations[0][1]["env"]["ALPHA_HUNTER_RUN_SOURCE"] == "RENDER_CRON"
+    assert not (tmp_path / ".alpha-hunter.lock").exists()
