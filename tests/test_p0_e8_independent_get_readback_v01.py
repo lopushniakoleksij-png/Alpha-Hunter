@@ -74,7 +74,9 @@ def test_independent_get_readback_wrong_identity_same_count_fails_closed():
 
 def test_independent_get_readback_http_error_fails_closed():
     storage = storage_with_responses(EXPECTED)
-    storage.session.get.side_effect[1].status_code = 503
+    responses = list(storage.session.get.side_effect)
+    responses[1].status_code = 503
+    storage.session.get.side_effect = responses
     with pytest.raises(SupabaseStorageError):
         read_families(storage)
     storage.session.post.assert_not_called()
