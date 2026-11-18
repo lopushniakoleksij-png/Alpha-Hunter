@@ -18,6 +18,9 @@ def verify_core_child_identities(expected, observed):
         return False
     if set(expected) != set(families) or set(observed) != set(families):
         return False
+    # A missing parent must never be accepted, even if both inputs omit it.
+    if len(expected["parent"]) != 1 or len(observed["parent"]) != 1:
+        return False
     for family in families:
         want, got = expected[family], observed[family]
         if not isinstance(want, list) or not isinstance(got, list):
