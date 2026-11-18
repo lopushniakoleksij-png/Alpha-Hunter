@@ -80,3 +80,30 @@ def test_independent_get_readback_http_error_fails_closed():
     with pytest.raises(SupabaseStorageError):
         read_families(storage)
     storage.session.post.assert_not_called()
+
+
+@pytest.mark.parametrize("family", list(FAMILIES))
+def test_independent_get_readback_duplicate_identity_fails_closed(family):
+    data = {key: list(rows) for key, rows in EXPECTED.items()}
+    data[family] = data[family] + data[family]
+    storage = storage_with_responses(data)
+    assert not contract.verify_core_child_identities(EXPECTED, read_families(storage))
+    storage.session.post.assert_not_called()
+
+
+def test_independent_get_readback_cross_run_parent_fails_closed():
+    data = {key: list(rows) for key, rows in EXPECTED.items()}
+    data["parent"] = [("other-run",)]
+    storage = storage_with_responses(data)
+    assert not contract.verify_core_child_identities(EXPECTED, read_families(storage))
+    storage.session.post.assert_not_called()
+
+
+def test_independent_get_readback_malformed_json_fails_closed():
+    storage = storage_with_responses(EXPECTED)
+    responses = list(storage.session.get.side_effect)
+    responses[2].json.side_effect = ValueError("invalid JSON")
+    storage.session.get.side_effect = responses
+    with pytest.raises(SupabaseStorageError):
+        read_families(storage)
+    storage.session.post.assert_not_called()
