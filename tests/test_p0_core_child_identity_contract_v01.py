@@ -50,3 +50,16 @@ def test_missing_family_or_malformed_identity_fails():
     observed = sample()
     observed["signals"] = [("signal-1", None)]
     assert not module.verify_core_child_identities(expected, observed)
+
+
+@pytest.mark.parametrize("parent_rows", [[], [("run-1",), ("run-2",)]])
+def test_missing_or_multiple_parent_fails_even_if_expected_matches(parent_rows):
+    expected, observed = sample(), sample()
+    expected["parent"] = list(parent_rows)
+    observed["parent"] = list(parent_rows)
+    assert not module.verify_core_child_identities(expected, observed)
+
+
+def test_all_families_empty_fails_closed():
+    empty = {family: [] for family in sample()}
+    assert not module.verify_core_child_identities(empty, empty)
