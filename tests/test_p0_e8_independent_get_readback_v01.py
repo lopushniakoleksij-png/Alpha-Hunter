@@ -42,7 +42,7 @@ def storage_with_responses(data):
     session = Mock()
     responses = []
     for family, (_, columns) in FAMILIES.items():
-        response = Mock(status_code=200)
+        response = Mock(status_code=200, text="")
         response.json.return_value = [dict(zip(columns, identity)) for identity in data[family]]
         responses.append(response)
     session.get.side_effect = responses
