@@ -41,6 +41,8 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 - **2026-11-19 E6 (new HTTP concurrency subcase ACTIVE / CI PENDING):** Two-thread identical atomic HTTP identity regression added in `tests/test_p0_e6_concurrent_atomic_http_identity_v01.py` at SHA `23b444986c0a01d4f7d6692b32cfbf9a9e3a8088`. GitHub Actions commit-run lookup returned zero at first inspection; do not count as passing. Earlier isolated PostgreSQL E6 PASS remains valid only for its tested synthetic scope. Authentic private-trigger concurrency remains BLOCKED under B2/B3. No release approval.
 
+- **2026-11-19 E6 (ACTIVE, exact-head CI PENDING):** Strengthened two-writer concurrent atomic HTTP failure regression to require all five independent readback families per writer, exact run-id filters, bounded limits, and zero legacy fallback after missing persisted rows. Test-only commit `acafa0d466a497c7f1b49984f920754c1d4ff5a2`; commit-run lookup returned no workflows at first inspection, so **NOT CI-VERIFIED**. Isolated mock scope only; authentic private PG17 remains B2/B3 BLOCKED. Production NO-GO.
+
 ## 64-action board
 
 ### Pillar A — Root cause and latency
