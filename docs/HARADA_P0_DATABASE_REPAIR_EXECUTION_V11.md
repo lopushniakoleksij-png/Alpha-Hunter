@@ -48,6 +48,9 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 - **2026-11-19 E6 (ACTIVE; new CI PENDING):** Expanded concurrent matching-receipt/cross-run independent-readback negative coverage from readiness only to each populated family (parent, symbol children, readiness) with parameterized two-worker tests. Engineering head `73cfb5ac208a2d64c6c5758c45638452db38ba64`; test-only mock HTTP scope. The signals/features in this WATCH fixture are empty and deliberately excluded from identity corruption; all five families remain independently read. Do not claim PASS until exact-head CI logs are verified. B2/B3 BLOCKED; production NO-GO.
 
+
+- **2026-11-19 E6 (ACTIVE; CI PENDING):** Added two-worker lost-ACK retry followed by independent five-family missing-readback fail-closed regression `tests/test_p0_e6_concurrent_lost_ack_readback_v01.py` at engineering SHA `ece6591c02f0d1855a1b38b1f3a1c6b7d2e4bcba`. Requires byte-identical retries, exactly four RPC POSTs, no legacy fallback, and ten independent family GETs. Initial PR-triggered commit-run lookup returned zero; **NOT CI VERIFIED**. In-memory synthetic transport only, not authentic private PG17 or proven downstream trigger side effects. E6 ACTIVE, B2/B3 BLOCKED, production NO-GO.
+
 ## 64-action board
 
 ### Pillar A — Root cause and latency
