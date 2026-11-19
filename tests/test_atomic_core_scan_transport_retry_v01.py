@@ -602,3 +602,32 @@ def test_p0_hourly_run_propagates_failed_canonical_write_without_auxiliary_jobs(
     assert len(invocations) == 1
     assert invocations[0][1]["env"]["ALPHA_HUNTER_RUN_SOURCE"] == "RENDER_CRON"
     assert not (tmp_path / ".alpha-hunter.lock").exists()
+
+
+def test_lost_ack_valid_retry_receipt_still_requires_independent_readback():
+    """E3/E8: a successful replay receipt cannot override failed persisted evidence.
+
+    Both acknowledgement loss and server commit are emulated; no private DB used.
+    """
+    from dataclasses import replace
+    from unittest.mock import Mock
+
+    session = CommittedButResponseLostSession(exception_factory=requests.ConnectionError)
+    config = replace(atomic_config(), verify_core_scan_readback=True)
+    storage = SupabaseStorage(config, session=session)
+    storage._verify_core_scan_readback = Mock(
+        side_effect=SupabaseStorageError("independent readback mismatch")
+    )
+    storage._upsert = Mock()
+    storage._insert_immutable = Mock()
+    storage._select_json = Mock()
+
+    with pytest.raises(SupabaseStorageError, match="independent readback mismatch"):
+        storage.save_snapshot(sample_snapshot())
+
+    assert len(session.calls) == 2
+    assert session.calls[0] == session.calls[1]
+    storage._verify_core_scan_readback.assert_called_once()
+    storage._upsert.assert_not_called()
+    storage._insert_immutable.assert_not_called()
+    storage._select_json.assert_not_called()
