@@ -79,3 +79,82 @@ def test_two_concurrent_atomic_writers_preserve_identical_run_and_payload():
     assert payload["p_parent"][0]["run_id"] == run_ids[0]
     assert all(row["trade_permission"] is False for row in payload["p_children"])
     assert all(row["trade_permission"] is False for row in payload["p_readiness"])
+
+
+def test_concurrent_atomic_receipts_with_missing_independent_readback_fail_closed():
+    """Two matching RPC receipts cannot override missing independently read rows."""
+    import pytest
+    from alpha_hunter.storage import SupabaseStorageError
+
+    barrier = Barrier(2, timeout=10)
+    lock = Lock()
+
+    class Response:
+        status_code = 200
+        text = ""
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class Session:
+        def __init__(self):
+            self.posts = []
+            self.gets = []
+
+        def post(self, url, **kwargs):
+            payload = json.loads(kwargs["data"])
+            with lock:
+                self.posts.append((url, kwargs["data"]))
+            barrier.wait()
+            return Response({
+                "committed": True,
+                "run_id": payload["p_parent"][0]["run_id"],
+                "parent_count": len(payload["p_parent"]),
+                "symbol_count": len(payload["p_children"]),
+                "signal_count": len(payload["p_signals"]),
+                "feature_count": len(payload["p_features"]),
+                "readiness_count": len(payload["p_readiness"]),
+            })
+
+        def get(self, url, **kwargs):
+            with lock:
+                self.gets.append(url)
+            return Response([])  # Missing parent even though RPC claims committed.
+
+    session = Session()
+    config = SupabaseConfig(
+        url="https://example.supabase.co",
+        key="SYNTHETIC_TEST_KEY_ONLY",
+        atomic_core_scan_writes=True,
+        verify_core_scan_readback=True,
+        max_retries=0,
+    )
+
+    def submit():
+        snapshot = {
+            "version": "isolated-concurrency-readback",
+            "collected_at_utc": "2026-11-19T08:00:00+00:00",
+            "product_type": "usdt-futures",
+            "symbols": [{
+                "symbol": "BTCUSDT",
+                "last_price": 65000.0,
+                "trade_permission": False,
+                "state": "WATCH",
+                "execution_setup": {"direction": None, "rr": None},
+            }],
+        }
+        with pytest.raises(SupabaseStorageError):
+            SupabaseStorage(config, session=session).save_snapshot(snapshot)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(submit) for _ in range(2)]
+        for future in futures:
+            future.result(timeout=15)
+
+    assert len(session.posts) == 2
+    assert session.posts[0] == session.posts[1]
+    assert len(session.gets) >= 2
+    assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.posts)
