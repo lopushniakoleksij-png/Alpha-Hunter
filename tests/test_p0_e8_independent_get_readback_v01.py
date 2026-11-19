@@ -17,15 +17,15 @@ spec.loader.exec_module(contract)
 FAMILIES = {
     "parent": ("alpha_hunter_snapshots", ("run_id",)),
     "symbols": ("alpha_hunter_symbol_snapshots", ("run_id", "symbol")),
-    "signals": ("alpha_hunter_signals", ("signal_id",)),
-    "features": ("alpha_hunter_signal_features", ("signal_id", "feature_name")),
+    "signals": ("alpha_hunter_signals", ("run_id", "signal_id", "symbol")),
+    "features": ("alpha_hunter_signal_features", ("run_id", "signal_id", "symbol")),
     "readiness": ("alpha_hunter_readiness_observations_v01", ("run_id", "symbol")),
 }
 EXPECTED = {
     "parent": [("r1",)],
     "symbols": [("r1", "BTCUSDT")],
-    "signals": [("s1",)],
-    "features": [("s1", "f1")],
+    "signals": [("r1", "s1", "BTCUSDT")],
+    "features": [("r1", "s1", "BTCUSDT")],
     "readiness": [("r1", "BTCUSDT")],
 }
 

@@ -12,6 +12,7 @@ import requests
 
 from .bitget import BitgetAPIError, BitgetClient
 from .feature_capture import compact_source_payload, extract_feature_rows
+from .core_child_identity import verify_core_child_identities
 from .paper_lifecycle import (
     DECISION_TABLE as PAPER_DECISION_TABLE,
     EVENT_TABLE as PAPER_EVENT_TABLE,
@@ -59,6 +60,7 @@ class SupabaseConfig:
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
     atomic_core_scan_writes: bool = False  # Explicit isolated QA opt-in only.
+    verify_core_scan_readback: bool = False  # Disabled unless isolated QA opts in.
 
     @classmethod
     def from_environment(cls, config: dict[str, Any]) -> "SupabaseConfig | None":
@@ -85,6 +87,7 @@ class SupabaseConfig:
                 float(storage.get("retry_backoff_seconds", 1.0)),
             ),
             atomic_core_scan_writes=storage.get("atomic_core_scan_writes") is True,
+            verify_core_scan_readback=storage.get("verify_core_scan_readback") is True,
         )
 
 
@@ -698,6 +701,55 @@ class SupabaseStorage:
                 "Supabase atomic core scan RPC confirmation did not match payload"
             )
 
+    def _verify_core_scan_readback(
+        self,
+        run_id: str,
+        parent: list[dict[str, Any]],
+        children: list[dict[str, Any]],
+        signals: list[dict[str, Any]],
+        features: list[dict[str, Any]],
+        readiness: list[dict[str, Any]],
+    ) -> None:
+        """QA-only exact identity check using independent GET, not POST receipts.
+
+        No additional writes or retries are performed after a mismatch.
+        """
+        families = {
+            "parent": (self.settings.snapshot_table, ("run_id",), parent),
+            "symbols": (self.settings.symbol_table, ("run_id", "symbol"), children),
+            "signals": (
+                "alpha_hunter_signals", ("run_id", "signal_id", "symbol"), signals
+            ),
+            "features": (
+                "alpha_hunter_signal_features", ("run_id", "signal_id", "symbol"), features
+            ),
+            "readiness": (
+                self.settings.readiness_table, ("run_id", "symbol"), readiness
+            ),
+        }
+        expected: dict[str, list[tuple]] = {}
+        observed: dict[str, list[tuple]] = {}
+        for family, (table, columns, rows) in families.items():
+            if len(rows) >= 2000:
+                raise SupabaseStorageError("Independent core scan readback limit exceeded")
+            expected[family] = [
+                tuple(row.get(column) for column in columns) for row in rows
+            ]
+            # Extra row limit ensures duplicates/unexpected rows are visible.
+            fetched = self._select_json(
+                table,
+                {
+                    "select": ",".join(columns),
+                    "run_id": f"eq.{run_id}",
+                    "limit": str(len(rows) + 1),
+                },
+            )
+            observed[family] = [
+                tuple(row.get(column) for column in columns) for row in fetched
+            ]
+        if not verify_core_child_identities(expected, observed):
+            raise SupabaseStorageError("Independent core scan readback mismatch")
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
@@ -831,6 +883,12 @@ class SupabaseStorage:
                 self.settings.readiness_table,
                 readiness_rows,
                 "run_id,symbol",
+            )
+        if self.settings.verify_core_scan_readback:
+            # Independent GET is a separate QA-only success gate.
+            self._verify_core_scan_readback(
+                run_id, parent, children, signal_rows,
+                canonical_feature_rows, readiness_rows,
             )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
         has_paper_authority = any(
