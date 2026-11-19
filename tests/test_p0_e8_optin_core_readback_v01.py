@@ -119,3 +119,16 @@ def test_explicit_config_optin_only(monkeypatch):
     assert SupabaseConfig.from_environment({"supabase": {
         "enabled": True, "verify_core_scan_readback": True
     }}).verify_core_scan_readback is True
+
+@pytest.mark.parametrize("failure", ["http_error", "malformed"])
+def test_readback_transport_failure_aborts_before_paper_side_effects(monkeypatch, failure):
+    """An unsuccessful independent GET must never allow downstream writes."""
+    session = Session(**{failure: "alpha_hunter_symbol_snapshots"})
+    downstream = Mock(side_effect=AssertionError("paper side effect after failed readback"))
+    monkeypatch.setattr(SupabaseStorage, "_insert_immutable", downstream)
+    monkeypatch.setattr(SupabaseStorage, "_reconcile_paper_stages", downstream)
+    with pytest.raises(SupabaseStorageError):
+        run(session)
+    assert session.posts == list(TABLES)
+    assert session.gets == list(TABLES[:2])
+    downstream.assert_not_called()
