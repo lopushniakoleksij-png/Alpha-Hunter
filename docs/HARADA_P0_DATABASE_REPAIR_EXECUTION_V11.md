@@ -43,6 +43,9 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 - **2026-11-19 E6 (ACTIVE, exact-head CI PENDING):** Strengthened two-writer concurrent atomic HTTP failure regression to require all five independent readback families per writer, exact run-id filters, bounded limits, and zero legacy fallback after missing persisted rows. Test-only commit `acafa0d466a497c7f1b49984f920754c1d4ff5a2`; commit-run lookup returned no workflows at first inspection, so **NOT CI-VERIFIED**. Isolated mock scope only; authentic private PG17 remains B2/B3 BLOCKED. Production NO-GO.
 
+
+- **2026-11-19 E6 (ACTIVE; CI PENDING):** Added isolated two-worker HTTP regression for distinct independent readback transport failures (HTTP 503 and malformed JSON) after matching atomic receipts. Test SHA `b5ca4b1c4853550c8a1f3556edccc6dcbb50bcb2`; first commit-run lookup returned zero workflows. **Not PASS until exact-head CI and logs are verified.** No private PG17 proof; B2/B3 BLOCKED, production NO-GO.
+
 ## 64-action board
 
 ### Pillar A — Root cause and latency
