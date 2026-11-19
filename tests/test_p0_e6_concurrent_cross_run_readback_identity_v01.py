@@ -22,7 +22,14 @@ class Response:
         return self.payload
 
 
-def test_concurrent_receipts_with_cross_run_readback_fail_closed(monkeypatch):
+@pytest.mark.parametrize("corrupted_table", [
+    "alpha_hunter_snapshots",
+    "alpha_hunter_symbol_snapshots",
+    "alpha_hunter_signals",
+    "alpha_hunter_signal_features",
+    "alpha_hunter_readiness_observations_v01",
+])
+def test_concurrent_receipts_with_cross_run_readback_fail_closed(monkeypatch, corrupted_table):
     barrier = Barrier(2, timeout=10)
     lock = Lock()
     downstream = Mock(side_effect=AssertionError("downstream paper write"))
@@ -70,8 +77,8 @@ def test_concurrent_receipts_with_cross_run_readback_fail_closed(monkeypatch):
                 {column: row.get(column) for column in columns}
                 for row in payload[families[table]]
             ]
-            if table == "alpha_hunter_readiness_observations_v01":
-                # Correct counts and receipts, but wrong persisted run identity.
+            if table == corrupted_table:
+                # Correct counts and receipts, but one family belongs to another run.
                 for row in rows:
                     row["run_id"] = "OTHER_SYNTHETIC_RUN"
             return Response(200, rows)
