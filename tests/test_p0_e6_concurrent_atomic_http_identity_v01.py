@@ -121,7 +121,7 @@ def test_concurrent_atomic_receipts_with_missing_independent_readback_fail_close
 
         def get(self, url, **kwargs):
             with lock:
-                self.gets.append(url)
+                self.gets.append((url, dict(kwargs.get("params", {}))))
             return Response([])  # Missing parent even though RPC claims committed.
 
     session = Session()
@@ -156,5 +156,18 @@ def test_concurrent_atomic_receipts_with_missing_independent_readback_fail_close
 
     assert len(session.posts) == 2
     assert session.posts[0] == session.posts[1]
-    assert len(session.gets) >= 2
+    assert len(session.gets) == 10  # Five independent family reads per writer.
+    expected_tables = {
+        "alpha_hunter_snapshots",
+        "alpha_hunter_symbol_snapshots",
+        "alpha_hunter_signals",
+        "alpha_hunter_signal_features",
+        "alpha_hunter_readiness_observations_v01",
+    }
+    for table in expected_tables:
+        assert sum(url.endswith("/rest/v1/" + table) for url, _ in session.gets) == 2
+    run_id = json.loads(session.posts[0][1])["p_parent"][0]["run_id"]
+    assert all(params["run_id"] == "eq." + run_id for _, params in session.gets)
+    assert all(params["limit"] in {"1", "2"} for _, params in session.gets)
     assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.posts)
+    assert len(session.posts) == 2  # No legacy fallback after failed readback.
