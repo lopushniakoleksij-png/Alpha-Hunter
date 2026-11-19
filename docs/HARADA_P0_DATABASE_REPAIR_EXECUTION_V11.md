@@ -192,3 +192,9 @@ Select one highest-priority **non-blocked** action, execute actual engineering, 
 
 
 **2026-11-19 04:48 UTC — E8 ACTIVE, CI PENDING:** Added two parametrized synthetic collector regressions for independent GET HTTP 503 and malformed JSON: failure must abort before any immutable paper writes or paper-stage reconciliation. Test change SHA `a870479e8477c3d55d80a4a935c0451e018a7ee1` (`tests/test_p0_e8_optin_core_readback_v01.py`). No PR-triggered workflows returned at initial check; **do not mark PASS** until exact-head CI and complete logs are inspected. B2/B3 remain BLOCKED (private production-equivalent PG17 trigger graph unavailable); E8 remains ACTIVE. Production NO-GO; no deployment, main, scanner, DB, schedules, trading or spend changes.
+
+
+### 2026-11-19 16:46 UTC — E6 concurrent cross-run readiness identity (ACTIVE; CI PENDING)
+- Isolated synthetic HTTP regression at engineering SHA `c24e0b17d6f68c92e25429eb48914fe06a156cef`: two concurrent identical atomic submissions each receive valid matching commit receipts; independent five-family GET returns equal-count readiness rows with a different run ID. Both workers must fail closed, with no legacy REST fallback or downstream paper writes.
+- This is **in-memory transport simulation**, not a genuine PG17 trigger graph, real concurrent transaction, or production-equivalent proof. New exact-head CI and complete logs must be verified before marking this additional subcase PASS. Earlier E6 synthetic PostgreSQL PASS evidence is unchanged; broader E6 remains ACTIVE.
+- B2/B3 remain BLOCKED (authorised private PG17 schema unavailable). Draft PR #445 unmerged; production NO-GO, paper-only, £0.
