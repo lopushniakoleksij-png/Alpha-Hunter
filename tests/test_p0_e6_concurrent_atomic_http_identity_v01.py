@@ -1,0 +1,81 @@
+"""Harada E6: concurrent identical atomic submissions remain identity-stable.
+
+Isolated in-memory HTTP mock only. Does not certify private PG17 trigger
+concurrency, advisory locking, or production persistence.
+"""
+import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
+
+from alpha_hunter.storage import SupabaseConfig, SupabaseStorage
+
+
+def test_two_concurrent_atomic_writers_preserve_identical_run_and_payload():
+    barrier = Barrier(2, timeout=10)
+    lock = Lock()
+
+    class Response:
+        status_code = 200
+        text = ""
+
+        def __init__(self, receipt):
+            self.receipt = receipt
+
+        def json(self):
+            return self.receipt
+
+    class RecordingSession:
+        def __init__(self):
+            self.requests = []
+
+        def post(self, url, **kwargs):
+            assert url.endswith("/rest/v1/rpc/alpha_hunter_commit_core_scan_v01")
+            payload = json.loads(kwargs["data"])
+            with lock:
+                self.requests.append((url, kwargs["data"]))
+            barrier.wait()
+            return Response({
+                "committed": True,
+                "run_id": payload["p_parent"][0]["run_id"],
+                "parent_count": len(payload["p_parent"]),
+                "symbol_count": len(payload["p_children"]),
+                "signal_count": len(payload["p_signals"]),
+                "feature_count": len(payload["p_features"]),
+                "readiness_count": len(payload["p_readiness"]),
+            })
+
+    session = RecordingSession()
+    config = SupabaseConfig(
+        url="https://example.supabase.co",
+        key="SYNTHETIC_TEST_KEY_ONLY",
+        atomic_core_scan_writes=True,
+        max_retries=0,
+    )
+    snapshot = {
+        "version": "isolated-concurrency-contract",
+        "collected_at_utc": "2026-11-19T08:00:00+00:00",
+        "product_type": "usdt-futures",
+        "symbols": [{
+            "symbol": "BTCUSDT",
+            "last_price": 65000.0,
+            "trade_permission": False,
+            "state": "WATCH",
+            "execution_setup": {"direction": None, "rr": None},
+        }],
+    }
+
+    def submit():
+        return SupabaseStorage(config, session=session).save_snapshot(snapshot)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(submit) for _ in range(2)]
+        run_ids = [f.result(timeout=15) for f in futures]
+
+    assert run_ids[0] == run_ids[1]
+    assert len(session.requests) == 2
+    assert session.requests[0] == session.requests[1]
+    assert all("/rpc/alpha_hunter_commit_core_scan_v01" in url for url, _ in session.requests)
+    payload = json.loads(session.requests[0][1])
+    assert payload["p_parent"][0]["run_id"] == run_ids[0]
+    assert all(row["trade_permission"] is False for row in payload["p_children"])
+    assert all(row["trade_permission"] is False for row in payload["p_readiness"])
