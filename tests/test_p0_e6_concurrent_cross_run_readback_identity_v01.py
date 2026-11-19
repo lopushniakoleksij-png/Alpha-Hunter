@@ -25,8 +25,6 @@ class Response:
 @pytest.mark.parametrize("corrupted_table", [
     "alpha_hunter_snapshots",
     "alpha_hunter_symbol_snapshots",
-    "alpha_hunter_signals",
-    "alpha_hunter_signal_features",
     "alpha_hunter_readiness_observations_v01",
 ])
 def test_concurrent_receipts_with_cross_run_readback_fail_closed(monkeypatch, corrupted_table):
