@@ -95,3 +95,79 @@ def test_two_concurrent_lost_ack_retries_fail_closed_on_missing_readback():
     assert all(params["run_id"] == "eq." + run_id for _, params in gets)
     # Exactly four RPC posts, no partial REST fallback or post-readback retry.
     assert sum(map(len, attempts.values())) == 4
+
+@pytest.mark.parametrize("failure", ["missing", "wrong_identity"])
+def test_concurrent_readback_failure_never_enters_paper_or_scientific_side_effects(monkeypatch, failure):
+    """A successful RPC receipt cannot authorize downstream writes without readback."""
+    import alpha_hunter.storage as storage_module
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("downstream paper/scientific path entered before readback acceptance")
+
+    for name in (
+        "build_initial_paper_lifecycle",
+        "build_initial_paper_execution",
+        "build_initial_protective_orders",
+    ):
+        monkeypatch.setattr(storage_module, name, forbidden)
+
+    barrier = Barrier(2, timeout=10)
+    lock = Lock()
+    posts = []
+    reads = []
+    class Response:
+        status_code = 200
+        text = ""
+        def __init__(self, body):
+            self.body = body
+        def json(self):
+            return self.body
+
+    class Session:
+        def post(self, url, **kwargs):
+            if "/rpc/alpha_hunter_commit_core_scan_v01" not in url:
+                raise AssertionError("unexpected downstream or fallback POST")
+            payload = json.loads(kwargs["data"])
+            with lock:
+                posts.append(payload)
+            barrier.wait()
+            return Response({
+                "committed": True, "run_id": payload["p_parent"][0]["run_id"],
+                "parent_count": len(payload["p_parent"]),
+                "symbol_count": len(payload["p_children"]),
+                "signal_count": len(payload["p_signals"]),
+                "feature_count": len(payload["p_features"]),
+                "readiness_count": len(payload["p_readiness"]),
+            })
+        def get(self, url, **kwargs):
+            with lock:
+                reads.append(url)
+            if failure == "wrong_identity" and "alpha_hunter_snapshots" in url:
+                return Response([{"run_id": "OTHER_RUN"}])
+            return Response([])
+
+    session = Session()
+    config = SupabaseConfig(
+        url="https://example.supabase.co", key="SYNTHETIC_TEST_ONLY",
+        atomic_core_scan_writes=True, verify_core_scan_readback=True,
+        max_retries=0, retry_backoff_seconds=0,
+    )
+    def worker():
+        snapshot = {
+            "version": "isolated-e6-downstream-gate",
+            "collected_at_utc": "2026-11-20T02:00:00+00:00",
+            "product_type": "usdt-futures",
+            "symbols": [{
+                "symbol": "BTCUSDT", "last_price": 65000.0,
+                "trade_permission": False, "state": "WATCH",
+                "execution_setup": {"direction": None, "rr": None},
+            }],
+        }
+        with pytest.raises(SupabaseStorageError, match="readback"):
+            SupabaseStorage(config, session=session).save_snapshot(snapshot)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for future in [pool.submit(worker) for _ in range(2)]:
+            future.result(timeout=15)
+    assert len(posts) == 2
+    assert posts[0] == posts[1]
+    assert len(reads) == 10
