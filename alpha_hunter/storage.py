@@ -12,7 +12,7 @@ import requests
 
 from .bitget import BitgetAPIError, BitgetClient
 from .feature_capture import compact_source_payload, extract_feature_rows
-from .core_child_identity import verify_core_child_identities
+from .core_child_identity import verify_core_child_identities, verify_core_child_content
 from .paper_lifecycle import (
     DECISION_TABLE as PAPER_DECISION_TABLE,
     EVENT_TABLE as PAPER_EVENT_TABLE,
@@ -61,6 +61,7 @@ class SupabaseConfig:
     retry_backoff_seconds: float = 1.0
     atomic_core_scan_writes: bool = False  # Explicit isolated QA opt-in only.
     verify_core_scan_readback: bool = False  # Disabled unless isolated QA opts in.
+    verify_core_scan_content_readback: bool = False  # Extra QA-only full-field GET gate.
 
     @classmethod
     def from_environment(cls, config: dict[str, Any]) -> "SupabaseConfig | None":
@@ -88,6 +89,7 @@ class SupabaseConfig:
             ),
             atomic_core_scan_writes=storage.get("atomic_core_scan_writes") is True,
             verify_core_scan_readback=storage.get("verify_core_scan_readback") is True,
+            verify_core_scan_content_readback=storage.get("verify_core_scan_content_readback") is True,
         )
 
 
@@ -729,6 +731,8 @@ class SupabaseStorage:
         }
         expected: dict[str, list[tuple]] = {}
         observed: dict[str, list[tuple]] = {}
+        expected_full: dict[str, list[dict[str, Any]]] = {}
+        observed_full: dict[str, list[dict[str, Any]]] = {}
         for family, (table, columns, rows) in families.items():
             if len(rows) >= 2000:
                 raise SupabaseStorageError("Independent core scan readback limit exceeded")
@@ -739,7 +743,7 @@ class SupabaseStorage:
             fetched = self._select_json(
                 table,
                 {
-                    "select": ",".join(columns),
+                    "select": "*" if self.settings.verify_core_scan_content_readback else ",".join(columns),
                     "run_id": f"eq.{run_id}",
                     "limit": str(len(rows) + 1),
                 },
@@ -747,10 +751,19 @@ class SupabaseStorage:
             observed[family] = [
                 tuple(row.get(column) for column in columns) for row in fetched
             ]
+            if self.settings.verify_core_scan_content_readback:
+                expected_full[family] = rows
+                observed_full[family] = fetched
         if not verify_core_child_identities(expected, observed):
             raise SupabaseStorageError("Independent core scan readback mismatch")
+        if self.settings.verify_core_scan_content_readback and not verify_core_child_content(
+            expected_full, observed_full
+        ):
+            raise SupabaseStorageError("Independent core scan content readback mismatch")
 
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
+        if self.settings.verify_core_scan_content_readback and not self.settings.verify_core_scan_readback:
+            raise SupabaseStorageError("Full-field QA readback requires identity readback")
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
         valid_symbols = [item for item in snapshot.get("symbols", []) if "error" not in item]
