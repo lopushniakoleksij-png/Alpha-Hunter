@@ -39,3 +39,21 @@ GitHub PR #445 head at this checkpoint: `dc066e84ffc89c79993322815b218d9ed932c53
 - **F**: independent named qualified DBA and security reviewers must each examine immutable evidence and provide explicit signed decisions; owner then separately approves controlled paper-only release and rollback. **Reviewers not yet requested; none approved**.
 
 **Do not use historical repair QA tests as evidence that production is fixed; preserve single canonical scanner, paper-only status, no new paid environment and real orders disabled.**
+
+
+## 5. Later 20 November read-only cron-run reconciliation
+
+Follow-up conducted with exact direct Read-only Supabase + Render provider event history (no account/session or machine access required).
+
+**Rolling Supabase sample at the second checkpoint** (mature parent runs older than five minutes):
+- Latest **50: 45 core-shape complete / 5 parent-only**, latest **12: 10 core-shape complete / 2 parent-only**. The changed 12-run ratio is caused by a later moving window, **not** a change in recorded historical failures.
+- Latest parent: **2026-11-20 20:43:25 UTC**; latest parent-only still **17:44:05 UTC**. Parent-to-child count checks cover 5 core families, not every downstream research and paper lifecycle side effect.
+- Render `Supabase: FAILED` filtered logs since **17:40 UTC** have one HTTP read-timeout log at **17:46:22 UTC**, no additional matching failure messages in the returned interval. Other error strings might not match the filter.
+
+**Authentic provider-level cron run results** (independent of parent JSON `validation_identity.run_source` claims and the `lastSuccessfulRunAt` summary): Render event history lists cron job runs scheduled at approximately **12:01, 13:01, 14:01, 15:01, 16:01 and 17:01 UTC** ending with `unsuccessful` and **nonzero exit code 2** (last ended **17:49:10 UTC**). Cron runs starting approximately **18:00, 19:01 and 20:01 UTC** each ended **successful** (last ended **20:44:53 UTC**). A new run started at **21:01 UTC** when queried; its end outcome was not yet available and is **not counted** as successful.
+
+This verifies real provider-level failed→successful execution transitions; not exact parent-to-cron-run ownership without immutable join identifiers. The 17:44 parent-only row and 17:46 timeout lie within the 17:01–17:49 failed run window, which is **temporal evidence**, not direct row attribution.
+
+**Cumulative database statement-cost diagnostics**, grouped by normalized query text referencing table names (query patterns may match multiple operation types and overlap; NOT per-run SQL timing): `pg_stat_statements` has **stats_reset 2026-09-30 22:01:58 UTC**. Symbol-table matching group: 1,133 normalized entries / 11,740 cumulative calls / ~36,951,671.5 ms aggregate execution / max individual statement 110,176.1 ms / 31,094,836 shared blocks read. Readiness group: 10 normalized entries / 3,177 calls / 122,711.1 ms aggregate / max 8,346.1 ms / 60,770 shared reads. Do **not** report these historical maxima as current 20-Nov latency or a proven timeout root cause.
+
+**Current immutable boundary** unchanged: PR #445 draft/unmerged, production candidate RPC and optional index absent, no authenticated private Codespace container inspection or full-parity PG17 clone, genuine 30/50/61 concurrency+fault benchmarks or independent DBA/security approvals. Continue P0 **NO-GO**. No production modifications/restart, merge, deployment, trading authority or spending.
