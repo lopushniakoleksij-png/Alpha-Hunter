@@ -1,0 +1,51 @@
+name: P0 EVAA Cross-Endpoint Candle Check (Read Only)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/p0-evaa-cross-endpoint-20261016.yml'
+permissions:
+  contents: read
+jobs:
+  corroborate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect EVAA first public target touch via v3 and v2 historical candles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,ssl,urllib.request,urllib.parse,hashlib
+          from datetime import datetime,timezone
+          entry="2026-10-02T16:07:20.140379Z"
+          first="2026-10-02T22:40:00Z"
+          stop=0.6923
+          target=0.7867
+          t=lambda x:int(datetime.fromisoformat(x.replace("Z","+00:00")).timestamp()*1000)
+          center=t(first);step=60000
+          start=center-10*step;end=center+10*step
+          endpoints=[
+            ("v3","/api/v3/market/history-candles",
+             dict(category="USDT-FUTURES",symbol="EVAAUSDT",interval="1m",type="market",startTime=start,endTime=end,limit=30)),
+            ("v2","/api/v2/mix/market/history-candles",
+             dict(productType="USDT-FUTURES",symbol="EVAAUSDT",granularity="1m",startTime=start,endTime=end,limit=30)),
+            ("v3_mark","/api/v3/market/history-candles",
+             dict(category="USDT-FUTURES",symbol="EVAAUSDT",interval="1m",type="mark",startTime=start,endTime=end,limit=30)),
+          ]
+          for label,path,params in endpoints:
+              try:
+                  url="https://api.bitget.com"+path+"?"+urllib.parse.urlencode(params)
+                  request=urllib.request.Request(url,headers={"User-Agent":"AH-legacy-cross-source-readonly/1.0"})
+                  with urllib.request.urlopen(request,timeout=17,context=ssl.create_default_context()) as r:
+                      raw=r.read(80000)
+                  d=json.loads(raw)
+                  data=d.get("data") or []
+                  relevant=[]
+                  for row in data:
+                      tm=int(row[0])
+                      if center-3*step<=tm<=center+3*step:
+                          op,hi,lo,cl=map(float,row[1:5])
+                          relevant.append(dict(t=datetime.fromtimestamp(tm/1000,timezone.utc).isoformat(),o=op,h=hi,l=lo,c=cl,target_high_touch=hi>=target,stop_low_touch=lo<=stop))
+                  print("CROSS_ENDPOINT",json.dumps(dict(label=label,code=d.get("code"),message=d.get("msg"),response_sha256=hashlib.sha256(raw).hexdigest(),total=len(data),near_event=relevant,source_authentication="TLS_ONLY_NOT_INDEPENDENTLY_ATTESTED",trade_permission=False,execution_price_verified=False)),flush=True)
+              except Exception as ex:
+                  print("CROSS_ENDPOINT_ERROR",label,type(ex).__name__,str(ex)[:160],flush=True)
+          PY
