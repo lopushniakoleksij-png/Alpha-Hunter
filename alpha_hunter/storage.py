@@ -12,6 +12,7 @@ import requests
 
 from .bitget import BitgetAPIError, BitgetClient
 from .feature_capture import compact_source_payload, extract_feature_rows
+from .core_child_identity import verify_core_child_identities, verify_core_child_content
 from .paper_lifecycle import (
     DECISION_TABLE as PAPER_DECISION_TABLE,
     EVENT_TABLE as PAPER_EVENT_TABLE,
@@ -58,6 +59,9 @@ class SupabaseConfig:
     timeout_seconds: int = 15
     max_retries: int = 2
     retry_backoff_seconds: float = 1.0
+    atomic_core_scan_writes: bool = False  # Explicit isolated QA opt-in only.
+    verify_core_scan_readback: bool = False  # Disabled unless isolated QA opts in.
+    verify_core_scan_content_readback: bool = False  # Extra QA-only full-field GET gate.
 
     @classmethod
     def from_environment(cls, config: dict[str, Any]) -> "SupabaseConfig | None":
@@ -83,6 +87,9 @@ class SupabaseConfig:
                 0.0,
                 float(storage.get("retry_backoff_seconds", 1.0)),
             ),
+            atomic_core_scan_writes=storage.get("atomic_core_scan_writes") is True,
+            verify_core_scan_readback=storage.get("verify_core_scan_readback") is True,
+            verify_core_scan_content_readback=storage.get("verify_core_scan_content_readback") is True,
         )
 
 
@@ -631,7 +638,132 @@ class SupabaseStorage:
                 f"stage attempts: {summary}"
             )
 
+    def _commit_core_scan_atomic(
+        self,
+        parent: list[dict[str, Any]],
+        children: list[dict[str, Any]],
+        signal_rows: list[dict[str, Any]],
+        feature_rows: list[dict[str, Any]],
+        readiness_rows: list[dict[str, Any]],
+    ) -> None:
+        """Opt-in atomic core-evidence RPC; no fallback to partial REST writes.
+
+        The companion SQL function MUST be independently validated and installed
+        in a private isolated database before this flag can be enabled.
+        This commit never enables the flag for the production scanner.
+        """
+        tables = {
+            "parent_count": len(parent),
+            "symbol_count": len(children),
+            "signal_count": len(signal_rows),
+            "feature_count": len(feature_rows),
+            "readiness_count": len(readiness_rows),
+        }
+        if len(parent) != 1 or not parent[0].get("run_id"):
+            raise SupabaseStorageError("Atomic core scan requires one identified parent")
+        payload = {
+            "p_parent": parent,
+            "p_children": children,
+            "p_signals": signal_rows,
+            "p_features": feature_rows,
+            "p_readiness": readiness_rows,
+        }
+        # The atomic RPC must return an explicit JSON receipt. Standard
+        # table-upsert headers contain return=minimal and suppress the body.
+        rpc_headers = dict(self.headers)
+        rpc_headers["Prefer"] = "return=representation"
+        response = self.request_with_retry(
+            "post",
+            f"{self.settings.url}/rest/v1/rpc/alpha_hunter_commit_core_scan_v01",
+            headers=rpc_headers,
+            data=json.dumps(payload, separators=(",", ":")),
+            timeout=self.settings.timeout_seconds,
+        )
+        if response.status_code not in {200, 201}:
+            raise SupabaseStorageError(
+                "Supabase atomic core scan RPC failed: "
+                f"HTTP {response.status_code}: {response.text[:500]}"
+            )
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise SupabaseStorageError(
+                "Supabase atomic core scan RPC returned invalid JSON"
+            ) from exc
+        if (
+            not isinstance(result, dict)
+            or result.get("committed") is not True
+            or result.get("run_id") != parent[0]["run_id"]
+            or any(
+                type(result.get(name)) is not int or result[name] != count
+                for name, count in tables.items()
+            )
+        ):
+            raise SupabaseStorageError(
+                "Supabase atomic core scan RPC confirmation did not match payload"
+            )
+
+    def _verify_core_scan_readback(
+        self,
+        run_id: str,
+        parent: list[dict[str, Any]],
+        children: list[dict[str, Any]],
+        signals: list[dict[str, Any]],
+        features: list[dict[str, Any]],
+        readiness: list[dict[str, Any]],
+    ) -> None:
+        """QA-only exact identity check using independent GET, not POST receipts.
+
+        No additional writes or retries are performed after a mismatch.
+        """
+        families = {
+            "parent": (self.settings.snapshot_table, ("run_id",), parent),
+            "symbols": (self.settings.symbol_table, ("run_id", "symbol"), children),
+            "signals": (
+                "alpha_hunter_signals", ("run_id", "signal_id", "symbol"), signals
+            ),
+            "features": (
+                "alpha_hunter_signal_features", ("run_id", "signal_id", "symbol"), features
+            ),
+            "readiness": (
+                self.settings.readiness_table, ("run_id", "symbol"), readiness
+            ),
+        }
+        expected: dict[str, list[tuple]] = {}
+        observed: dict[str, list[tuple]] = {}
+        expected_full: dict[str, list[dict[str, Any]]] = {}
+        observed_full: dict[str, list[dict[str, Any]]] = {}
+        for family, (table, columns, rows) in families.items():
+            if len(rows) >= 2000:
+                raise SupabaseStorageError("Independent core scan readback limit exceeded")
+            expected[family] = [
+                tuple(row.get(column) for column in columns) for row in rows
+            ]
+            # Extra row limit ensures duplicates/unexpected rows are visible.
+            fetched = self._select_json(
+                table,
+                {
+                    "select": "*" if self.settings.verify_core_scan_content_readback else ",".join(columns),
+                    "run_id": f"eq.{run_id}",
+                    "limit": str(len(rows) + 1),
+                },
+            )
+            observed[family] = [
+                tuple(row.get(column) for column in columns) for row in fetched
+            ]
+            if self.settings.verify_core_scan_content_readback:
+                expected_full[family] = rows
+                observed_full[family] = fetched
+        if not verify_core_child_identities(expected, observed):
+            raise SupabaseStorageError("Independent core scan readback mismatch")
+        if self.settings.verify_core_scan_content_readback and not verify_core_child_content(
+            expected_full, observed_full
+        ):
+            raise SupabaseStorageError("Independent core scan content readback mismatch")
+
     def save_snapshot(self, snapshot: dict[str, Any]) -> str:
+        if self.settings.verify_core_scan_content_readback and not self.settings.verify_core_scan_readback:
+            raise SupabaseStorageError("Full-field QA readback requires identity readback")
         run_id = snapshot.get("run_id") or build_run_id(snapshot)
         snapshot["run_id"] = run_id
         valid_symbols = [item for item in snapshot.get("symbols", []) if "error" not in item]
@@ -744,19 +876,33 @@ class SupabaseStorage:
             canonical["signal_id"] = signal_id
             canonical_feature_rows.append(canonical)
 
-        self._upsert(self.settings.snapshot_table, parent, "run_id")
-        self._upsert(self.settings.symbol_table, children, "run_id,symbol")
-        self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
-        self._upsert(
-            "alpha_hunter_signal_features",
-            canonical_feature_rows,
-            "signal_id",
-        )
-        self._upsert(
-            self.settings.readiness_table,
-            readiness_rows,
-            "run_id,symbol",
-        )
+        if self.settings.atomic_core_scan_writes:
+            # All five core evidence families are committed in one SQL transaction.
+            # No legacy fallback: a failed RPC must never produce partial writes.
+            self._commit_core_scan_atomic(
+                parent, children, signal_rows, canonical_feature_rows,
+                readiness_rows,
+            )
+        else:
+            self._upsert(self.settings.snapshot_table, parent, "run_id")
+            self._upsert(self.settings.symbol_table, children, "run_id,symbol")
+            self._upsert("alpha_hunter_signals", signal_rows, "signal_id")
+            self._upsert(
+                "alpha_hunter_signal_features",
+                canonical_feature_rows,
+                "signal_id",
+            )
+            self._upsert(
+                self.settings.readiness_table,
+                readiness_rows,
+                "run_id,symbol",
+            )
+        if self.settings.verify_core_scan_readback:
+            # Independent GET is a separate QA-only success gate.
+            self._verify_core_scan_readback(
+                run_id, parent, children, signal_rows,
+                canonical_feature_rows, readiness_rows,
+            )
         paper_decisions, paper_events = build_initial_paper_lifecycle(snapshot)
         has_paper_authority = any(
             decision.get("paper_authority") is True

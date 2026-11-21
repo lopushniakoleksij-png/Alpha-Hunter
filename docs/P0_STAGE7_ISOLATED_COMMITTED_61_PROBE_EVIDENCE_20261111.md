@@ -1,0 +1,110 @@
+# Alpha Hunter P0 — Stage 7 isolated committed 61-symbol probe (2026-11-11)
+
+**Status: STAGE 7 SINGLE-COMMIT/RETRY PASS — PRODUCTION NO-GO.**
+**Evidence provenance:** Owner-supplied Codespaces terminal screenshot, 2026-11-11 13:12 London / UTC. This report transcribes the visible sanitized console results. It does not represent independent DBA attestation or access to the private test environment from GitHub.
+
+## Test subject and isolation
+
+- Draft PR #445 on `fix/supabase-write-timeout-qa`; the candidate write path is not enabled in production.
+- Stage 7 controller: `ops/local/qa_stage7_cron_quiescence_controller_v01.py`.
+- Commit/retry probe: `ops/local/qa_stage7_physical_template_61_v01.py`.
+- Existing network-isolated PostgreSQL 17 private Codespaces QA container and private reference clone.
+- Physical PostgreSQL TEMPLATE clone preserved `pg_cron`, the `cron.job`-dependent Alpha Hunter application view, application trigger graph and permissions in the disposable clone.
+- The QA cron launcher was temporarily redirected from the reference database and its original configuration restored after the probe. No production connection or reference-database writes were reported.
+- The disposable database was removed after the test.
+
+## Observed terminal evidence
+
+| Console result | Observed value |
+| --- | --- |
+| `QA_ONLY_GUARDS` | PASS |
+| `QA_GUARD_DIAGNOSTIC` | PASS |
+| `QA_CRON_LAUNCHER_REDIRECTED` | PASS |
+| `STAGE7_PHYSICAL_CLONE_COMMIT` | PASS |
+| `COMMITTED_CORE_COUNTS` | 1 parent, 61 symbols, 7 signals, 7 features, 61 readiness |
+| `RETRY_NO_DUPLICATES` | PASS |
+| `PRIVATE_SNAPSHOT_SIDE_EFFECT` | PASS |
+| `CRON_DEPENDENT_VIEW_PRESERVED_BY_TEMPLATE` | PASS |
+| `SIDE_EFFECT_COUNT_PRIVATE_ALPHA_HUNTER_SNAPSHOT_SLIM_V01` | 1 |
+| `SIDE_EFFECT_COUNT_PUBLIC_ALPHA_HUNTER_ACCOUNT_LEDGER_MATERIALIZATION_EVENTS` | 1 |
+| `SIDE_EFFECT_COUNT_PUBLIC_ALPHA_HUNTER_ACCOUNT_STATE_SNAPSHOTS` | 2 |
+| `FIRST_TRANSACTION_CLIENT_WALL_MS` | 117.852 |
+| `RETRY_TRANSACTION_CLIENT_WALL_MS` | 94.088 |
+| `PRODUCTION_CONNECTIONS` | NONE |
+| `REFERENCE_DATABASE_WRITES` | NONE |
+| `DISPOSABLE_DB_REMOVED` | PASS |
+| `QA_PROBE_STATUS` | PASS |
+| `QA_ORIGINAL_CRON_CONFIG_RESTORED` | PASS |
+| `QA_CRON_CONTROLLER` | PASS |
+| `PRODUCTION_RELEASE` | NO_GO |
+
+**Interpretation:** one synthetic, durable five-family commit and an idempotent post-commit retry succeeded in a disposable copy of the private QA reference. These two wall-clock durations are *individual observations*, not p50/p95/p99 statistics. The downstream side-effect totals are the probe's recorded counts, not independent complete lifecycle lineage certification.
+
+## Stage 7 rollback-only latency sample — 2026-11-11 13:35 UTC
+
+**Evidence provenance:** Owner-supplied private Codespaces terminal screenshot; console output transcribed below. This is a **separate rollback-only probe**, not a durable transaction benchmark.
+
+| Metric | Observed |
+| --- | ---: |
+| Mode | ISOLATED_QA_ROLLBACK_ONLY_NOT_CERTIFIED |
+| Warmups | 3 |
+| Measured samples | 30 |
+| 61-symbol RPC p50 execution | 22.535 ms |
+| 61-symbol RPC p95 execution | 44.233 ms |
+| 61-symbol RPC p99 execution | 47.501 ms |
+| Maximum | 47.501 ms |
+| Mean | 25.617 ms |
+| WAL bytes mean per EXPLAIN | 77,916 |
+| WAL bytes maximum | 78,882 |
+| WAL records mean | 813 |
+| In-transaction five-family records | 1 / 61 / 7 / 7 / 61 |
+| Core evidence after rollback | 0 / 0 / 0 / 0 / 0 |
+| Production connections | NONE |
+
+The script returned `STAGE7_PROBE=PASS`. With only 30 samples, p99 is the sample maximum by nearest-rank calculation and must **not** be represented as a robust p99 service-level estimate. EXPLAIN execution timing excludes HTTP, network, durable commit and fsync overhead. The WAL metrics are from EXPLAIN's per-query accounting and do **not** measure durable on-disk bytes or entire production workflow throughput.
+
+**Acceptance boundary:** This verifies a preliminary repeated isolated *rollback* RPC measurement, in-transaction five-family completeness and rollback cleanup. It does not verify concurrent load, failure injection, exact production schema drift, all downstream side-effect lineage, durable latency distributions, or independent DBA/security approval.
+
+## Stage 8 durable-commit distribution — 2026-11-11 13:56 UTC
+
+**Evidence provenance:** Owner-supplied private Codespaces terminal screenshot. This table transcribes the controller's sanitized output for the `--durable30` QA run; it does not constitute an independent review.
+
+| Metric | Observed |
+| --- | ---: |
+| `DURABLE_TRIAL_STATUS` | PASS |
+| Durable committed trials | 30 / 30 |
+| Fresh disposable PostgreSQL TEMPLATE clones | 30 |
+| Committed five-family counts in each trial | 1 / 61 / 7 / 7 / 61 |
+| Retry deduplication | PASS |
+| Side-effect count stability across trials | PASS |
+| Durable commit p50 | 92.574 ms |
+| Durable commit p95 | 120.610 ms |
+| Durable commit p99 / maximum | 121.843 ms |
+| Durable commit mean | 97.231 ms |
+| Post-commit retry p50 | 81.156 ms |
+| Post-commit retry p95 | 97.308 ms |
+| Post-commit retry p99 / maximum | 107.367 ms |
+| Post-commit retry mean | 83.831 ms |
+| All disposable databases removed | PASS |
+| Production connections | NONE |
+| Reference database writes | NONE |
+| QA original cron configuration restored | PASS |
+| `QA_CRON_CONTROLLER` | PASS |
+| `PRODUCTION_RELEASE` | NO_GO |
+
+**Engineering interpretation:** The test provides a 30-trial distribution of local client/psql wall-clock durable COMMIT+receipt operations and idempotent retries against the same synthetic 61-symbol fixture on *separate*, freshly cloned private QA databases, with preserved authentic trigger graph. The p99 is the observed sample maximum (nearest rank), not a reliable production p99 estimate.
+
+**Limits:** tests were sequential (no concurrent calls), repeated the same synthetic input, and did not represent a production HTTP/Render network deadline or a mix of real workloads. The probe's covered side-effect families are not proof of complete lifecycle lineage. It did not inject timeouts/errors at each transaction boundary or independently certify trigger/function equivalence, locks, WAL-under-concurrency, or production-safe rollout.
+
+**Follow-on acceptance priority:** bounded concurrent same-run and different-run RPC attempts in *fresh disposable QA clones*, followed by injected-error atomicity/rollback tests and complete downstream record-lineage inspection. Protect main branch, disabled trading, production NO-GO and £0.
+
+## Still open — mandatory acceptance gates
+
+1. Validate and independently attest the private QA reference's full production-equivalent schema, indexes, grants, nested trigger fingerprints and function definitions against the authorised production baseline.
+2. Benchmark realistic serial and concurrent **durable committed** workloads across 30/50/61 and peak symbol sizes, measuring p50/p95/p99, locks, WAL, latency tails and configured HTTP/statement timeouts; test rollback and zero-orphan failure injection.
+3. Recheck *full* downstream evidence (including strategy, quote/freeze, payoff, paper-order and outcome queue) for correct per-run lineage and zero duplicate side effects.
+4. Authenticate/retire the obsolete scan publisher independently from the current writer repair; verify canonical scan source custody and readiness.
+5. Obtain separate signed DBA and qualified security approvals for an immutable exact release commit, plus a documented £0 rollout/rollback gate.
+6. Only after approval, plan an explicitly authorised controlled paper-only production trial; do not merge, migrate, deploy or enable real orders before that gate.
+
+**Safety boundary:** Do not publish private SQL, production secrets, customer records or database backups in this public repository. No merge, deployment, scanner modification or trading authorization is implied by this report.
