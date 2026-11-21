@@ -9,6 +9,7 @@ on:
       - 'ops/sql/qa_atomic_core_scan_ephemeral_assertions_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql'
+      - 'ops/sql/qa_p0_two_failure_shapes_30_50_61_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_real_timeout_setup_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_real_timeout_verify_v01.sql'
       - 'ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh'
@@ -152,6 +153,12 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_fifty_symbols_v01.sql
       - name: Verify 61-symbol 57014 atomic rollback and 30-symbol source-aware replay
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_30_61_timeout_v01.sql
+      - name: Reproduce both P0 legacy failure shapes and atomic rollback at 30 50 61 in disposable PG17
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "fix/supabase-write-timeout-qa"
+          psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_p0_two_failure_shapes_30_50_61_v01.sql
+
       - name: Verify real PostgreSQL statement_timeout rollback and idempotent retry
         run: bash ops/local/qa_atomic_core_scan_real_statement_timeout_v01.sh
       - name: E3 simulate committed response lost then idempotent retry in separate sessions
