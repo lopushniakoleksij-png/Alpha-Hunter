@@ -40,3 +40,25 @@ PR #445 at inspection: draft, unmerged, head `b3a0cb470a4a2c444cae39f13e1b7e0821
 - No action in this investigation modified production, restarted the scanner, replaced a Codespace, installed RPC/index, merged code, enabled trading or incurred spending.
 
 **Decision: P0 ACTIVE; PRODUCTION NO-GO.**
+
+
+## 5. Additional confirmed production failures — 22 November, 10:24–12:06 UTC
+
+**Inspection performed about 14:37 UTC; production SQL SELECT-only; matched independent Render logs to exact Supabase run IDs.** On the original Render cron resource `crn-d9nmbjbm8hqs73elu6hg`, four subsequent persisted parent scans failed core child writes:
+
+| Parent collected UTC | Run ID | Declared symbols | Exact Render failure log UTC and signature | Symbol / signal / feature / readiness |
+| --- | --- | ---: | --- | --- |
+| 10:23:15 | `2f4a6e2873180a4b3397c00516aef00d` | 60 | 10:24:34 — HTTPS client read timeout, 15 seconds, after three POST attempts | 0 / 0 / 0 / 0 |
+| 10:43:08 | `6873386ab523442e48be793726b4cd51` | 60 | 10:44:04 — HTTPS client read timeout, 15 seconds, after three POST attempts | 0 / 0 / 0 / 0 |
+| 11:43:09 | `9b97f328355a5a2633a5b984f05fe538` | 60 | 11:44:06 — `alpha_hunter_symbol_snapshots` HTTP 500, PostgreSQL SQLSTATE `57014` statement timeout | 0 / 0 / 0 / 0 |
+| 12:05:10 | `d3f92af382b12646d5cce2b0002d4d23` | 60 | 12:06:19 — HTTPS client read timeout, 15 seconds, after three POST attempts | 0 / 0 / 0 / 0 |
+
+Every listed parent reports `error_count=0`. Each Render log has an adjacent `Run ID:` matching the Supabase primary key exactly; this establishes original publisher identity for these four runs rather than relying on `validation_identity` self-claims. Authenticated Render provider events nevertheless mark the 10:00, 11:00 and 12:00 hourly cron invocations `successful` (ended at 10:44:36, 11:44:38 and 12:44:31 UTC). This independently reconfirms the **deployed false-success defect**, now including a **server SQL statement timeout** signature. It does not prove which nested trigger caused the database delay.
+
+The latest 50 mature parent scans (at least five minutes old at observation, latest collected **14:22:47 UTC**) comprise **45** with exact four-family counts and **5 parent-only**, containing **301 declared symbol slots** without core children; all 50 hold complete symbol arrays in parent JSON. The fifth parent-only scan is the earlier 01:43 run already cited in section 2. This is a limited count check, not a complete downstream or scientific record audit.
+
+**Seven-day contextual audit**, fixed UTC window 15 Nov 06:45 to 22 Nov 06:45: **476** parent scans, **195** with no child rows (all with `error_count=0`); all 476 parent JSON symbol-array lengths equal their declared `symbol_count`. Those 195 parent-only scans retain **10,956** embedded symbol observations, whose raw readiness/trade-permission flags are all false; they must not be mistaken for successfully persisted child readiness records. Across all 27,210 parent-embedded symbol observations, 376 distinct coins had watch/emerging states and zero were marked `v7_trade_ready=true`. The earlier child-only cohort of 369 therefore omitted seven symbols from those states. No bulk backfill or mutation was attempted.
+
+**Exact candidate and acceptance:** PR #445 already contains unmerged collector fail-closed exit, Render burst status propagation regressions, and a candidate atomic five-family RPC. Do not duplicate/activate these changes in production. On the **existing authorised private** full-parity PG17 clone, reproduce 60/61-symbol server statement timeout and 15-second client timeout with injected failure, lost acknowledgement, concurrent same/different run retries, zero parent-only committed states, strict nonzero failure status, stable downstream side-effect cardinality, and durable 30/50/61 p95/p99/WAL/locks. Independently witness schema/role/trigger parity, obtain named DBA and security signoff at the exact SHA, then seek owner rollout approval. **Private Codespace access is still not exposed by the current connected GitHub tools; Supabase development branches are empty.**
+
+**Safety:** This append records SELECT/log evidence only. Branch remains DRAFT/UNMERGED, production RPC/index absent, no protected scanner/service/DB writes, deployment, permissions, real orders, extra resources or spending. **P0 ACTIVE, release NO-GO.**
