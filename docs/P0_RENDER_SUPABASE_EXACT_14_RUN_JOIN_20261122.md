@@ -38,3 +38,14 @@ The provider cron execution events **07:00 through 13:00 UTC** all ended `status
 - The proposed 5-family atomic function in draft PR #445 is **not deployed** to production; synthetic CI passing is insufficient for authentic production trigger/role/extension parity.
 - Preserve failed historical run IDs without rewriting or backfilling them. Their absence of children is forensic evidence, not grounds for fabricating performance results.
 - **Authentic release gate blocked** on original authorised private Codespace, protected PostgreSQL 17 schema archive, read-only exit-255 and backup checks, production-equivalent restored trigger/function/extension/RLS/role parity, genuine durable 30/50/61 concurrent throughput and 57014/read-timeout/lost-ACK/rollback full-downstream WAL/locks p95/p99, and two independent qualified DBA + security approvals. Only after these gates, seek separately authorised paper-only controlled rollout.
+
+
+## Historical database statement-cost context (not a timed acceptance benchmark)
+
+A separate **SELECT-only** query of production `pg_stat_statements` identified the major recorded PostgREST `WITH pgrst_source AS (INSERT INTO "public"."alpha_hunter_symbol_snapshots" ...)` writer statement shape, keyed by signed `queryid=4526552390191351748`. Its cumulative PostgreSQL statement statistics at this checkpoint were:
+
+- **3,622 recorded calls**, **17,784,799.7 ms cumulative** execution, **4,910.2 ms mean**, **11,881.2 ms maximum**, **3,345.5 ms standard deviation**; **11,417,543 shared blocks read**.
+- Database `pg_stat_statements_info.stats_reset` was last observed as **2026-09-30 22:01:58 UTC**. These are multiweek cumulative figures, **not** the 14-run incident cohort's durations and **not** authentic p95/p99 benchmark data. Statistics may exclude aborted statements and provide no direct request-to-run link; do not conclude that 11.9 seconds is the real server timeout or that this statement independently caused four failures.
+- Several other high-duration `pg_stat_statements` rows referencing `alpha_hunter_symbol_snapshots` are **read-only investigation queries**, not legacy INSERTs. For example, normalized `WITH p AS (SELECT ...)` audit query `queryid=-2661116395139773157` recorded 47 calls averaging ~52.3 seconds. These audit-query timings **must not** be mixed into scanner write-latency estimates. Distinguish individual normalized SQL shapes, not merely text references to the same table.
+
+**Hypothesis, not proven root cause:** the historical PostgREST symbol upsert is relatively costly and might interact with client 15-second read timeout, nested trigger latency or PostgreSQL's separate statement-timeout setting. Resolving causality still requires the original authorised private PG17 schema/trigger graph, realistic isolated workload and timed statement+HTTP instrumentation without altering production.
