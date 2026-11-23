@@ -64,7 +64,11 @@ def inspect():
 
 
 def marker(source):
-    raw = capture(["docker", "cp", NAME + ":" + source, "-"], timeout=30)
+    try:
+        raw = capture(["docker", "cp", NAME + ":" + source, "-"], timeout=30)
+    except Blocked:
+        # A candidate file may legitimately be absent; examine the next path.
+        return False
     try:
         with tarfile.open(fileobj=io.BytesIO(raw), mode="r:*") as archive:
             return any(m.isfile() and m.size > 0 for m in archive)
@@ -170,7 +174,7 @@ def main():
     print("QA_BACKUP_MODE=STOPPED_CONTAINER_PRIVATE_FILESYSTEM_COPY")
     print("QA_PRODUCTION_CONNECTION=NONE")
     print("QA_RESTART_AUTHORIZATION=NOT_GRANTED")
-    print("QA_BACKUP_VERIFIED=NO")
+    print("QA_BACKUP_VERIFIED=PENDING")
     destination = None
     try:
         before, source = preflight()
@@ -216,6 +220,7 @@ def main():
         print("QA_BACKUP_SHA256=" + digest)
         print("QA_BACKUP_PRIVATE_PERMISSIONS=700_DIRECTORY_600_FILES")
         print("QA_BACKUP_TAR_VALIDATION=PASS")
+        print("QA_ARCHIVE_INTEGRITY=TAR_READABLE_SHA256_RECORDED")
         if links:
             print("QA_POSSIBLE_EXTERNAL_TABLESPACES=REVIEW_REQUIRED")
             print("QA_BACKUP_CUSTODY=PARTIAL_PENDING_LINK_REVIEW")
