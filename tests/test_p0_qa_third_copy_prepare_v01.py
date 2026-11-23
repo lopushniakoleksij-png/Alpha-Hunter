@@ -36,6 +36,7 @@ def test_third_copy_preserves_all_bytes_with_independent_checksums(tmp_path):
     pg = pg_tree(tmp_path / "source")
     inventory, directories, total = file_inventory(pg)
     third = tmp_path / "third" / "pgdata"
+    third.parent.mkdir(mode=0o700)
     result = copy_verified(pg, third, inventory, directories)
     assert result == len(inventory)
     assert (third / "PG_VERSION").read_bytes() == b"17\n"
@@ -98,8 +99,10 @@ def test_source_changes_during_copy_refused(tmp_path, monkeypatch):
         result = orig(q)
         return ({**result[0], Path("PG_VERSION"): (99, "tampered")}, result[1], result[2])
     monkeypatch.setitem(ns["copy_verified"].__globals__, "file_inventory", changed)
+    third = tmp_path / "third" / "pgdata"
+    third.parent.mkdir(mode=0o700)
     with pytest.raises(Blocked, match="changed"):
-        copy_verified(pg, tmp_path / "third" / "pgdata", inventory, directories)
+        copy_verified(pg, third, inventory, directories)
 
 
 def test_not_running_in_codespace_is_refused_before_docker(monkeypatch):
