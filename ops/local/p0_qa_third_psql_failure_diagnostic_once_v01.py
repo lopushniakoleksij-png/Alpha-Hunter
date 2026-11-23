@@ -187,14 +187,16 @@ def classify_client_error(stderr, rc):
     if rc == 0:
         return "NONE"
     text = stderr.lower()
+    # Specific PostgreSQL FATAL/ERROR must win over psql's generic
+    # "connection to server on socket ... failed" wrapper.
     rules = (
-        (r"could not connect to server|connection refused|no such file or directory|socket.*failed", "SOCKET_OR_SERVER_CONNECTION"),
-        (r"database .*does not exist", "DATABASE_NOT_FOUND"),
-        (r"role .*does not exist", "ROLE_NOT_FOUND"),
+        (r"database [^\n]*does not exist", "DATABASE_NOT_FOUND"),
+        (r"role [^\n]*does not exist", "ROLE_NOT_FOUND"),
         (r"no pg_hba.conf entry|authentication failed|password authentication", "AUTHENTICATION"),
         (r"permission denied", "PERMISSION"),
         (r"read.only transaction|cannot execute .*in a read.only", "READ_ONLY_SQL_VIOLATION"),
-        (r"syntax error|relation .*does not exist|function .*does not exist|column .*does not exist", "SQL_SYNTAX_OR_CATALOG"),
+        (r"syntax error|relation [^\n]*does not exist|function [^\n]*does not exist|column [^\n]*does not exist", "SQL_SYNTAX_OR_CATALOG"),
+        (r"could not connect to server|connection refused|no such file or directory|socket[^\n]*failed", "SOCKET_OR_SERVER_CONNECTION"),
         (r"unrecognized option|invalid option|psql: error", "CLIENT_CONFIGURATION_OR_OTHER"),
     )
     for pattern, category in rules:
