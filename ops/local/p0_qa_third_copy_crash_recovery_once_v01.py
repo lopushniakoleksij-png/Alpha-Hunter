@@ -69,7 +69,7 @@ class Blocked(Exception):
 def cmd(args, timeout=35, allow_failure=False):
     try:
         r = subprocess.run(args, stdout=subprocess.PIPE,
-                           stderr=subprocess.DEVNULL, text=True, timeout=timeout)
+                           stderr=subprocess.PIPE, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError):
         raise Blocked("isolated local operation failed") from None
     if r.returncode and not allow_failure:
@@ -214,28 +214,31 @@ def runtime_policy(pg):
     obj = json.loads(cmd(["docker", "container", "inspect", CONTAINER]).stdout)[0]
     hc = obj["HostConfig"]
     mounts = obj["Mounts"]
+    bind_mounts = [m for m in mounts if m.get("Type") == "bind"]
+    unexpected_mounts = [m for m in mounts if m.get("Type") not in ("bind", "tmpfs")]
     if (hc.get("NetworkMode") != "none"
         or not hc.get("ReadonlyRootfs")
-        or "ALL" not in hc.get("CapDrop", [])
-        or "no-new-privileges" not in hc.get("SecurityOpt", [])
+        or "ALL" not in [str(x).upper() for x in (hc.get("CapDrop") or [])]
+        or not any(str(x).startswith("no-new-privileges")
+                   for x in (hc.get("SecurityOpt") or []))
         or hc.get("PortBindings")
-        or len(mounts) != 1
-        or mounts[0].get("Type") != "bind"
-        or mounts[0].get("Source") != str(pg)
-        or mounts[0].get("Destination") != INSIDE_PGDATA
-        or not mounts[0].get("RW")
+        or unexpected_mounts
+        or len(bind_mounts) != 1
+        or bind_mounts[0].get("Source") != str(pg)
+        or bind_mounts[0].get("Destination") != INSIDE_PGDATA
+        or not bind_mounts[0].get("RW")
         or obj["Config"].get("User") != str(os.geteuid()) + ":" + str(os.getegid())):
         raise Blocked("third-copy actual runtime isolation policy mismatch")
     return obj
 
 
 def log_flags():
-    raw = cmd(["docker", "logs", CONTAINER], timeout=10, allow_failure=True).stdout
+    result = cmd(["docker", "logs", CONTAINER], timeout=10, allow_failure=True)
+    raw = result.stdout + "\n" + result.stderr
     # Never print raw PostgreSQL logs, which may include private settings.
     return {
         "ready": "database system is ready to accept connections" in raw,
         "redo": "redo starts at" in raw or "automatic recovery in progress" in raw,
-        "redo_done": "redo done" in raw or "database system was interrupted" not in raw,
         "fatal": bool(re.search(r"\b(FATAL|PANIC)\b", raw)),
     }
 
