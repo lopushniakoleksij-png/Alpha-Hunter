@@ -20,7 +20,8 @@ def test_no_server_and_no_mounts_in_ephemeral_utility_command():
     assert args[args.index("--cap-drop") + 1] == "ALL"
     assert args[args.index("--user") + 1] == "65534:65534"
     assert "--entrypoint" in args
-    assert args[-3] == "/bin/sh"
+    assert args[args.index("--entrypoint") + 1] == "/bin/sh"
+    assert args[-3] == "postgres:17"
     assert args[-2] == "-c"
     assert "postgres --version" in args[-1]
     assert "basename" in args[-1]
