@@ -188,7 +188,7 @@ def preflight():
     return pg, source_signature
 
 
-def launch_args(pg):
+def launch_args(pg, image_ref=IMAGE):
     user = str(os.geteuid()) + ":" + str(os.getegid())
     uid, gid = os.geteuid(), os.getegid()
     # Only the third COPY is bind mounted RW; no original stage, no backups.
@@ -205,7 +205,7 @@ def launch_args(pg):
             str(uid) + ",gid=" + str(gid) + ",mode=0700",
         "--tmpfs", "/tmp:rw,nosuid,size=64m,uid=" +
             str(uid) + ",gid=" + str(gid) + ",mode=0700",
-        "--entrypoint", "/bin/sh", IMAGE,
+        "--entrypoint", "/bin/sh", image_ref,
         "-c", "exec postgres -D " + INSIDE_PGDATA,
     ]
 
@@ -239,6 +239,7 @@ def log_flags():
     return {
         "ready": "database system is ready to accept connections" in raw,
         "redo": "redo starts at" in raw or "automatic recovery in progress" in raw,
+        "redo_done": "redo done" in raw,
         "fatal": bool(re.search(r"\b(FATAL|PANIC)\b", raw)),
     }
 
@@ -251,14 +252,14 @@ def stop_if_running():
         cmd(["docker", "stop", "--time", "45", CONTAINER], timeout=55)
 
 
-def offline_control(pg):
+def offline_control(pg, image_ref=IMAGE):
     args = [
         "docker", "run", "--rm", "--pull=never", "--network", "none",
         "--read-only", "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",
         "--user", str(os.geteuid()) + ":" + str(os.getegid()),
         "--mount", "type=bind,source=" + str(pg) + ",target=/qa,readonly",
-        "--entrypoint", "/bin/sh", IMAGE, "-c", "exec pg_controldata /qa",
+        "--entrypoint", "/bin/sh", image_ref, "-c", "exec pg_controldata /qa",
     ]
     raw = cmd(args, timeout=30).stdout
     m = re.search(r"(?m)^Database cluster state:\s*(.+)$", raw)
@@ -289,16 +290,18 @@ def main(argv=None):
             return 0
 
         print("QA_APPROVAL=EXPLICIT_CLI_FLAG_THIRD_COPY_ONLY")
-        cmd(launch_args(pg), timeout=45)
+        cmd(launch_args(pg, signature[4]), timeout=45)
         started = True
         runtime_policy(pg)
         ready = False
         observed_redo = False
+        observed_redo_done = False
         fatal = False
         for _ in range(MAX_WAIT_S // 2):
             obs = log_flags()
             ready |= obs["ready"]
             observed_redo |= obs["redo"]
+            observed_redo_done |= obs["redo_done"]
             fatal |= obs["fatal"]
             state = runtime_policy(pg)["State"]
             if ready or fatal or not state.get("Running"):
@@ -308,7 +311,9 @@ def main(argv=None):
         stop_if_running()
         if not ready or fatal:
             raise Blocked("isolated server did not become ready without fatal errors")
-        control = offline_control(pg)
+        control = offline_control(pg, signature[4])
+        if not observed_redo or not observed_redo_done:
+            raise Blocked("no verified WAL redo start and completion in isolated recovery logs")
         if control != "shut down":
             raise Blocked("isolated recovery copy did not complete clean shutdown")
         # Verify original source custody after writes occurred only on third.
@@ -323,7 +328,7 @@ def main(argv=None):
                 raise Blocked("protected physical backup changed")
         print("QA_CRASH_RECOVERY_RESULT=PASS_INITIAL_PHYSICAL_START_AND_SHUTDOWN")
         print("QA_POSTGRES_READY_OBSERVED=YES")
-        print("QA_REDO_ACTIVITY_LOG_OBSERVED=" + ("YES" if observed_redo else "NO_REVIEW"))
+        print("QA_REDO_START_AND_DONE_LOG_OBSERVED=YES")
         print("QA_POST_STOP_CLUSTER_STATE=SHUT_DOWN")
         print("QA_ORIGINAL_SERVER=STILL_STOPPED")
         print("QA_ORIGINAL_BACKUPS_SHA256_VERIFIED=" + str(signature[2]))
