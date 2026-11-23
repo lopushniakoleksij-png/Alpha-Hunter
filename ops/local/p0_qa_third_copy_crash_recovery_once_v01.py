@@ -277,7 +277,7 @@ def main(argv=None):
     print("QA_PRODUCTION_CONNECTION=NONE")
     print("QA_ORIGINAL_SERVER_RESTART=NO")
     print("QA_BACKUPS_ORIGINAL_STAGE_MUTATION=NO")
-    started = False
+    start_attempted = False
     try:
         pg, signature = preflight()
         print("QA_PREFLIGHT=PASS")
@@ -290,8 +290,8 @@ def main(argv=None):
             return 0
 
         print("QA_APPROVAL=EXPLICIT_CLI_FLAG_THIRD_COPY_ONLY")
+        start_attempted = True
         cmd(launch_args(pg, signature[4]), timeout=45)
-        started = True
         runtime_policy(pg)
         ready = False
         observed_redo = False
@@ -338,7 +338,7 @@ def main(argv=None):
         print("QA_PRODUCTION_RELEASE=NO_GO")
         return 0
     except (Blocked, KeyError, ValueError, OSError, TypeError) as e:
-        if started:
+        if start_attempted:
             try:
                 stop_if_running()
             except Exception:
