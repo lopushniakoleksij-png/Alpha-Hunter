@@ -20,6 +20,7 @@ on:
       - 'ops/sql/qa_atomic_core_scan_concurrent_setup_v01.sql'
       - 'ops/sql/qa_atomic_core_scan_concurrent_verify_v01.sql'
       - 'ops/local/qa_atomic_core_scan_concurrent_v01.py'
+      - 'ops/local/qa_atomic_core_scan_multisize_concurrency_v01.py'
       - 'ops/sql/qa_atomic_core_scan_service_role_v01.sql'
       - 'ops/sql/readonly_core_scan_failure_taxonomy_v01.sql'
       - 'ops/sql/qa_core_scan_failure_taxonomy_fixture_v01.sql'
@@ -167,6 +168,8 @@ jobs:
         run: python3 ops/local/qa_atomic_http_pg17_lost_ack_v01.py
       - name: E6 verify overlapping identical/conflicting atomic RPCs across independent PostgreSQL sessions
         run: python3 ops/local/qa_atomic_core_scan_concurrent_v01.py
+      - name: E6 test 30 50 and 61 symbol concurrent same-run RPC retries in disposable PG17
+        run: python3 ops/local/qa_atomic_core_scan_multisize_concurrency_v01.py
       - name: Validate service_role RPC invocation under RLS with denied public roles
         run: psql -X -v ON_ERROR_STOP=1 -f ops/sql/qa_atomic_core_scan_service_role_v01.sql
       - name: Compare payoff percentile query against 495k synthetic outcomes
