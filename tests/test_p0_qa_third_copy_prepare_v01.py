@@ -16,7 +16,7 @@ copy_verified = ns["copy_verified"]
 
 def pg_tree(base):
     p = base / "pgdata"
-    p.mkdir(mode=0o700)
+    p.mkdir(mode=0o700, parents=True)
     for name in ("base", "global", "pg_wal", "pg_xact", "pg_multixact", "pg_tblspc"):
         (p / name).mkdir(mode=0o700)
     for name, raw in {
@@ -59,7 +59,15 @@ def test_incomplete_staging_copy_refused_when_pid_or_cluster_markers_missing(tmp
         root.mkdir(mode=0o700)
         stage = root / "p0_recovery_stage_A"
         stage.mkdir(mode=0o700)
-        (stage / "pgdata").symlink_to(pg, target_is_directory=True)
+        target = stage / "pgdata"
+        target.mkdir(mode=0o700)
+        for dirname in ("base", "global", "pg_wal", "pg_xact", "pg_multixact"):
+            (target / dirname).mkdir(mode=0o700)
+        for filename in ("PG_VERSION", "global/pg_control", "postmaster.pid"):
+            if filename != name:
+                f = target / filename
+                f.write_bytes(b"17" if filename == "PG_VERSION" else b"marker")
+                f.chmod(0o600)
         ns["single_stage"].__globals__["ROOT"] = root
         try:
             with pytest.raises(Blocked):
