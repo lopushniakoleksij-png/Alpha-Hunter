@@ -293,6 +293,26 @@ def stop_if_started():
         call(["docker", "stop", "--time", "45", CENSUS], timeout=55)
 
 
+def verify_third_shutdown(pg, image_id):
+    if (pg / "postmaster.pid").exists():
+        raise Blocked("third catalog copy retained active postmaster PID")
+    current = json.loads(call(["docker", "inspect", CENSUS]).stdout)[0]
+    if current["State"].get("Running") or current["State"].get("Status") != "exited":
+        raise Blocked("third catalog runtime not fully stopped")
+    args = [
+        "docker", "run", "--rm", "--pull=never", "--network", "none",
+        "--read-only", "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "--user", str(os.geteuid()) + ":" + str(os.getegid()),
+        "--mount", "type=bind,source=" + str(pg) + ",target=/qa,readonly",
+        "--entrypoint", "/bin/sh", image_id, "-c", "exec pg_controldata /qa",
+    ]
+    status = call(args, timeout=35).stdout
+    if not re.search(r"(?m)^Database cluster state:\s*shut down\s*$", status):
+        raise Blocked("isolated catalog runtime did not shut down cleanly")
+    return True
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv not in ([], ["--approve-third-catalog-census"]):
@@ -343,10 +363,11 @@ def main(argv=None):
         s = interpret_struct(psql_sql(DB, structural))
         funcs_match, private_trigs_zero = interpret_private(psql_sql(DB, private))
         stop_if_started()
+        verify_third_shutdown(pg, before[4])
         started = False
 
         after_pg, after = preflight_after(pg)
-        if after[:4] != before[:4] or after_pg != pg:
+        if after != before or after_pg != pg:
             raise Blocked("protected original or backups changed during census")
         print("QA_THIRD_COPY_READ_ONLY_CATALOG_CENSUS=COMPLETED")
         print("QA_RESTORED_AUTHENTIC_QA_DATABASE=FOUND")
@@ -364,7 +385,7 @@ def main(argv=None):
                          funcs_match, private_trigs_zero))
         print("QA_RECOVERED_THIRD_VS_NOV8_BASELINE=" + ("MATCH" if is_parity else "MISMATCH_REVIEW_REQUIRED"))
         print("QA_CURRENT_PRODUCTION_SCHEMA_PARITY=NOT_YET_VERIFIED")
-        print("QA_THIRD_COPY_POST_STOP_CONTROL_STATE=NOT_YET_RECHECKED")
+        print("QA_THIRD_COPY_POST_STOP_CONTROL_STATE=SHUT_DOWN_VERIFIED")
         print("QA_30_50_61_BENCHMARKS=NOT_PERFORMED")
         print("QA_DBA_SECURITY_SIGNOFF=NOT_YET_GRANTED")
         print("QA_ORIGINAL_SERVER=STILL_STOPPED")
