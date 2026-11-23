@@ -114,8 +114,10 @@ def single_stage():
         if (d.is_symlink() or not d.is_dir()
             or stat.S_IMODE(d.stat().st_mode) != 0o700):
             raise Blocked("unsafe extracted recovery stage")
-    if (pg / "PG_VERSION").read_bytes().strip() != b"17":
-        raise Blocked("wrong staged PostgreSQL version")
+    version_file = pg / "PG_VERSION"
+    if (not version_file.is_file() or version_file.is_symlink()
+            or version_file.read_bytes().strip() != b"17"):
+        raise Blocked("missing or incorrect staged PostgreSQL version")
     for key in REQUIRED:
         p = pg / key
         if not p.is_file() or p.is_symlink() or not p.stat().st_size:
