@@ -19,8 +19,9 @@ def make_pair(tmp_path):
     stage = tmp_path / "p0_recovery_stage_TEST"
     third = tmp_path / "p0_recovery_runtime_TEST"
     for root in (stage, third):
+        root.mkdir(mode=0o700)
         d = root / "pgdata"
-        d.mkdir(parents=True, mode=0o700)
+        d.mkdir(mode=0o700)
         for dirname in S["DIRS"]:
             (d / dirname).mkdir(mode=0o700)
         for name, value in {
@@ -63,6 +64,7 @@ def test_only_third_copy_is_hardened_and_original_stage_unmodified(tmp_path):
 def test_bad_third_copy_config_never_modified_by_preflight(tmp_path):
     stage, third = make_pair(tmp_path)
     before = (third / "pgdata" / "postgresql.auto.conf").read_bytes()
+    tmp_path.chmod(0o700)
     old = S["paths_preflight"].__globals__["ROOT"]
     S["paths_preflight"].__globals__["ROOT"] = tmp_path
     try:
