@@ -2,6 +2,23 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Alpha Hunter P0 — 0. Diagnose existing QA container exit (read-only)",
+      "type": "process",
+      "command": "python3",
+      "args": [
+        "ops/local/p0_qa_exit255_readonly_diag_v01.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Alpha Hunter P0 — 1. Check private QA readiness (read-only)",
       "type": "process",
       "command": "bash",
