@@ -56,8 +56,8 @@ def test_find_stage_is_sole_private_directory(tmp_path):
     root, pg = stage(tmp_path)
     root.chmod(0o700)
     pg.chmod(0o700)
-    s = S["ROOT"]
-    S["ROOT"] = tmp_path
+    s = S["find_staged"].__globals__["ROOT"]
+    S["find_staged"].__globals__["ROOT"] = tmp_path
     try:
         assert S["find_staged"]() == pg
         extra = tmp_path / "p0_recovery_stage_second"
@@ -65,7 +65,7 @@ def test_find_stage_is_sole_private_directory(tmp_path):
         with pytest.raises(Blocked, match="exactly one"):
             S["find_staged"]()
     finally:
-        S["ROOT"] = s
+        S["find_staged"].__globals__["ROOT"] = s
 
 
 def test_stage_symlink_refused(tmp_path):
@@ -73,13 +73,13 @@ def test_stage_symlink_refused(tmp_path):
     root.chmod(0o700)
     pg.chmod(0o700)
     (pg / "config_link").symlink_to("/private/not-for-qa")
-    old = S["ROOT"]
-    S["ROOT"] = tmp_path
+    old = S["find_staged"].__globals__["ROOT"]
+    S["find_staged"].__globals__["ROOT"] = tmp_path
     try:
         with pytest.raises(Blocked, match="linked"):
             S["find_staged"]()
     finally:
-        S["ROOT"] = old
+        S["find_staged"].__globals__["ROOT"] = old
 
 
 def test_not_in_codespace_blocks_before_docker(monkeypatch):
