@@ -16,6 +16,10 @@ Blocked = S["Blocked"]
 @pytest.mark.parametrize(("stderr", "expected"), [
     ("psql: error: connection to server on socket failed: No such file or directory",
      "SOCKET_OR_SERVER_CONNECTION"),
+    ('psql: error: connection to server on socket "/tmp/.s.PGSQL.65432" failed: FATAL: database "postgres" does not exist',
+     "DATABASE_NOT_FOUND"),
+    ('psql: error: connection to server on socket "/tmp/.s.PGSQL.65432" failed: FATAL: role "postgres" does not exist',
+     "ROLE_NOT_FOUND"),
     ('FATAL: database "postgres" does not exist', "DATABASE_NOT_FOUND"),
     ('FATAL: role "postgres" does not exist', "ROLE_NOT_FOUND"),
     ('FATAL: peer authentication failed for user "postgres"', "AUTHENTICATION"),
