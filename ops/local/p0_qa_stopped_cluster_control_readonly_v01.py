@@ -149,13 +149,23 @@ def offline_control(version, control):
                 out.write(payload)
         # This launches a ONE-OFF offline control-reader utility; it does NOT
         # start the original PostgreSQL container or any database server.
-        output = cmd([
-            "docker", "run", "--rm", "--network", "none", "--read-only",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-            "--user", f"{os.getuid()}:{os.getgid()}",
-            "--mount", f"type=bind,source={directory},target=/qa,readonly",
-            "postgres:17", "pg_controldata", "/qa",
-        ], timeout=40)
+        try:
+            completed = subprocess.run([
+                "docker", "run", "--rm", "--network", "none", "--read-only",
+                "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+                "--user", f"{os.getuid()}:{os.getgid()}",
+                "--mount", f"type=bind,source={directory},target=/qa,readonly",
+                "postgres:17", "pg_controldata", "/qa",
+            ], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+               text=True, check=True, timeout=40)
+        except (OSError, subprocess.SubprocessError):
+            raise Blocked("offline control reader could not verify control file") from None
+        output = completed.stdout
+        if re.search(r"CRC|checksum|WARNING|invalid", completed.stderr, re.IGNORECASE) or (
+            re.search(r"CRC|checksum|WARNING|invalid", output, re.IGNORECASE)
+            and re.search(r"WARNING|mismatch|invalid", output, re.IGNORECASE)
+        ):
+            raise Blocked("offline PG control reader reported a warning")
 
     state_match = re.search(r"(?m)^Database cluster state:\s*(\S.*)\s*$", output)
     crc_match = re.search(r"(?m)^pg_control version number:\s*(\d+)\s*$", output)
@@ -172,8 +182,11 @@ def main():
     try:
         ensure_environment()
         copies = archive_inventory()
+        if len({digest for _, digest in copies}) != 1:
+            raise Blocked("private backup copies differ; preserve for review")
         version, control, wal, links = read_markers(copies[0][0])
         state, ctl_version, catalog = offline_control(version, control)
+        ensure_environment()  # Recheck original server remains stopped.
         print("QA_VERIFIED_PRIVATE_BACKUP_COPIES=" + str(len(copies)))
         print("QA_ALL_BACKUPS_BYTE_IDENTICAL=" + (
             "YES" if len({digest for _, digest in copies}) == 1 else "NO_REVIEW_REQUIRED"
