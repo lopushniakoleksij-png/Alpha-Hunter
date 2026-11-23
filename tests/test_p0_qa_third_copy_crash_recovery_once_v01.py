@@ -55,7 +55,7 @@ def test_launch_args_only_mount_third_copy_without_ports_or_production(tmp_path)
         "--publish", "-p", "--privileged", "--network=host", "--env-file",
         "--volume", "--volumes-from", "docker.sock",
     ):
-        assert forbidden not in joined
+        assert forbidden not in args
 
 
 def make_inspect(pg, **overrides):
