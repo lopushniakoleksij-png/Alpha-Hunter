@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# iPhone-only shortcut. No arguments; preflight only. Never checkout or sync.
+set -euo pipefail
+[[ $# == 0 && "${CODESPACES:-}" == true && "${GITHUB_ACTIONS:-}" != true ]]
+[[ "$(git branch --show-current)" == fix/supabase-write-timeout-qa ]]
+git fetch origin fix/supabase-write-timeout-qa
+script=ops/local/p0_qa_recovered_third_catalog_port_corrected_once_v01.py
+[[ "$(git rev-parse "FETCH_HEAD:$script")" == 2168ded4bb9e139460624582aa7e68db5537edc4 ]]
+[[ "$(git rev-parse FETCH_HEAD:ops/sql/readonly_stage2_structural_fingerprint_v01.sql)" == 7d35659a1342eaa7c3ae4e0601319cc2aa281522 ]]
+[[ "$(git rev-parse FETCH_HEAD:ops/sql/readonly_p0_private_function_catalog_fingerprint_v01.sql)" == dbaee895b18fbae6e16839c1b7744b615851047c ]]
+git show "FETCH_HEAD:$script" | python3 -
